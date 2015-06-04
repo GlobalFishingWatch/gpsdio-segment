@@ -198,21 +198,20 @@ class Despoofer(object):
 
         for idx, msg in enumerate(self.instream):
 
-            # First check if there are any tracks that are too far away in time and yield them
-            _yielded = []
-            for track in self._tracks.values():
-                v = (msg['timestamp'] - track.last_msg['timestamp']).total_seconds() / 3600
-                if v > self.max_hours:
-                    _yielded.append(track.id)
-                    yield track
-            for y in _yielded:
-                del self._tracks[y]
-
             # Cache the MMSI and some other fields
             mmsi = msg.get('mmsi')
             y = msg.get('lat')
             x = msg.get('lon')
             timestamp = msg.get('timestamp')
+
+            # First check if there are any tracks that are too far away in time and yield them
+            _yielded = []
+            for track in self._tracks.values():
+                if (msg['timestamp'] - track.last_msg['timestamp']).total_seconds() / 3600 > self.max_hours:
+                    _yielded.append(track.id)
+                    yield track
+            for y in _yielded:
+                del self._tracks[y]
 
             # This is the first message with a valid MMSI
             # Make it the previous message and create a new track

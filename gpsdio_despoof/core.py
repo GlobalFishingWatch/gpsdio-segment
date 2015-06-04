@@ -11,12 +11,15 @@ import pyproj
 
 
 logger = logging.getLogger('gpsdio-despoof-core')
+# logger.setLevel(logging.DEBUG)
 
 
 # See `Despoof()` for more info
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 100  # knots
 DEFAULT_NOISE_DIST = round(50 / 1852, 3)  # nautical miles
+
+INFINITE_SPEED = 1000000
 
 
 def msg_diff_stats(msg1, msg2, geod):
@@ -60,7 +63,10 @@ def msg_diff_stats(msg1, msg2, geod):
         timedelta = (ts1 - ts2).total_seconds() / 3600
     else:
         timedelta = (ts2 - ts1).total_seconds() / 3600
-    speed = (distance / timedelta)
+    try:
+        speed = (distance / timedelta)
+    except ZeroDivisionError:
+        speed = INFINITE_SPEED
 
     return {
         'distance': distance,
@@ -101,7 +107,7 @@ class Despoofer(object):
         Produces completed tracks.
         """
 
-        return next(self.despoof())
+        return self.despoof()
 
     @property
     def instream(self):
@@ -126,7 +132,7 @@ class Despoofer(object):
 
         return self._last_track
 
-    def _add_track(self, msg):
+    def _create_track(self, msg):
 
         """
         Add a new track to the track container.
@@ -140,44 +146,39 @@ class Despoofer(object):
         self._tracks[self._last_id] = t
         self._last_track = t
 
-    def _add_to_best(self, msg):
+    def _compute_best(self, msg):
 
         """
-        Add a message to the 'best' track.
+        Compute which track is the best track
 
-        Parameters
-        ----------
-        msg : dict
-            A GPSD message.
+        Returns the ID or None
         """
 
-        # Only one track so no need to figure out which is the best
-        if len(self._tracks) is 1:
-            t = list(self._tracks.values())[0]
-            t.add_msg(msg)
-            self._last_track = t
+        # best_stats are the stats between the input message and the current best track
+        # track_stats are the stats between the input message and the current track
+        best_stats = None
+        best = None
+        best_metric = None
+        for track in self._tracks.values():
+            if best is None:
+                best = track
+                best_stats = msg_diff_stats(msg, best.last_msg, self._geod)
+                best_metric = best_stats['timedelta'] * best_stats['distance']
 
-        else:
+            else:
 
-            # best_stats are the stats between the input message and the current best track
-            # track_stats are the stats between the input message and the current track
-            best_stats = None
-            best = None
-            for track in self._tracks.values():
-                if best is None:
+                track_stats = msg_diff_stats(msg, best.last_msg, self._geod)
+                track_metric = track_stats['timedelta'] * track_stats['distance']
+
+                if track_metric < best_metric:
                     best = track
-                    best_stats = msg_diff_stats(msg, best.last_msg, self._geod)
-                else:
-                    track_stats = msg_diff_stats(msg, best.last_msg, self._geod)
-                    track_distance = track_stats['timedelta'] * track_stats['distance']
-                    best_distance = best_stats['timedelta'] * best_stats['distance']
+                    best_metric = track_metric
+                    best_stats = track_stats
 
-                    if track_distance <= best_distance:
-                        best = track
-                    else:
-                        continue
-
-            self._tracks[best.id].add_msg(msg)
+        if best_stats['distance'] <= self.noise_dist or (best_stats['timedelta'] <= self.max_hours and best_stats['speed'] <= self.max_speed):
+            return best.id
+        else:
+            return None
 
     def despoof(self):
 
@@ -197,6 +198,16 @@ class Despoofer(object):
 
         for idx, msg in enumerate(self.instream):
 
+            # First check if there are any tracks that are too far away in time and yield them
+            _yielded = []
+            for track in self._tracks.values():
+                v = (msg['timestamp'] - track.last_msg['timestamp']).total_seconds() / 3600
+                if v > self.max_hours:
+                    _yielded.append(track.id)
+                    yield track
+            for y in _yielded:
+                del self._tracks[y]
+
             # Cache the MMSI and some other fields
             mmsi = msg.get('mmsi')
             y = msg.get('lat')
@@ -208,7 +219,8 @@ class Despoofer(object):
             if self.mmsi is None:
                 logger.debug("Found a valid MMSI - processing: %s", mmsi)
                 self._mmsi = mmsi
-                self._add_track(msg)
+                self._prev_msg = msg
+                self._create_track(msg)
                 continue
 
             # Non positional message or lacking timestamp.  Add to the most recent track.
@@ -218,46 +230,47 @@ class Despoofer(object):
             # Everything is set up - process!
             else:
 
-                # Dump all tracks that are dicontinuous in time before doing anything
-                # with the current point
-                for track in self._tracks.values():
-                    if (track.last_msg['timestamp'] - timestamp).total_seconds() / 3600 > self.max_hours:
-                        try:
-                            yield track
-                        finally:
-                            del self._tracks[track.id]
-
-                prev_x = self._prev_msg.get('lon')
-                prev_y = self._prev_msg.get('lat')
-                distance = self._geod.inv(prev_x, prev_y, x, y)[2] / 1850
-                timedelta = (self._prev_msg['timestamp'] - timestamp).total_seconds() / 3600
-                speed = distance / timedelta
-
-                # This point exceeds the maximum time delta - create a new track.
-                if self.last_track is None or timedelta > self.max_hours:
-                    self._add_track(msg)
-                    continue
-                
-                # This point is traveling way too fast - create a new track
-                elif speed > self.max_speed:
-                    self._add_track(msg)
-                    continue
-
-                # This point is so close to the previous point that we can consider it noise
-                # Add it to the last track
-                elif distance <= self.noise_dist:
-                    self.last_track.add_msg(msg)
-
-                # This point passed all the other checks so add it to the best track
+                best_id = self._compute_best(msg)
+                if best_id is None:
+                    self._create_track(msg)
                 else:
-                    self._add_to_best(msg)
+                    self._tracks[best_id].add_msg(msg)
+                    self._last_track = self._tracks[best_id]
 
             self._prev_msg = msg
 
         # No more points to process.  Yield all the remaining tracks.
-        for track in self._tracks.values():
+        for series, track in self._tracks.items():
             yield track
+            #
+            # prev_x = self._prev_msg.get('lon')
+            # prev_y = self._prev_msg.get('lat')
+            # distance = self._geod.inv(prev_x, prev_y, x, y)[2] / 1852.0
+            # timedelta = (timestamp - self._prev_msg['timestamp']).total_seconds() / 3600.0
+            # try:
+            #     speed = distance / timedelta
+            # except ZeroDivisionError:
+            #     speed = INFINITE_SPEED
+            #
+            # # This point exceeds the maximum time delta - create a new track.
+            # if self.last_track is None or timedelta > self.max_hours:
+            #     logger.debug("Creating a new track - point exceeds maximum time delta")
+            #     self._create_track(msg)
+            #
+            # else:
+            #
+            #
+            #
+            #     for id in _yield_tracks:
+            #         try:
+            #             yield self._tracks[id]
+            #         finally:
+            #             del self._tracks[id]
+            #
+            #     for _tk_msg in _add_tracks:
+            #         self._create_track(_tk_msg)
 
+        # self._prev_msg = msg
 
 
 class Track(object):
@@ -330,9 +343,9 @@ class Track(object):
 
     def add_msg(self, msg):
 
-        if msg.get('mmsi') is not self.mmsi:
+        if msg.get('mmsi') != self.mmsi:
             raise ValueError(
-                'MMSI mismatch: {internal} != {new}'.format(self.mmsi, msg.get('mmsi')))
+                'MMSI mismatch: {internal} != {new}'.format(internal=self.mmsi, new=msg.get('mmsi')))
 
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:

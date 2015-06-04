@@ -57,19 +57,31 @@ def despoof(ctx, infile, outdir, mmsi, max_hours, max_speed, noise_dist):
     o_cmp = ctx.obj.get('o_cmp')
     out_ext = ''
     if o_drv is not None:
-        out_ext += gpsdio.drivers.get_driver(o_drv).extensions[0]
+        out_ext += '.' + gpsdio.drivers.get_driver(o_drv).extensions[0]
     if o_cmp is not None:
-        out_ext += gpsdio.drivers.get_compression(o_cmp).extensions[0]
-
-    despoofer = Despoofer(
-        infile, mmsi=mmsi, max_hours=max_hours, max_speed=max_speed, noise_dist=noise_dist)
+        out_ext += '.' + gpsdio.drivers.get_compression(o_cmp).extensions[0]
 
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),
                      compression=ctx.obj.get('i_cmp')) as src:
-        for track in despoofer:
-            logger.debug('Got a track - writing')
-            outpath = os.path.join(outdir, str(track.id), out_ext)
-            with gpsdio.open(outpath, driver=ctx.obj.get('o_drv'),
+
+        despoofer = Despoofer(
+            src, mmsi=mmsi, max_hours=max_hours, max_speed=max_speed, noise_dist=noise_dist)
+
+        logger.debug("Begining to despoof")
+        longest_id = None
+        longest_count = None
+        for t_idx, track in enumerate(despoofer.despoof()):
+            logger.debug("Got a track - writing")
+
+            outpath = os.path.join(outdir, str(track.id) + out_ext)
+
+            if longest_id is None or len(track) > longest_count:
+                longest_id = track.id
+                longest_count = len(track)
+
+            with gpsdio.open(outpath, 'w', driver=ctx.obj.get('o_drv'),
                              compression=ctx.obj.get('o_cmp')) as dst:
                 for msg in track:
                     dst.write(msg)
+        print("Longest is %s with %s" % (longest_id, longest_count))
+        print("Wrote %s tracks" % (t_idx + 1))

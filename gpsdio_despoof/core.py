@@ -18,7 +18,6 @@ logger = logging.getLogger('gpsdio-despoof-core')
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 100  # knots
 DEFAULT_NOISE_DIST = round(50 / 1852, 3)  # nautical miles
-
 INFINITE_SPEED = 1000000
 
 
@@ -241,35 +240,6 @@ class Despoofer(object):
         # No more points to process.  Yield all the remaining tracks.
         for series, track in self._tracks.items():
             yield track
-            #
-            # prev_x = self._prev_msg.get('lon')
-            # prev_y = self._prev_msg.get('lat')
-            # distance = self._geod.inv(prev_x, prev_y, x, y)[2] / 1852.0
-            # timedelta = (timestamp - self._prev_msg['timestamp']).total_seconds() / 3600.0
-            # try:
-            #     speed = distance / timedelta
-            # except ZeroDivisionError:
-            #     speed = INFINITE_SPEED
-            #
-            # # This point exceeds the maximum time delta - create a new track.
-            # if self.last_track is None or timedelta > self.max_hours:
-            #     logger.debug("Creating a new track - point exceeds maximum time delta")
-            #     self._create_track(msg)
-            #
-            # else:
-            #
-            #
-            #
-            #     for id in _yield_tracks:
-            #         try:
-            #             yield self._tracks[id]
-            #         finally:
-            #             del self._tracks[id]
-            #
-            #     for _tk_msg in _add_tracks:
-            #         self._create_track(_tk_msg)
-
-        # self._prev_msg = msg
 
 
 class Track(object):
@@ -348,4 +318,4 @@ class Track(object):
 
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:
-            self._coords += (msg.get('lon'), msg.get('lat'))
+            self._coords.append((msg.get('lon'), msg.get('lat')))

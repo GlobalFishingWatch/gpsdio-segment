@@ -4,7 +4,6 @@ Commandline interface for gpsdio-sort
 
 
 import logging
-import os
 
 import click
 import gpsdio
@@ -17,14 +16,13 @@ from gpsdio_despoof.core import DEFAULT_MAX_HOURS
 from gpsdio_despoof.core import DEFAULT_NOISE_DIST
 
 
-
 logging.basicConfig()
 
 
 @click.command()
 @click.version_option(version=gpsdio_despoof.__version__)
-@click.argument('infile', type=click.File('r'), required=True)
-@click.argument('outdir', type=click.Path(resolve_path=True, dir_okay=True, writable=True, file_okay=False), required=True)
+@click.argument('infile', required=True)
+@click.argument('outfile', required=True)
 @click.option(
     '--mmsi', type=click.INT,
     help="Only despoof this MMSI.  If not given the first MMSI found will be used."
@@ -46,14 +44,11 @@ logging.basicConfig()
          "(default: {})".format(DEFAULT_NOISE_DIST)
 )
 @click.pass_context
-def despoof(ctx, infile, outdir, mmsi, max_hours, max_speed, noise_dist):
+def despoof(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
 
     """
     Despoof AIS data into multiple tracks.
     """
-
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
 
     logger = logging.getLogger('gpsdio-despoof-cli')
     logger.setLevel(ctx.obj.get('verbosity', 1))
@@ -67,7 +62,9 @@ def despoof(ctx, infile, outdir, mmsi, max_hours, max_speed, noise_dist):
         out_ext += '.' + gpsdio.drivers.get_compression(o_cmp).extensions[0]
 
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),
-                     compression=ctx.obj.get('i_cmp')) as src:
+                     compression=ctx.obj.get('i_cmp')) as src, \
+            gpsdio.open(outfile, 'a',
+                        driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
         despoofer = Despoofer(
             src, mmsi=mmsi, max_hours=max_hours, max_speed=max_speed, noise_dist=noise_dist)
@@ -76,19 +73,14 @@ def despoof(ctx, infile, outdir, mmsi, max_hours, max_speed, noise_dist):
         longest_id = None
         longest_count = None
         for t_idx, track in enumerate(despoofer.despoof()):
-            logger.debug("Got a track - writing")
-
-            outpath = os.path.join(outdir, str(track.id) + out_ext)
 
             if longest_id is None or len(track) > longest_count:
                 longest_id = track.id
                 longest_count = len(track)
 
-            with gpsdio.open(outpath, 'w', driver=ctx.obj.get('o_drv'),
-                             compression=ctx.obj.get('o_cmp')) as dst:
-                if len(track) is not 1:
-                    print("Writing track %s with %s messages and %s points" % (t_idx, len(track), len(track.coords)))
-                for msg in track:
-                    dst.write(msg)
+            # if len(track) > 1:
+            print("Writing track %s with %s messages and %s points" % (track.id, len(track), len(track.coords)))
+            for msg in track:
+                dst.write(msg)
         print("Longest is %s with %s" % (longest_id, longest_count))
         print("Wrote %s tracks" % (t_idx + 1))

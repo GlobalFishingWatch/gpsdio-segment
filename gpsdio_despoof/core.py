@@ -16,63 +16,9 @@ logger = logging.getLogger('gpsdio-despoof-core')
 
 # See `Despoof()` for more info
 DEFAULT_MAX_HOURS = 24  # hours
-DEFAULT_MAX_SPEED = 100  # knots
-DEFAULT_NOISE_DIST = round(50 / 1852, 3)  # nautical miles
+DEFAULT_MAX_SPEED = 40  # knots
+DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
 INFINITE_SPEED = 1000000
-
-
-def msg_diff_stats(msg1, msg2, geod):
-
-    """
-    Compute the stats required to determine if two points are continuous.  Input
-    messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
-    `timestamp` must be an instance of `datetime.datetime`.
-
-    Parameters
-    ----------
-    msg1 : dict
-        A GPSD message.
-    msg2 : dict
-        See `msg1`.
-    geod : pyproj.Geod
-        Used to compute distance.
-
-    Returns
-    -------
-    dict
-        distance : float
-            Distance in natucal miles between the points.
-        timedelta : float
-            Amount of time between the two points in hours.
-        speed : float
-            Required speed in knots to travel between the two points within the
-            time allotted by `timedelta`.
-    """
-
-    x1 = msg1['lon']
-    y1 = msg1['lat']
-    ts1 = msg1['timestamp']
-
-    x2 = msg2['lon']
-    y2 = msg2['lat']
-    ts2 = msg2['timestamp']
-
-    distance = geod.inv(x1, y1, x2, y2)[2] / 1850
-    if ts1 > ts2:
-        timedelta = (ts1 - ts2).total_seconds() / 3600
-    else:
-        timedelta = (ts2 - ts1).total_seconds() / 3600
-    try:
-        speed = (distance / timedelta)
-    except ZeroDivisionError:
-        speed = INFINITE_SPEED
-
-    return {
-        'distance': distance,
-        'timedelta': timedelta,
-        'speed': speed
-    }
-
 
 
 class Despoofer(object):
@@ -87,6 +33,7 @@ class Despoofer(object):
         # Exposed via properties
         self._instream = instream
 
+        # Internal objects
         self._geod = pyproj.Geod(ellps='WGS84')
         self._tracks = {}
         self._last_id = -1
@@ -94,11 +41,7 @@ class Despoofer(object):
         self._prev_msg = None
         self._last_track = None
 
-        logger.debug("Created an instance of `Despoofer()` with ...")
-        logger.debug("max_speed = %s", max_speed)
-        logger.debug("max_hours = %s", max_hours)
-        logger.debug("noise_dist = %s", noise_dist)
-        logger.debug("noise_dist = %s", noise_dist)
+        logger.debug("Created an instance of `Despoofer()` with max_speed=%s, max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
 
     def __iter__(self):
 
@@ -145,6 +88,67 @@ class Despoofer(object):
         self._tracks[self._last_id] = t
         self._last_track = t
 
+    def timedelta(self, msg1, msg2):
+
+        """
+        Compute the timedelta between two messages in common units.
+        """
+
+        ts1 = msg1['timestamp']
+        ts2 = msg2['timestamp']
+        if ts1 > ts2:
+            return (ts1 - ts2).total_seconds() / 3600
+        else:
+            return (ts2 - ts1).total_seconds() / 3600
+
+    def msg_diff_stats(self, msg1, msg2):
+
+        """
+        Compute the stats required to determine if two points are continuous.  Input
+        messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
+        `timestamp` must be an instance of `datetime.datetime`.
+
+        Parameters
+        ----------
+        msg1 : dict
+            A GPSD message.
+        msg2 : dict
+            See `msg1`.
+        geod : pyproj.Geod
+            Used to compute distance.
+
+        Returns
+        -------
+        dict
+            distance : float
+                Distance in natucal miles between the points.
+            timedelta : float
+                Amount of time between the two points in hours.
+            speed : float
+                Required speed in knots to travel between the two points within the
+                time allotted by `timedelta`.
+        """
+
+        x1 = msg1['lon']
+        y1 = msg1['lat']
+
+        x2 = msg2['lon']
+        y2 = msg2['lat']
+
+        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
+        timedelta = self.timedelta(msg1, msg2)
+
+        try:
+            speed = (distance / timedelta)
+        except ZeroDivisionError:
+            speed = INFINITE_SPEED
+
+        return {
+            'distance': distance,
+            'timedelta': timedelta,
+            'speed': speed
+        }
+
     def _compute_best(self, msg):
 
         """
@@ -152,6 +156,8 @@ class Despoofer(object):
 
         Returns the ID or None
         """
+
+        logger.debug("Computing best track for %s", msg)
 
         # best_stats are the stats between the input message and the current best track
         # track_stats are the stats between the input message and the current track
@@ -161,12 +167,12 @@ class Despoofer(object):
         for track in self._tracks.values():
             if best is None:
                 best = track
-                best_stats = msg_diff_stats(msg, best.last_msg, self._geod)
+                best_stats = self.msg_diff_stats(msg, best.last_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
+                logger.debug("    No best - auto-assigned %s", best.id)
 
             else:
-
-                track_stats = msg_diff_stats(msg, best.last_msg, self._geod)
+                track_stats = self.msg_diff_stats(msg, track.last_msg)
                 track_metric = track_stats['timedelta'] * track_stats['distance']
 
                 if track_metric < best_metric:
@@ -174,9 +180,13 @@ class Despoofer(object):
                     best_metric = track_metric
                     best_stats = track_stats
 
+        logger.debug("Best track is %s", best.id)
+        logger.debug("  Num tracks: %s", len(self._tracks))
+
         if best_stats['distance'] <= self.noise_dist or (best_stats['timedelta'] <= self.max_hours and best_stats['speed'] <= self.max_speed):
             return best.id
         else:
+            logger.debug("  Dropped best")
             return None
 
     def despoof(self):
@@ -206,8 +216,14 @@ class Despoofer(object):
             # First check if there are any tracks that are too far away in time and yield them
             _yielded = []
             for track in self._tracks.values():
-                if (msg['timestamp'] - track.last_msg['timestamp']).total_seconds() / 3600 > self.max_hours:
+                td = self.timedelta(msg, track.last_msg)
+                if td > self.max_hours:
                     _yielded.append(track.id)
+                    # logger.debug("Track %s exceeds max time: %s", track.id, td)
+                    # logger.debug("    Current:  %s", msg['timestamp'])
+                    # logger.debug("    Previous: %s", track.last_msg['timestamp'])
+                    # logger.debug("    Time D:   %s", td)
+                    # logger.debug("    Max H:    %s", self.max_hours)
                     yield track
             for y in _yielded:
                 del self._tracks[y]

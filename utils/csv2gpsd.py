@@ -38,7 +38,7 @@ def cli(infile, outfile):
             else:
                 row['lat'] = float(row['lat'])
 
-            row['mmsi'] = 431704490
+            row['mmsi'] = int(row['mmsi'])
 
             dst.write(row)
 

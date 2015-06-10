@@ -11,7 +11,7 @@ import pyproj
 
 
 logger = logging.getLogger('gpsdio-despoof-core')
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 
 
 # See `Despoof()` for more info
@@ -237,13 +237,15 @@ class Despoofer(object):
                 self._create_track(msg)
                 continue
 
+            elif len(self._tracks) is 0:
+                self._create_track(msg)
+
             # Non positional message or lacking timestamp.  Add to the most recent track.
             elif x is None or y is None or timestamp is None:
                 self.last_track.add_msg(msg)
 
             # Everything is set up - process!
             else:
-
                 best_id = self._compute_best(msg)
                 if best_id is None:
                     self._create_track(msg)

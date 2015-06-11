@@ -1,16 +1,26 @@
+# -*- coding: utf-8 -*-
+
+
 """
-A CLI plugin for `gpsdio` that despoofs data.
+Tools for segmenting positional AIS messages into continuous tracks.
+
+Includes a CLI plugin for `gpsdio` to run the algorithm.
 """
+
+
+from .core import Segment
+from .core import Segmentizer
 
 
 __version__ = '0.1'
 __author__ = 'Kevin Wurster'
 __email__ = 'kevin@skytruth.org'
-__source__ = 'https://github.com/SkyTruth/gpsdio-despoof'
+__source__ = 'https://github.com/SkyTruth/gpsdio-segment'
 __license__ = """
 Copyright 2015 SkyTruth
 
 Authors: Kevin Wurster <kevin@skytruth.org>
+Egil Möller <egil@skytruth-org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

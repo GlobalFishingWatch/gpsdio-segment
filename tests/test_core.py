@@ -1,5 +1,5 @@
 """
-Unittests for gpsdio_despoof.core
+Unittests for gpsdio_segment.core
 """
 
 
@@ -7,12 +7,12 @@ from __future__ import division
 
 import datetime
 
-import gpsdio_despoof.core
+import gpsdio_segment.core
 
 
 def test_msg_diff_stats():
 
-    despoofer = gpsdio_despoof.core.Despoofer([])
+    segmenter = gpsdio_segment.core.Segmenter([])
 
     msg1 = {
         'lat': 10,
@@ -27,12 +27,12 @@ def test_msg_diff_stats():
 
     # The method automatically figure out which message is newer and computes
     # a time delta accordingly.  Make sure this happens.
-    stats = despoofer.msg_diff_stats(msg1, msg2)
-    stats2 = despoofer.msg_diff_stats(msg2, msg1)
+    stats = segmenter.msg_diff_stats(msg1, msg2)
+    stats2 = segmenter.msg_diff_stats(msg2, msg1)
     assert stats == stats2
 
     assert round(stats['distance'], 0) == \
-           round(despoofer._geod.inv(msg1['lon'], msg1['lat'],
+           round(segmenter._geod.inv(msg1['lon'], msg1['lat'],
                                      msg2['lon'], msg2['lat'])[2] / 1852, 0)
 
     assert stats['timedelta'] == 36

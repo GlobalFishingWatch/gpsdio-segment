@@ -2,7 +2,7 @@
 
 
 """
-Setup script for gpsdio-despoof
+Setup script for gpsdio-segment
 """
 
 
@@ -23,7 +23,7 @@ version = None
 author = None
 email = None
 source = None
-with open(os.path.join('gpsdio_despoof', '__init__.py')) as f:
+with open(os.path.join('gpsdio_segment', '__init__.py')) as f:
     for line in f:
         if line.strip().startswith('__version__'):
             version = line.split('=')[1].strip().replace('"', '').replace("'", '')
@@ -37,7 +37,7 @@ with open(os.path.join('gpsdio_despoof', '__init__.py')) as f:
             break
 
 
-setup_args = dict(
+setup(
     author=author,
     author_email=email,
     classifiers=[
@@ -54,29 +54,26 @@ setup_args = dict(
         'Topic :: Scientific/Engineering :: Information Analysis',
         'Topic :: Utilities',
     ],
-    description="A plugin for gpsdio to despoof data.",
+    description="A plugin for gpsdio to segment positional AIS messages into continuous tracks.",
     entry_points='''
         [gpsdio.gpsdio_plugins]
-        despoof=gpsdio_despoof.cli:despoof
+        segment=gpsdio_segment.cli:segment
     ''',
     extras_require={
         'test': ['pytest', 'pytest-cov']
     },
     include_package_data=True,
     install_requires=[
-        'gpsdio>=0.0.2',
+        'gpsdio>=0.0.4',
         'click>=0.3',
         'pyproj'
     ],
     keywords='AIS GIS remote sensing raster',
     license=license,
     long_description=readme,
-    name='gpsdio-despoof',
+    name='gpsdio-segment',
     packages=find_packages(),
     url=source,
     version=version,
     zip_safe=True
 )
-
-
-setup(**setup_args)

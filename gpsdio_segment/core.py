@@ -1,5 +1,5 @@
 """
-Core components for despoofing data.
+Core components for segmenting data
 """
 
 
@@ -10,18 +10,18 @@ import logging
 import pyproj
 
 
-logger = logging.getLogger('gpsdio-despoof-core')
+logger = logging.getLogger('gpsdio-segment-core')
 logger.setLevel(logging.DEBUG)
 
 
-# See `Despoof()` for more info
+# See `Segmentizer()` for more info
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 40  # knots
 DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
 INFINITE_SPEED = 1000000
 
 
-class Despoofer(object):
+class Segmentizer(object):
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
                  max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
@@ -35,21 +35,22 @@ class Despoofer(object):
 
         # Internal objects
         self._geod = pyproj.Geod(ellps='WGS84')
-        self._tracks = {}
+        self._segments = {}
         self._last_id = -1
         self._mmsi = mmsi
         self._prev_msg = None
-        self._last_track = None
+        self._last_segment = None
 
-        logger.debug("Created an instance of `Despoofer()` with max_speed=%s, max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
+        logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
+                     "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
 
     def __iter__(self):
 
         """
-        Produces completed tracks.
+        Produces completed segments.
         """
 
-        return self.despoof()
+        return self.process()
 
     @property
     def instream(self):
@@ -70,23 +71,23 @@ class Despoofer(object):
         return self._mmsi
 
     @property
-    def last_track(self):
+    def last_segment(self):
 
-        return self._last_track
+        return self._last_segment
 
-    def _create_track(self, msg):
+    def _create_segment(self, msg):
 
         """
-        Add a new track to the track container.
+        Add a new segments to the segments container.
         """
 
         self._last_id += 1
 
-        t = Track(self._last_id, self.mmsi)
+        t = Segment(self._last_id, self.mmsi)
         t.add_msg(msg)
 
-        self._tracks[self._last_id] = t
-        self._last_track = t
+        self._segments[self._last_id] = t
+        self._last_segment = t
 
     def timedelta(self, msg1, msg2):
 
@@ -152,36 +153,36 @@ class Despoofer(object):
     def _compute_best(self, msg):
 
         """
-        Compute which track is the best track
+        Compute which segment is the best segment
 
         Returns the ID or None
         """
 
-        logger.debug("Computing best track for %s", msg)
+        logger.debug("Computing best segment for %s", msg)
 
-        # best_stats are the stats between the input message and the current best track
-        # track_stats are the stats between the input message and the current track
+        # best_stats are the stats between the input message and the current best segment
+        # segment_stats are the stats between the input message and the current segment
         best_stats = None
         best = None
         best_metric = None
-        for track in self._tracks.values():
+        for segment in self._segments.values():
             if best is None:
-                best = track
+                best = segment
                 best_stats = self.msg_diff_stats(msg, best.last_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
                 logger.debug("    No best - auto-assigned %s", best.id)
 
             else:
-                track_stats = self.msg_diff_stats(msg, track.last_msg)
-                track_metric = track_stats['timedelta'] * track_stats['distance']
+                segment_stats = self.msg_diff_stats(msg, segment.last_msg)
+                segment_metric = segment_stats['timedelta'] * segment_stats['distance']
 
-                if track_metric < best_metric:
-                    best = track
-                    best_metric = track_metric
-                    best_stats = track_stats
+                if segment_metric < best_metric:
+                    best = segment
+                    best_metric = segment_metric
+                    best_stats = segment_stats
 
-        logger.debug("Best track is %s", best.id)
-        logger.debug("  Num tracks: %s", len(self._tracks))
+        logger.debug("Best segment is %s", best.id)
+        logger.debug("  Num segments: %s", len(self._segments))
 
         if best_stats['distance'] <= self.noise_dist or (best_stats['timedelta'] <= self.max_hours and best_stats['speed'] <= self.max_speed):
             return best.id
@@ -189,20 +190,20 @@ class Despoofer(object):
             logger.debug("  Dropped best")
             return None
 
-    def despoof(self):
+    def process(self):
 
         """
         The method that does all the work.  Creates a generator that spits out
-        finished tracks.  Rather than calling this directly the intended use of
-        this class is:
+        finished segments.  Rather than calling this directly the intended use
+        of this class is:
 
             >>> import gpsdio
             >>> with gpsdio.open('infile.ext') as src:
-            ...    for track in Despoofer(src):
-            ...        # Do something with the track
+            ...    for segment in Segmentizer(src):
+            ...        # Do something with the segment
         """
 
-        logger.debug("Starting to despoof%s",
+        logger.debug("Starting to segment %s",
                      ' %s' % self._mmsi if self._mmsi is not None else ' - finding MMSI ...')
 
         for idx, msg in enumerate(self.instream):
@@ -213,54 +214,55 @@ class Despoofer(object):
             x = msg.get('lon')
             timestamp = msg.get('timestamp')
 
-            # First check if there are any tracks that are too far away in time and yield them
+            # First check if there are any segments that are too far away
+            # in time and yield them
             _yielded = []
-            for track in self._tracks.values():
-                td = self.timedelta(msg, track.last_msg)
+            for segment in self._segments.values():
+                td = self.timedelta(msg, segment.last_msg)
                 if td > self.max_hours:
-                    _yielded.append(track.id)
-                    # logger.debug("Track %s exceeds max time: %s", track.id, td)
+                    _yielded.append(segment.id)
+                    # logger.debug("Segment %s exceeds max time: %s", segment.id, td)
                     # logger.debug("    Current:  %s", msg['timestamp'])
-                    # logger.debug("    Previous: %s", track.last_msg['timestamp'])
+                    # logger.debug("    Previous: %s", segment.last_msg['timestamp'])
                     # logger.debug("    Time D:   %s", td)
                     # logger.debug("    Max H:    %s", self.max_hours)
-                    yield track
-            for y in _yielded:
-                del self._tracks[y]
+                    yield segment
+            for s_id in _yielded:
+                del self._segments[s_id]
 
             # This is the first message with a valid MMSI
-            # Make it the previous message and create a new track
+            # Make it the previous message and create a new segment
             if self.mmsi is None:
                 logger.debug("Found a valid MMSI - processing: %s", mmsi)
                 self._mmsi = mmsi
                 self._prev_msg = msg
-                self._create_track(msg)
+                self._create_segment(msg)
                 continue
 
-            elif len(self._tracks) is 0:
-                self._create_track(msg)
+            elif len(self._segments) is 0:
+                self._create_segment(msg)
 
-            # Non positional message or lacking timestamp.  Add to the most recent track.
+            # Non positional message or lacking timestamp.  Add to the most recent segment.
             elif x is None or y is None or timestamp is None:
-                self.last_track.add_msg(msg)
+                self.last_segment.add_msg(msg)
 
             # Everything is set up - process!
             else:
                 best_id = self._compute_best(msg)
                 if best_id is None:
-                    self._create_track(msg)
+                    self._create_segment(msg)
                 else:
-                    self._tracks[best_id].add_msg(msg)
-                    self._last_track = self._tracks[best_id]
+                    self._segments[best_id].add_msg(msg)
+                    self._last_segment = self._segments[best_id]
 
             self._prev_msg = msg
 
-        # No more points to process.  Yield all the remaining tracks.
-        for series, track in self._tracks.items():
-            yield track
+        # No more points to process.  Yield all the remaining segments.
+        for series, segment in self._segments.items():
+            yield segment
 
 
-class Track(object):
+class Segment(object):
 
     def __init__(self, id, mmsi, id_field='series'):
         self._id = id
@@ -272,7 +274,7 @@ class Track(object):
         self._id_field = id_field
         self._iter_idx = 0
 
-        logger.debug("Created an in instance of `Track()` with ID: %s", id)
+        logger.debug("Created an in instance of `Segment()` with ID: %s", id)
 
     def __iter__(self):
         return self

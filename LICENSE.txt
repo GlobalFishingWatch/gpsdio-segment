@@ -1,7 +1,8 @@
 Copyright 2014-2015 SkyTruth
 Authors:
-Egil Möller <egil@skytruth-org>
+
 Kevin Wurster <kevin@skytruth.org>
+Egil Möller <egil@skytruth-org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

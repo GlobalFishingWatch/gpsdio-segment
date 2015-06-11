@@ -1,5 +1,5 @@
 """
-Commandline interface for gpsdio-sort
+Commandline interface for gpsdio-segment
 """
 
 
@@ -9,23 +9,23 @@ import click
 import gpsdio
 import gpsdio.drivers
 
-import gpsdio_despoof
-from gpsdio_despoof.core import Despoofer
-from gpsdio_despoof.core import DEFAULT_MAX_SPEED
-from gpsdio_despoof.core import DEFAULT_MAX_HOURS
-from gpsdio_despoof.core import DEFAULT_NOISE_DIST
+import gpsdio_segment
+from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.core import DEFAULT_MAX_SPEED
+from gpsdio_segment.core import DEFAULT_MAX_HOURS
+from gpsdio_segment.core import DEFAULT_NOISE_DIST
 
 
 logging.basicConfig()
 
 
 @click.command()
-@click.version_option(version=gpsdio_despoof.__version__)
+@click.version_option(version=gpsdio_segment.__version__)
 @click.argument('infile', required=True)
 @click.argument('outfile', required=True)
 @click.option(
     '--mmsi', type=click.INT,
-    help="Only despoof this MMSI.  If not given the first MMSI found will be used."
+    help="Only segment this MMSI.  If not given the first MMSI found will be used."
 )
 @click.option(
     '--max-hours', type=click.FLOAT, default=DEFAULT_MAX_HOURS,
@@ -44,13 +44,13 @@ logging.basicConfig()
          "(default: {})".format(DEFAULT_NOISE_DIST)
 )
 @click.pass_context
-def despoof(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
+def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
 
     """
-    Despoof AIS data into multiple tracks.
+    Segment AIS data into continuous segments.
     """
 
-    logger = logging.getLogger('gpsdio-despoof-cli')
+    logger = logging.getLogger('gpsdio-segment-cli')
     logger.setLevel(ctx.obj.get('verbosity', 1))
 
     o_drv = ctx.obj.get('o_drv')
@@ -66,21 +66,20 @@ def despoof(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
             gpsdio.open(outfile, 'a',
                         driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
-        despoofer = Despoofer(
-            src, mmsi=mmsi, max_hours=max_hours, max_speed=max_speed, noise_dist=noise_dist)
-
-        logger.debug("Begining to despoof")
+        logger.debug("Begining to segment")
         longest_id = None
         longest_count = None
-        for t_idx, track in enumerate(despoofer.despoof()):
+        for t_idx, segment in enumerate(Segmentizer(
+                src, mmsi=mmsi, max_hours=max_hours,
+                max_speed=max_speed, noise_dist=noise_dist)):
 
-            if longest_id is None or len(track) > longest_count:
-                longest_id = track.id
-                longest_count = len(track)
+            if longest_id is None or len(segment) > longest_count:
+                longest_id = segment.id
+                longest_count = len(segment)
 
-            # if len(track) > 1:
-            print("Writing track %s with %s messages and %s points" % (track.id, len(track), len(track.coords)))
-            for msg in track:
+            # if len(segment) > 1:
+            print("Writing segment %s with %s messages and %s points" % (segment.id, len(segment), len(segment.coords)))
+            for msg in segment:
                 dst.write(msg)
         print("Longest is %s with %s" % (longest_id, longest_count))
-        print("Wrote %s tracks" % (t_idx + 1))
+        print("Wrote %s segments" % (t_idx + 1))

@@ -43,8 +43,12 @@ logging.basicConfig()
          "continuous.  Used to allow a certain amount of GPS noise. "
          "(default: {})".format(DEFAULT_NOISE_DIST)
 )
+@click.option(
+    '--series-field', default='series',
+    help="Add the segment ID to this field when writing messages. (default: series)"
+)
 @click.pass_context
-def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
+def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series_field):
 
     """
     Segment AIS data into continuous segments.
@@ -80,6 +84,7 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist):
             # if len(segment) > 1:
             print("Writing segment %s with %s messages and %s points" % (segment.id, len(segment), len(segment.coords)))
             for msg in segment:
+                msg[series_field] = segment.id
                 dst.write(msg)
         print("Longest is %s with %s" % (longest_id, longest_count))
         print("Wrote %s segments" % (t_idx + 1))

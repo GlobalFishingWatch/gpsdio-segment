@@ -5,11 +5,15 @@ Core components for segmenting data
 
 from __future__ import division
 
+from copy import deepcopy
+from itertools import chain
 import logging
+import warnings
 
 import pyproj
 
 
+logging.basicConfig()
 logger = logging.getLogger('gpsdio-segment-core')
 logger.setLevel(logging.DEBUG)
 
@@ -51,6 +55,11 @@ class Segmentizer(object):
         """
 
         return self.process()
+
+    def __repr__(self):
+        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>"\
+            .format(cname=self.__class__.__name__, mspeed=self.max_speed,
+                    mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
 
     @property
     def instream(self):
@@ -182,12 +191,18 @@ class Segmentizer(object):
                     best_stats = segment_stats
 
         logger.debug("Best segment is %s", best.id)
-        logger.debug("  Num segments: %s", len(self._segments))
+        logger.debug("    Num segments: %s", len(self._segments))
 
+        # TODO: An explicit timedelta check should probably be added to the first part of if
+        #       Currently a point within noise distance but is outside time will be added
+        #       but ONLY if tracks are not closed when out of time range for some reason.
+        #       A better check is one that also incorporates max_hours rather than relying
+        #       on tracks that are outside the allowed time delta be closed.
+        #       Need to finish some unittests before adding this.
         if best_stats['distance'] <= self.noise_dist or (best_stats['timedelta'] <= self.max_hours and best_stats['speed'] <= self.max_speed):
             return best.id
         else:
-            logger.debug("  Dropped best")
+            logger.debug("    Dropped best")
             return None
 
     def process(self):
@@ -246,6 +261,11 @@ class Segmentizer(object):
             elif x is None or y is None or timestamp is None:
                 self.last_segment.add_msg(msg)
 
+            # Found an MMSI that does not match - skip
+            elif mmsi != self.mmsi:
+                logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
+                continue
+
             # Everything is set up - process!
             else:
                 best_id = self._compute_best(msg)
@@ -264,14 +284,13 @@ class Segmentizer(object):
 
 class Segment(object):
 
-    def __init__(self, id, mmsi, id_field='series'):
+    def __init__(self, id, mmsi):
         self._id = id
         self._mmsi = mmsi
 
         self._msgs = []
         self._coords = []
 
-        self._id_field = id_field
         self._iter_idx = 0
 
         logger.debug("Created an in instance of `Segment()` with ID: %s", id)
@@ -288,19 +307,18 @@ class Segment(object):
         Returns a message with an added series value.
         """
 
+        warnings.warn("This is an annoying warning to remind you to fix the iterator "
+                      "so that Segment() can be iterated over multiple times.")
+
         # Already returned all the messages - be sure to update the cursor
         if self._iter_idx >= len(self.msgs):
-            try:
-                raise StopIteration
-            finally:
-                self._iter_idx = 0
+            self._iter_idx = 0
+            raise StopIteration
 
         # Add the series value and return the message
         # Iterate the cursor
         try:
-            msg = self.msgs[self._iter_idx]
-            msg[self._id_field] = self.id
-            return msg
+            return self.msgs[self._iter_idx]
         finally:
             self._iter_idx += 1
 
@@ -330,12 +348,18 @@ class Segment(object):
     def last_msg(self):
         return self.msgs[-1]
 
+    @property
+    def bounds(self):
+        c = list(chain(*self.coords))
+        return min(c[0::2]), min(c[1::2]), max(c[2::2]), max(c[3::2])
+
     def add_msg(self, msg):
 
         if msg.get('mmsi') != self.mmsi:
             raise ValueError(
-                'MMSI mismatch: {internal} != {new}'.format(internal=self.mmsi, new=msg.get('mmsi')))
-
+                'MMSI mismatch: {internal} != {new}'.format(
+                    internal=self.mmsi, new=msg.get('mmsi')))
+        msg = deepcopy(msg)
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:
-            self._coords.append((msg.get('lon'), msg.get('lat')))
+            self._coords.append((msg['lon'], msg['lat']))

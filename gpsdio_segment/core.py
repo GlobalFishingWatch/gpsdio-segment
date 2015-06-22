@@ -8,7 +8,6 @@ from __future__ import division
 from copy import deepcopy
 from itertools import chain
 import logging
-import warnings
 
 import pyproj
 
@@ -78,11 +77,6 @@ class Segmentizer(object):
         """
 
         return self._mmsi
-
-    @property
-    def last_segment(self):
-
-        return self._last_segment
 
     def _create_segment(self, msg):
 
@@ -177,12 +171,12 @@ class Segmentizer(object):
         for segment in self._segments.values():
             if best is None:
                 best = segment
-                best_stats = self.msg_diff_stats(msg, best.last_msg)
+                best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
                 logger.debug("    No best - auto-assigned %s", best.id)
 
             else:
-                segment_stats = self.msg_diff_stats(msg, segment.last_msg)
+                segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
                 segment_metric = segment_stats['timedelta'] * segment_stats['distance']
 
                 if segment_metric < best_metric:
@@ -230,18 +224,20 @@ class Segmentizer(object):
             timestamp = msg.get('timestamp')
 
             # First check if there are any segments that are too far away
-            # in time and yield them
+            # in time and yield them.  It's possible for messages to not
+            # have a timestamp so only do this if the current point has a TS.
             _yielded = []
             for segment in self._segments.values():
-                td = self.timedelta(msg, segment.last_msg)
-                if td > self.max_hours:
-                    _yielded.append(segment.id)
-                    # logger.debug("Segment %s exceeds max time: %s", segment.id, td)
-                    # logger.debug("    Current:  %s", msg['timestamp'])
-                    # logger.debug("    Previous: %s", segment.last_msg['timestamp'])
-                    # logger.debug("    Time D:   %s", td)
-                    # logger.debug("    Max H:    %s", self.max_hours)
-                    yield segment
+                if timestamp and segment.last_msg.get('timestamp'):
+                    td = self.timedelta(msg, segment.last_msg)
+                    if td > self.max_hours:
+                        _yielded.append(segment.id)
+                        # logger.debug("Segment %s exceeds max time: %s", segment.id, td)
+                        # logger.debug("    Current:  %s", msg['timestamp'])
+                        # logger.debug("    Previous: %s", segment.last_msg['timestamp'])
+                        # logger.debug("    Time D:   %s", td)
+                        # logger.debug("    Max H:    %s", self.max_hours)
+                        yield segment
             for s_id in _yielded:
                 del self._segments[s_id]
 
@@ -254,17 +250,18 @@ class Segmentizer(object):
                 self._create_segment(msg)
                 continue
 
-            elif len(self._segments) is 0:
-                self._create_segment(msg)
-
-            # Non positional message or lacking timestamp.  Add to the most recent segment.
-            elif x is None or y is None or timestamp is None:
-                self.last_segment.add_msg(msg)
-
             # Found an MMSI that does not match - skip
             elif mmsi != self.mmsi:
                 logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
                 continue
+
+            # Non positional message or lacking timestamp.  Add to the most recent segment.
+            elif not x or not y or not timestamp:
+                self._last_segment.add_msg(msg)
+
+            # All segments have been closed - create a new one
+            elif len(self._segments) is 0:
+                self._create_segment(msg)
 
             # Everything is set up - process!
             else:
@@ -275,7 +272,8 @@ class Segmentizer(object):
                     self._segments[best_id].add_msg(msg)
                     self._last_segment = self._segments[best_id]
 
-            self._prev_msg = msg
+            if x and y and timestamp:
+                self._prev_msg = msg
 
         # No more points to process.  Yield all the remaining segments.
         for series, segment in self._segments.items():
@@ -295,34 +293,37 @@ class Segment(object):
 
         logger.debug("Created an in instance of `Segment()` with ID: %s", id)
 
+    def __repr__(self):
+        return "<{cname}(id={id}, mmsi={mmsi}) with {msg_cnt} msgs at {hsh}>".format(
+            cname=self.__class__.__name__, id=self.id, msg_cnt=len(self),
+            mmsi=self.mmsi, hsh=hash(self))
+
     def __iter__(self):
-        return self
+        return iter(self.msgs)
 
     def __len__(self):
         return len(self.msgs)
 
-    def next(self):
-
-        """
-        Returns a message with an added series value.
-        """
-
-        warnings.warn("This is an annoying warning to remind you to fix the iterator "
-                      "so that Segment() can be iterated over multiple times.")
-
-        # Already returned all the messages - be sure to update the cursor
-        if self._iter_idx >= len(self.msgs):
-            self._iter_idx = 0
-            raise StopIteration
-
-        # Add the series value and return the message
-        # Iterate the cursor
-        try:
-            return self.msgs[self._iter_idx]
-        finally:
-            self._iter_idx += 1
-
-    __next__ = next
+    # def next(self):
+    #
+    #     """
+    #     Returns a message with an added series value.
+    #     """
+    #
+    #     # Add the series value and return the message
+    #     # Iterate the cursor
+    #     try:
+    #         return self.msgs[self._iter_idx]
+    #     except IndexError:
+    #         raise StopIteration
+    #     # finally:
+    #     #     if self._iter_idx >= len(self.msgs):
+    #     #         self._iter_idx = 0
+    #     #         raise StopIteration
+    #     #     else:
+    #     #         self._iter_idx += 1
+    #
+    # __next__ = next
 
     @property
     def id(self):
@@ -342,11 +343,49 @@ class Segment(object):
 
     @property
     def last_point(self):
-        return self.coords[-1]
+        try:
+            return self.coords[-1]
+        except IndexError:
+            return None
 
     @property
     def last_msg(self):
-        return self.msgs[-1]
+
+        """
+        Return the last message added to the segment.
+        """
+
+        try:
+            return self.msgs[-1]
+        except IndexError:
+            return None
+
+    @property
+    def last_posit_msg(self):
+
+        """
+        Return the last message added to the segment with lat and lon values
+        that are not `None`.
+        """
+
+        for msg in reversed(self.msgs):
+            if msg.get('lat') is not None \
+                    and msg.get('lon') is not None:
+                return msg
+
+    @property
+    def last_time_posit_msg(self):
+
+        """
+        Return the last message added to the segment with lat, lon, and timestamp
+        values that are not `None`.
+        """
+
+        for msg in reversed(self.msgs):
+            if msg.get('lat') is not None \
+                    and msg.get('lon') is not None \
+                    and msg.get('timestamp') is not None:
+                return msg
 
     @property
     def bounds(self):

@@ -1,5 +1,5 @@
 """
-Unittests for specific rules for segmentation.
+Unittests for specific segmentation rules.
 """
 
 
@@ -88,3 +88,40 @@ def test_bad_speed_good_time():
     assert len(segments) == 2
     for seg in segments:
         assert len(seg) == 1
+
+
+# def test_with_non_posit():
+#     # Non-positional messages should be added to the segment that was last touched
+#     # This should produce two segments, each with 3 points - two of which are
+#     # positional and 1 that is a non-posit
+#
+#     # These two are continuous
+#     msg1 = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
+#     msg2 = {'mmsi': 1, 'lat': 1, 'lon': 1, 'timestamp': msg1['timestamp'] - timedelta(days=10)}
+#
+#     # This msg should be added to the same track as the above 2
+#     msg3 = {'mmsi': 1}
+#
+#     # These two are continuous but not with msg1 or msg2
+#     msg4 = {'mmsi': 1, 'lat': 90, 'lon': -180, 'timestamp': datetime.now()}
+#     msg5 = {'mmsi': 1, 'lat': 90, 'lon': -180, 'timestamp': msg1['timestamp'] - timedelta(days=10)}
+#
+#     # This msg should be added to the same track as the above 2
+#     msg6 = {'mmsi': 1}
+#
+#     for seg in list(Segmentizer([msg1, msg2, msg4, msg5])):
+#         print(seg)
+#     assert False
+
+    # from pprint import pprint
+    # for idx, seg in enumerate(list(Segmentizer([msg1, msg2, msg3, msg4, msg5, msg6]))):
+    #     pprint("%s, %s" % (idx, seg.msgs))
+    # assert False
+
+    # # Should produce two segments, each with a single point
+    # stats = segmenter.msg_diff_stats(p1, p2)
+    # assert stats['speed'] > segmenter.max_speed
+    # assert stats['timedelta'] <= segmenter.max_hours
+    # assert len(segments) == 2
+    # for seg in segments:
+    #     assert len(seg) == 1

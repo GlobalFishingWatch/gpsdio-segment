@@ -57,20 +57,12 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series
     logger = logging.getLogger('gpsdio-segment-cli')
     logger.setLevel(ctx.obj.get('verbosity', 1))
 
-    o_drv = ctx.obj.get('o_drv')
-    o_cmp = ctx.obj.get('o_cmp')
-    out_ext = ''
-    if o_drv is not None:
-        out_ext += '.' + gpsdio.drivers.get_driver(o_drv).extensions[0]
-    if o_cmp is not None:
-        out_ext += '.' + gpsdio.drivers.get_compression(o_cmp).extensions[0]
-
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),
                      compression=ctx.obj.get('i_cmp')) as src, \
             gpsdio.open(outfile, 'a',
                         driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
-        logger.debug("Begining to segment")
+        logger.debug("Beginning to segment")
         longest_id = None
         longest_count = None
         for t_idx, segment in enumerate(Segmentizer(
@@ -81,7 +73,6 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series
                 longest_id = segment.id
                 longest_count = len(segment)
 
-            # if len(segment) > 1:
             print("Writing segment %s with %s messages and %s points" % (segment.id, len(segment), len(segment.coords)))
             for msg in segment:
                 msg[series_field] = segment.id

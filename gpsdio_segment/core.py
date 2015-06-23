@@ -14,7 +14,6 @@ import pyproj
 
 logging.basicConfig()
 logger = logging.getLogger('gpsdio-segment-core')
-logger.setLevel(logging.DEBUG)
 
 
 # See `Segmentizer()` for more info
@@ -110,7 +109,7 @@ class Segmentizer(object):
         """
         Compute the stats required to determine if two points are continuous.  Input
         messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
-        `timestamp` must be an instance of `datetime.datetime`.
+        `timestamp` must be an instance of `datetime.datetime()`.
 
         Parameters
         ----------
@@ -118,8 +117,6 @@ class Segmentizer(object):
             A GPSD message.
         msg2 : dict
             See `msg1`.
-        geod : pyproj.Geod
-            Used to compute distance.
 
         Returns
         -------

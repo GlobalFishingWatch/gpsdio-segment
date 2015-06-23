@@ -6,6 +6,9 @@ Unittests for specific segmentation rules.
 from datetime import datetime
 from datetime import timedelta
 
+from click.testing import CliRunner
+
+import gpsdio_segment.cli
 from gpsdio_segment.core import Segmentizer
 
 

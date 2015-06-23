@@ -63,19 +63,12 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series
                         driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
         logger.debug("Beginning to segment")
-        longest_id = None
-        longest_count = None
-        for t_idx, segment in enumerate(Segmentizer(
+        for t_idx, seg in enumerate(Segmentizer(
                 src, mmsi=mmsi, max_hours=max_hours,
                 max_speed=max_speed, noise_dist=noise_dist)):
 
-            if longest_id is None or len(segment) > longest_count:
-                longest_id = segment.id
-                longest_count = len(segment)
-
-            print("Writing segment %s with %s messages and %s points" % (segment.id, len(segment), len(segment.coords)))
-            for msg in segment:
-                msg[series_field] = segment.id
+            logger.debug("Writing segment %s with %s messages and %s points",
+                         (seg.id, len(seg), len(seg.coords)))
+            for msg in seg:
+                msg[series_field] = seg.id
                 dst.write(msg)
-        print("Longest is %s with %s" % (longest_id, longest_count))
-        print("Wrote %s segments" % (t_idx + 1))

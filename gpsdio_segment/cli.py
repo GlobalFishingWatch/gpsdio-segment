@@ -44,11 +44,11 @@ logging.basicConfig()
          "(default: {})".format(DEFAULT_NOISE_DIST)
 )
 @click.option(
-    '--series-field', default='series',
-    help="Add the segment ID to this field when writing messages. (default: series)"
+    '--segment-field', default='segment',
+    help="Add the segment ID to this field when writing messages. (default: segment)"
 )
 @click.pass_context
-def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series_field):
+def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, segment_field):
 
     """
     Segment AIS data into continuous segments.
@@ -68,7 +68,7 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, series
                 max_speed=max_speed, noise_dist=noise_dist)):
 
             logger.debug("Writing segment %s with %s messages and %s points",
-                         (seg.id, len(seg), len(seg.coords)))
+                         seg.id, len(seg), len(seg.coords))
             for msg in seg:
-                msg[series_field] = seg.id
+                msg[segment_field] = seg.id
                 dst.write(msg)

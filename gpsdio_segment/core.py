@@ -133,8 +133,16 @@ class Segmentizer(object):
         x1 = msg1['lon']
         y1 = msg1['lat']
 
-        x2 = msg2['lon']
-        y2 = msg2['lat']
+        try:
+            x2 = msg2['lon']
+            y2 = msg2['lat']
+        except Exception:
+            from pprint import pformat
+            logger.debug("MSG ISSUE1: %s", msg1)
+            logger.debug("MSG ISSUE2: %s", msg2)
+            logger.debug("SEGMENTS: %s", self._segments)
+            logger.debug(pformat(self._segments[0].msgs))
+            raise
 
         distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
         timedelta = self.timedelta(msg1, msg2)
@@ -166,13 +174,13 @@ class Segmentizer(object):
         best = None
         best_metric = None
         for segment in self._segments.values():
-            if best is None:
+            if not best and segment.last_time_posit_msg:
                 best = segment
                 best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
                 logger.debug("    No best - auto-assigned %s", best.id)
 
-            else:
+            elif segment.last_time_posit_msg:
                 segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
                 segment_metric = segment_stats['timedelta'] * segment_stats['distance']
 
@@ -180,6 +188,12 @@ class Segmentizer(object):
                     best = segment
                     best_metric = segment_metric
                     best_stats = segment_stats
+
+        if best is None:
+            best = self._segments[sorted(self._segments.keys())[0]]
+            logger.debug("Could not determine best, probably because none of the segments "
+                         "have any positional messages.  Defaulting to first: %s", best.id)
+            return best.id
 
         logger.debug("Best segment is %s", best.id)
         logger.debug("    Num segments: %s", len(self._segments))
@@ -261,6 +275,8 @@ class Segmentizer(object):
                 self._create_segment(msg)
 
             # Everything is set up - process!
+            elif timestamp < self._prev_msg['timestamp']:
+                raise ValueError("Input data is unsorted")
             else:
                 best_id = self._compute_best(msg)
                 if best_id is None:

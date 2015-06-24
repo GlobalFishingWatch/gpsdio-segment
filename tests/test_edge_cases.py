@@ -1,6 +1,8 @@
 from datetime import datetime
 from datetime import timedelta
 
+import pytest
+
 from gpsdio_segment.core import Segmentizer
 
 
@@ -8,8 +10,11 @@ def test_first_is_non_posit():
     pass
 
 
-def test_out_of_order():
-    pass
+def test_unsorted():
+    before = {'mmsi': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90}
+    after = {'mmsi': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90}
+    with pytest.raises(ValueError):
+        list(Segmentizer([after, before]))
 
 
 def test_same_point_same_time():

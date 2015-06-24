@@ -264,22 +264,25 @@ def test_538004505(tmpdir):
         assert compare(pair_def, src)
 
 
-# def test_205316000(tmpdir):
-#     pair_def = {
-#         'is_same': False,
-#         'mmsi': 205316000,
-#
-#         'ts1': '2014-08-06 12:59:09',
-#         'lon1': 3.1858482361,
-#         'lat1': 51.635723114,
-#
-#         'ts2': '2014-08-07 03:09:27',
-#         'lon2': 5.1019883156,
-#         'lat2': 53.8683776855,
-#     }
-#
-#     with gpsdio.open(process('tests/data/point-pair/205316000.msg.gz', tmpdir)) as src:
-#         assert compare(pair_def, src)
+def test_205316000(tmpdir):
+    # This test was originally designed to show a vessel with a gap between points
+    # that was > 100 NM but that criteria has been removed.
+    # No reason to remove the test so we flip is_same to True
+    pair_def = {
+        'is_same': True,
+        'mmsi': 205316000,
+
+        'ts1': '2014-08-06 12:59:09',
+        'lon1': 3.1858482361,
+        'lat1': 51.635723114,
+
+        'ts2': '2014-08-07 03:09:27',
+        'lon2': 5.1019883156,
+        'lat2': 53.8683776855,
+    }
+
+    with gpsdio.open(process('tests/data/point-pair/205316000.msg.gz', tmpdir)) as src:
+        assert compare(pair_def, src)
 
 
 def test_227317360(tmpdir):

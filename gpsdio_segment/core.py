@@ -133,16 +133,8 @@ class Segmentizer(object):
         x1 = msg1['lon']
         y1 = msg1['lat']
 
-        try:
-            x2 = msg2['lon']
-            y2 = msg2['lat']
-        except Exception:
-            from pprint import pformat
-            logger.debug("MSG ISSUE1: %s", msg1)
-            logger.debug("MSG ISSUE2: %s", msg2)
-            logger.debug("SEGMENTS: %s", self._segments)
-            logger.debug(pformat(self._segments[0].msgs))
-            raise
+        x2 = msg2['lon']
+        y2 = msg2['lat']
 
         distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
         timedelta = self.timedelta(msg1, msg2)

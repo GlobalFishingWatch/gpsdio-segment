@@ -60,7 +60,7 @@ setup(
         segment=gpsdio_segment.cli:segment
     ''',
     extras_require={
-        'test': ['pytest', 'pytest-cov']
+        'dev': ['pytest', 'pytest-cov']
     },
     include_package_data=True,
     install_requires=[

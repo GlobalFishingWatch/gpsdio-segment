@@ -2,8 +2,9 @@
 gpsdio-segment
 ==============
 
-.. image:: https://codeship.com/projects/640e1460-f82b-0132-6b38-021f9e2ec51a/status?branch=master
-    :target: https://codeship.com/projects/86547
+.. image:: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment.svg?token=tu7qmzYG3ruJYdnto4aT
+    :target: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment
+
 
 Segment a stream of messages into continuous tracks.
 
@@ -51,11 +52,11 @@ Developing
     $ cd gpsdio-segment
     $ virtualenv venv
     $ source venv/bin/activate
-    $ pip install -e .[test]
+    $ pip install -e .\[dev\]
     $ py.test tests --cov gpsdio_segment --cov-report term-missing
 
 
 License
 -------
 
-See ``LICENSE.txt``.
+See ``LICENSE.txt``

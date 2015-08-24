@@ -1,0 +1,14 @@
+language: python
+
+python:
+  - '2.7'
+
+install:
+  - pip install -e .\[dev\]
+
+script:
+  - py.test tests --cov gpsdio_segment --cov-report term-missing
+
+notifications:
+  flowdock:
+    secure: sSDUIIuldA7tWGqgexf+nmeC/+Htm97bwcPaZOHv2+/c3jKsxUoMMnwkcT3ChqPTEvqs2pGoAYuSDDOWXYUZTpETmZyfECmSqPdfD9nePdqDCum8Q909jlttJWR4jmMuhToNifXdwIkPjnspnLrnxCj92/9/Nx/9uSo/+JfPfE0=

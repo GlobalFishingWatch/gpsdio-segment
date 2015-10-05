@@ -8,6 +8,8 @@ from __future__ import division
 from copy import deepcopy
 from itertools import chain
 import logging
+import datetime
+from gpsdio.schema import datetime2str
 
 import pyproj
 
@@ -26,7 +28,8 @@ INFINITE_SPEED = 1000000
 class Segmentizer(object):
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
+                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST,
+                 seg_sates=None):
 
         self.max_hours = max_hours
         self.max_speed = max_speed
@@ -38,10 +41,19 @@ class Segmentizer(object):
         # Internal objects
         self._geod = pyproj.Geod(ellps='WGS84')
         self._segments = {}
-        self._last_id = -1
         self._mmsi = mmsi
         self._prev_msg = None
         self._last_segment = None
+
+        if seg_sates:
+            for state in seg_sates:
+                seg = Segment.from_state(state)
+                self._segments[seg.id] = seg
+            self._last_segment = max(self._segments, lambda x: x.last_msg().get('timestamp'))
+            if mmsi:
+                assert mmsi == self._last_segment.mmsi
+            self.mmsi = self._last_segment.mmsi
+            self._prev_msg = self._last_segment.last_msg
 
         logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
                      "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
@@ -76,6 +88,14 @@ class Segmentizer(object):
         """
 
         return self._mmsi
+    def _segment_unique_id(self, msg):
+        ts = msg['timestamp']
+        while True:
+            seg_id = '{}-{}'.format(msg['mmsi'], datetime2str(ts))
+            if seg_id not in self._segments:
+                return seg_id
+            ts += datetime.timedelta(milliseconds=1)
+
 
     def _create_segment(self, msg):
 
@@ -83,12 +103,11 @@ class Segmentizer(object):
         Add a new segments to the segments container.
         """
 
-        self._last_id += 1
-
-        t = Segment(self._last_id, self.mmsi)
+        id = self._segment_unique_id(msg)
+        t = Segment(id, self.mmsi)
         t.add_msg(msg)
 
-        self._segments[self._last_id] = t
+        self._segments[id] = t
         self._last_segment = t
 
     def timedelta(self, msg1, msg2):

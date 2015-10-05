@@ -63,9 +63,10 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, segmen
                         driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
         logger.debug("Beginning to segment")
-        for t_idx, seg in enumerate(Segmentizer(
+        segments = sorted(Segmentizer(
                 src, mmsi=mmsi, max_hours=max_hours,
-                max_speed=max_speed, noise_dist=noise_dist)):
+                max_speed=max_speed, noise_dist=noise_dist), key=lambda x: x.id)
+        for t_idx, seg in enumerate(segments):
 
             logger.debug("Writing segment %s with %s messages and %s points",
                          seg.id, len(seg), len(seg.coords))

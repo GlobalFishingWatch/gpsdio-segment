@@ -6,17 +6,15 @@ Setup script for gpsdio-segment
 """
 
 
+import codecs
 import os
+
 from setuptools import find_packages
 from setuptools import setup
 
 
-with open('README.rst') as f:
+with codecs.open('README.rst', encoding='utf-8') as f:
     readme = f.read().strip()
-
-
-with open('LICENSE.txt') as f:
-    license = f.read().strip()
 
 
 version = None
@@ -54,25 +52,31 @@ setup(
         'Topic :: Scientific/Engineering :: Information Analysis',
         'Topic :: Utilities',
     ],
-    description="A plugin for gpsdio to segment positional AIS messages into continuous tracks.",
+    description="A plugin for gpsdio to segment positional AIS messages into "
+                "continuous tracks.",
     entry_points='''
         [gpsdio.gpsdio_plugins]
         segment=gpsdio_segment.cli:segment
     ''',
     extras_require={
-        'dev': ['pytest', 'pytest-cov']
+        'dev': [
+            'pytest',
+            'pytest-cov',
+            'coverage'
+        ]
     },
     include_package_data=True,
     install_requires=[
-        'gpsdio>=0.0.4',
+        'gpsdio==0.0.7',
         'click>=0.3',
-        'pyproj'
+        'pyproj',
+        'newlinejson<1.0'
     ],
-    keywords='AIS GIS remote sensing raster',
-    license=license,
+    keywords='AIS GIS remote sensing',
+    license="Apache 2.0",
     long_description=readme,
     name='gpsdio-segment',
-    packages=find_packages(),
+    packages=find_packages(exclude=['test*.*', 'tests']),
     url=source,
     version=version,
     zip_safe=True

@@ -285,11 +285,26 @@ class Segmentizer(object):
             yield segment
 
 
+class SegmentState(object):
+    id = None
+    mmsi = None
+    msgs = []
+    msg_count = 0
+
+
 class Segment(object):
 
-    def __init__(self, id, mmsi):
+    def __init__(self, id, mmsi, prev_state=None):
         self._id = id
         self._mmsi = mmsi
+
+        self._prev_state = prev_state
+        if prev_state:
+            self._prev_segment = Segment(id, mmsi)
+            for msg in prev_state.msgs:
+                self._prev_segment.add_msg(msg)
+        else:
+            self._prev_segment = None
 
         self._msgs = []
         self._coords = []
@@ -308,6 +323,27 @@ class Segment(object):
 
     def __len__(self):
         return len(self.msgs)
+
+    @classmethod
+    def from_state(cls, state):
+        return Segment(state.id, state.mmsi, prev_state=state)
+
+    @property
+    def state(self):
+        state = self._prev_state or SegmentState()
+        state.id = self.id
+        state.mmsi = self.mmsi
+        state.msgs = []
+        if self.last_time_posit_msg:
+            state.msgs.append(self.last_time_posit_msg)
+        if self.last_posit_msg is not self.last_time_posit_msg:
+            state.msgs.append(self.last_posit_msg)
+        if self.last_msg is not self.last_posit_msg:
+            state.msgs.append(self.last_msg)
+
+        state.msg_count += len(self)
+
+        return state
 
     # def next(self):
     #
@@ -363,7 +399,7 @@ class Segment(object):
         try:
             return self.msgs[-1]
         except IndexError:
-            return None
+            return self._prev_segment.last_msg if self._prev_segment else None
 
     @property
     def last_posit_msg(self):
@@ -377,6 +413,7 @@ class Segment(object):
             if msg.get('lat') is not None \
                     and msg.get('lon') is not None:
                 return msg
+        return self._prev_segment.last_posit_msg if self._prev_segment else None
 
     @property
     def last_time_posit_msg(self):
@@ -391,6 +428,7 @@ class Segment(object):
                     and msg.get('lon') is not None \
                     and msg.get('timestamp') is not None:
                 return msg
+        return self._prev_segment.last_time_posit_msg if self._prev_segment else None
 
     @property
     def bounds(self):

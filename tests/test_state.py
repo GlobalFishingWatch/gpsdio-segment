@@ -62,7 +62,6 @@ def test_Segment_state_save_load(msg_generator):
     assert seg2.last_posit_msg == msg
     assert seg2.last_time_posit_msg == msg
 
-
     msg = msg_generator.next_msg()
     seg2.add_msg(msg)
 
@@ -99,7 +98,5 @@ def test_Segmentizer_state_save_load(tmpdir):
     assert sum([st.msg_count for st in full_run_seg_states]) == \
         sum([st.msg_count for st in second_half_seg_states])
 
-    assert sorted([st.to_dict() for st in full_run_seg_states], key=lambda x:x['id']) == \
-           sorted([st.to_dict() for st in second_half_seg_states], key=lambda x:x['id'])
-
-
+    assert sorted([st.to_dict() for st in full_run_seg_states], key=lambda x: x['id']) == \
+        sorted([st.to_dict() for st in second_half_seg_states], key=lambda x: x['id'])

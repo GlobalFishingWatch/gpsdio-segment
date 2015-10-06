@@ -16,9 +16,6 @@ from gpsdio_segment.core import DEFAULT_MAX_HOURS
 from gpsdio_segment.core import DEFAULT_NOISE_DIST
 
 
-logging.basicConfig()
-
-
 @click.command()
 @click.version_option(version=gpsdio_segment.__version__)
 @click.argument('infile', required=True)
@@ -51,10 +48,10 @@ logging.basicConfig()
 def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, segment_field):
 
     """
-    Segment AIS data into continuous segments.
+    Group AIS data into continuous segments.
     """
 
-    logger = logging.getLogger('gpsdio-segment-cli')
+    logger = logging.getLogger('gpsdio-segment')
     logger.setLevel(ctx.obj.get('verbosity', 1))
 
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),

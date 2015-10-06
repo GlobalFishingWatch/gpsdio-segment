@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 """
 Tools for segmenting positional AIS messages into continuous tracks.
 
@@ -8,8 +5,13 @@ Includes a CLI plugin for `gpsdio` to run the algorithm.
 """
 
 
-from .core import Segment
-from .core import Segmentizer
+import logging
+
+from gpsdio_segment.core import Segment
+from gpsdio_segment.core import Segmentizer
+
+
+logger = logging.getLogger('gpsdio-segment')
 
 
 __version__ = '0.1'
@@ -20,7 +22,6 @@ __license__ = """
 Copyright 2015 SkyTruth
 
 Authors: Kevin Wurster <kevin@skytruth.org>
-Egil Möller <egil@skytruth-org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

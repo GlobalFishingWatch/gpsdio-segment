@@ -26,7 +26,8 @@ class MessageGenerator(object):
 
     def next_time_posit_msg(self):
         self.increment()
-        return {'mmsi': self.mmsi, 'lat': self.lat, 'lon': self.lon, 'timestamp': self.timestamp}
+        return {
+            'mmsi': self.mmsi, 'lat': self.lat, 'lon': self.lon, 'timestamp': self.timestamp}
 
 
 @pytest.fixture(scope='function')

@@ -5,7 +5,6 @@ Core components for segmenting data
 
 from __future__ import division
 
-from copy import deepcopy
 from itertools import chain
 import logging
 import datetime
@@ -695,7 +694,6 @@ class Segment(object):
             raise ValueError(
                 'MMSI mismatch: {internal} != {new}'.format(
                     internal=self.mmsi, new=msg.get('mmsi')))
-        msg = deepcopy(msg)
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:
             self._coords.append((msg['lon'], msg['lat']))

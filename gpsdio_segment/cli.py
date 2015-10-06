@@ -59,14 +59,13 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, segmen
 
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),
                      compression=ctx.obj.get('i_cmp')) as src, \
-            gpsdio.open(outfile, 'a',
+            gpsdio.open(outfile, 'w',
                         driver=ctx.obj.get('o_drv'), compression=ctx.obj.get('o_cmp')) as dst:
 
         logger.debug("Beginning to segment")
-        segments = sorted(Segmentizer(
+        for t_idx, seg in enumerate(Segmentizer(
                 src, mmsi=mmsi, max_hours=max_hours,
-                max_speed=max_speed, noise_dist=noise_dist), key=lambda x: x.id)
-        for t_idx, seg in enumerate(segments):
+                max_speed=max_speed, noise_dist=noise_dist)):
 
             logger.debug("Writing segment %s with %s messages and %s points",
                          seg.id, len(seg), len(seg.coords))

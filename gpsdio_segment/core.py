@@ -29,7 +29,7 @@ class Segmentizer(object):
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
                  max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST,
-                 seg_sates=None):
+                 seg_states=None):
 
         self.max_hours = max_hours
         self.max_speed = max_speed
@@ -44,16 +44,6 @@ class Segmentizer(object):
         self._mmsi = mmsi
         self._prev_msg = None
         self._last_segment = None
-
-        if seg_sates:
-            for state in seg_sates:
-                seg = Segment.from_state(state)
-                self._segments[seg.id] = seg
-            self._last_segment = max(self._segments, lambda x: x.last_msg().get('timestamp'))
-            if mmsi:
-                assert mmsi == self._last_segment.mmsi
-            self.mmsi = self._last_segment.mmsi
-            self._prev_msg = self._last_segment.last_msg
 
         logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
                      "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
@@ -70,6 +60,24 @@ class Segmentizer(object):
         return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>"\
             .format(cname=self.__class__.__name__, mspeed=self.max_speed,
                     mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
+
+    @classmethod
+    def from_seg_states(cls, seg_states, instream, **kwargs):
+        """
+        Create a Segmentizer and initialize its Segments from a stream of SegmentStates, or a stream of
+        dicts that can be converted via SegmentState.fromdict
+        """
+        s = cls(instream, **kwargs)
+        for state in seg_states:
+            seg = Segment.from_state(state)
+            s._segments[seg.id] = seg
+        if s._segments:
+            s._last_segment = max(s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
+            s._prev_msg = s._last_segment.last_msg
+            if s._mmsi:
+                assert s._mmsi == s._last_segment.mmsi
+            s._mmsi = s._last_segment.mmsi
+        return s
 
     @property
     def instream(self):
@@ -88,6 +96,7 @@ class Segmentizer(object):
         """
 
         return self._mmsi
+
     def _segment_unique_id(self, msg):
         ts = msg['timestamp']
         while True:
@@ -185,7 +194,7 @@ class Segmentizer(object):
         best = None
         best_metric = None
         for segment in self._segments.values():
-            if not best and segment.last_time_posit_msg:
+            if best is None and segment.last_time_posit_msg:
                 best = segment
                 best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
@@ -290,6 +299,7 @@ class Segmentizer(object):
                 raise ValueError("Input data is unsorted")
             else:
                 best_id = self._compute_best(msg)
+                print idx, best_id
                 if best_id is None:
                     self._create_segment(msg)
                 else:
@@ -304,11 +314,31 @@ class Segmentizer(object):
             yield segment
 
 
-class SegmentState(object):
-    id = None
-    mmsi = None
-    msgs = []
-    msg_count = 0
+class SegmentState:
+    """
+    A simple container to hold the current state of a Segment.   Get one of these from Segment.state
+    and pass it in when you create a new Segment with Segment.from_state()
+
+    The use case for this is when you a parsing a stream in chunks, perhaps one chunk per day of data, and you
+    need to preserve the state of the Segment from one processsing run to the next  without keeping all the
+    old messsages that you no longer need.
+    """
+
+    fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
+
+    def __init__(self):
+        for f, v in self.fields.iteritems():
+            setattr(self, f, v)
+
+    def to_dict(self):
+        return {f:getattr(self, f, v) for f,v in self.fields.iteritems()}
+
+    @classmethod
+    def from_dict(cls, d):
+        s = cls()
+        for f, v in cls.fields.iteritems():
+            setattr(s, f, d[f])
+        return s
 
 
 class Segment(object):
@@ -317,13 +347,8 @@ class Segment(object):
         self._id = id
         self._mmsi = mmsi
 
-        self._prev_state = prev_state
-        if prev_state:
-            self._prev_segment = Segment(id, mmsi)
-            for msg in prev_state.msgs:
-                self._prev_segment.add_msg(msg)
-        else:
-            self._prev_segment = None
+        self._prev_state = None
+        self._prev_segment = None
 
         self._msgs = []
         self._coords = []
@@ -345,10 +370,36 @@ class Segment(object):
 
     @classmethod
     def from_state(cls, state):
-        return Segment(state.id, state.mmsi, prev_state=state)
+        """
+        Create a Segment from a previously preserved segment state.  This allows continuity of segments
+        across multiple independent processing runs
+        """
+
+        if type(state) is dict:
+            state = SegmentState.from_dict(state)
+
+        seg =  cls(state.id, state.mmsi)
+        seg._prev_state = state
+        seg._prev_segment = Segment(state.id, state.mmsi)
+        for msg in state.msgs:
+            seg._prev_segment.add_msg(msg)
+        return seg
+
+    @property
+    def has_prev_state(self):
+        """
+        True if this Segment was created with a prior state via Segment.from_state()
+        """
+        return self._prev_segment is not None
 
     @property
     def state(self):
+        """
+        Capture the current state of the Segment.  Perserves the state of the latest messages for
+        creating a new Segment object in a future processing run.
+
+        Returns a SegmentState
+        """
         state = self._prev_state or SegmentState()
         state.id = self.id
         state.mmsi = self.mmsi
@@ -418,6 +469,7 @@ class Segment(object):
         try:
             return self.msgs[-1]
         except IndexError:
+            # this segment has no messages, see if there are any in the saved state
             return self._prev_segment.last_msg if self._prev_segment else None
 
     @property
@@ -432,6 +484,7 @@ class Segment(object):
             if msg.get('lat') is not None \
                     and msg.get('lon') is not None:
                 return msg
+
         return self._prev_segment.last_posit_msg if self._prev_segment else None
 
     @property
@@ -447,6 +500,7 @@ class Segment(object):
                     and msg.get('lon') is not None \
                     and msg.get('timestamp') is not None:
                 return msg
+
         return self._prev_segment.last_time_posit_msg if self._prev_segment else None
 
     @property

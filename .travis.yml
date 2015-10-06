@@ -1,14 +1,18 @@
 language: python
+sudo: false
+
+cache:
+  directories:
+    - ~/.cache/pip
 
 python:
-  - '2.7'
+  - 2.7
 
 install:
   - pip install -e .\[dev\]
 
 script:
   - py.test tests --cov gpsdio_segment --cov-report term-missing
-
 
 notifications:
   flowdock:

@@ -33,9 +33,8 @@ def test_msg_diff_stats():
     stats2 = segmenter.msg_diff_stats(msg2, msg1)
     assert stats == stats2
 
-    assert round(stats['distance'], 0) == \
-           round(segmenter._geod.inv(msg1['lon'], msg1['lat'],
-                                     msg2['lon'], msg2['lat'])[2] / 1852, 0)
+    assert round(stats['distance'], 0) == round(
+        segmenter._geod.inv(msg1['lon'], msg1['lat'], msg2['lon'], msg2['lat'])[2] / 1852, 0)
 
     assert stats['timedelta'] == 36
     assert stats['speed'] == stats['distance'] / stats['timedelta']
@@ -128,13 +127,13 @@ def test_last_msg_combinations():
 
     # Make sure posit and posit time are being returned instead of just the last message
     seg = gpsdio_segment.core.Segment(1, mmsi=1)
-    
+
     seg.add_msg(posit)
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit
     assert seg.last_posit_msg == posit
     assert seg.last_time_posit_msg is None
-    
+
     seg.add_msg(time_posit)
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit

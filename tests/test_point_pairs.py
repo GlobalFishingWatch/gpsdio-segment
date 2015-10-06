@@ -1,5 +1,5 @@
 """
-The pair_defs define two points that need to be compared.  The is_same key
+The `pair_defs` define two points that need to be compared.  The `is_same` key
 denotes whether these two points should be in the same segment.  For the most
 point the pairs are the first and last points in a segment.
 """
@@ -38,7 +38,7 @@ def process(infile, tmpdir):
 
     try:
         outfile = str(tmpdir.mkdir('out').join('outfile.msg.gz'))
-    except:
+    except Exception:
         outfile = str(tmpdir.join('outfile.msg.gz'))
 
     result = CliRunner().invoke(gpsdio.cli.main.main_group, [
@@ -171,8 +171,14 @@ def test_431704490(tmpdir):
 def test_240000000(tmpdir):
 
     """
-    mmsi	    timestamp1	        lon1	        lat1	    timestamp2              lon2	    lat2
-    240000000   2015-01-03 04:52:25	-74.73930359	10.87963486 2015-01-03  05:04:50	83.27050781	17.7059803
+    mmsi = 240000000
+    timestamp1 = 2015-01-03 04:52:25
+    lon1 = -74.73930359
+    lat1 = 10.87963486
+
+    timestamp2 = 2015-01-03 05:04:50
+    lon2 = 83.27050781
+    lat2 = 17.7059803
     """
 
     pair_def = {

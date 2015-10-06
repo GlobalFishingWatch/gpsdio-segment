@@ -299,7 +299,6 @@ class Segmentizer(object):
                 raise ValueError("Input data is unsorted")
             else:
                 best_id = self._compute_best(msg)
-                print idx, best_id
                 if best_id is None:
                     self._create_segment(msg)
                 else:

@@ -15,14 +15,15 @@ from gpsdio_segment.core import Segmentizer
 logger = logging.getLogger('gpsdio-segment')
 
 
-__version__ = '0.2'
+__version__ = '0.3'
 __author__ = 'Kevin Wurster'
 __email__ = 'kevin@skytruth.org'
 __source__ = 'https://github.com/SkyTruth/gpsdio-segment'
 __license__ = """
-Copyright 2015 SkyTruth
+Copyright 2015-2016 SkyTruth
+Authors:
 
-Authors: Kevin Wurster <kevin@skytruth.org>
+Kevin Wurster <kevin@skytruth.org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

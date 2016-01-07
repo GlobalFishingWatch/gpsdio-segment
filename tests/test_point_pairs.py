@@ -101,6 +101,8 @@ def compare(pair_def, stream):
 
     assert msg1['segment'] is not None
     assert msg2['segment'] is not None
+    print(msg1['segment'])
+    print(msg2['segment'])
     return (msg1['segment'] == msg2['segment']) == pair_def['is_same']
 
 
@@ -119,6 +121,13 @@ def test_224051350(tmpdir):
     }
 
     with gpsdio.open(process('tests/data/point-pair/224051350.msg.gz', tmpdir)) as src:
+        # from collections import OrderedDict
+        # for msg in src:
+        #     ts = msg['timestamp']
+        #     if ts.year == 2015 and ts.month == 1 and ts.day == 30 and (ts.hour == 10 or ts.hour == 11):
+        #         if msg.get('lat') is not None and msg.get('lon') is not None:
+        #             print(OrderedDict([(k, msg[k]) for k in ('lat', 'lon', 'timestamp', 'segment')]))
+        # assert False
         assert compare(pair_def, src)
 
 

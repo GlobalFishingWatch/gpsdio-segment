@@ -1,3 +1,8 @@
+"""
+Tests for weird edge cases.
+"""
+
+
 from datetime import datetime
 from datetime import timedelta
 
@@ -57,3 +62,51 @@ def test_with_non_posit():
     assert len(segments) == 2
     for seg in segments:
         assert len(seg) == 3
+
+
+def test_first_message_out_of_bounds():
+
+    """
+    If the first input message has a location that is completely off the map,
+    we need to make sure that it doesn't end up inside the internal segment
+    container.
+    """
+
+    messages = [
+        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1)}
+    ]
+
+    output = list(Segmentizer(messages))
+    assert len(output) == 2
+
+    # Should get one bad segment and one good segment
+    # Bad segment should just have the first message
+    bs, s = output
+    assert len(bs) == 1
+    assert bs.msgs == messages[:1]
+
+    # Good segment should have the rest of the messages
+    assert len(s) == 3
+    assert s.msgs == messages[1:]
+
+
+def test_bad_message_in_stream():
+
+    messages = [
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1)}
+    ]
+
+    # Should get one bad segment and one good segment
+    bs, s = list(Segmentizer(messages))
+
+    assert len(s) == 3
+    assert s.msgs == messages[:2] + messages[3:]
+
+    assert len(bs) == 1
+    assert bs.msgs == [messages[2]]

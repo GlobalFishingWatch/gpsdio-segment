@@ -15,6 +15,7 @@ import pyproj
 
 
 logger = logging.getLogger('gpsdio-segment')
+logger.setLevel(logging.DEBUG)
 
 
 # See `Segmentizer()` for more info
@@ -22,420 +23,6 @@ DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 40  # knots
 DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
 INFINITE_SPEED = 1000000
-
-
-class Segmentizer(object):
-
-    """
-    Group positional messages into related segments based on speed and distance.
-    """
-
-    def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
-
-        """
-        Looks at a stream of messages and pull out segments of points that are
-        related.  If an existing state is already known, instantiate from the
-        `Segmentizer()`
-
-            >>> import gpsdio
-            >>> from gpsdio_segment import Segmentizer
-            >>> with gpsdio.open(infile) as src, gpsdio.open(outfile) as dst:
-            ...     for segment in Segmentizer(src):
-            ...        for msg in segment:
-            ...            dst.write(msg)
-
-        Parameters
-        ----------
-        instream : iter
-            Stream of GPSd messages.
-        mmsi : int, optional
-            MMSI to pull out of the stream and process.  If not given the first
-            valid MMSI is used.  All messages with a different MMSI are thrown
-            away.
-        max_hours : int, optional
-            Maximum number of hours to allow between points.
-        max_speed : int, optional
-            Maximum speed allowed between points in nautical miles.
-        noise_dist : int, optional
-            If a point is within this distance (nautical miles) then add it to
-            the closes segment without looking at anything else.
-        """
-
-        self.max_hours = max_hours
-        self.max_speed = max_speed
-        self.noise_dist = noise_dist
-
-        # Exposed via properties
-        self._instream = instream
-
-        # Internal objects
-        self._geod = pyproj.Geod(ellps='WGS84')
-        self._segments = {}
-        self._mmsi = mmsi
-        self._prev_msg = None
-        self._last_segment = None
-
-        logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
-                     "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
-
-    def __iter__(self):
-
-        """
-        Produces completed, detached segments.
-
-        Yields
-        ------
-        Segment
-        """
-
-        return self.process()
-
-    def __repr__(self):
-        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>"\
-            .format(cname=self.__class__.__name__, mspeed=self.max_speed,
-                    mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
-
-    @classmethod
-    def from_seg_states(cls, seg_states, instream, **kwargs):
-
-        """
-        Create a Segmentizer and initialize its Segments from a stream of
-        `SegmentStates()`, or a stream of dictionaries that can be converted
-        via `SegmentState.fromdict()`.
-
-        Returns
-        -------
-        Segmentizer
-        """
-
-        s = cls(instream, **kwargs)
-        for state in seg_states:
-            seg = Segment.from_state(state)
-            s._segments[seg.id] = seg
-        if s._segments:
-            s._last_segment = max(
-                s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
-            s._prev_msg = s._last_segment.last_msg
-            if s._mmsi:
-                assert s._mmsi == s._last_segment.mmsi
-            s._mmsi = s._last_segment.mmsi
-        return s
-
-    @property
-    def instream(self):
-
-        """
-        Handle to the input data stream.
-        """
-
-        return self._instream
-
-    @property
-    def mmsi(self):
-
-        """
-        The MMSI being processed.
-        """
-
-        return self._mmsi
-
-    def _segment_unique_id(self, msg):
-
-        """
-        Generate a unique ID for a segment from a message, ideally its first.
-
-        Returns
-        -------
-        str
-        """
-
-        ts = msg['timestamp']
-        while True:
-            seg_id = '{}-{}'.format(msg['mmsi'], datetime2str(ts))
-            if seg_id not in self._segments:
-                return seg_id
-            ts += datetime.timedelta(milliseconds=1)
-
-    def _create_segment(self, msg):
-
-        """
-        Add a new segment to the segments container with its initial message.
-        """
-
-        id = self._segment_unique_id(msg)
-        t = Segment(id, self.mmsi)
-        t.add_msg(msg)
-
-        self._segments[id] = t
-        self._last_segment = t
-
-    def timedelta(self, msg1, msg2):
-
-        """
-        Compute the timedelta between two messages in common units.
-        """
-
-        ts1 = msg1['timestamp']
-        ts2 = msg2['timestamp']
-        if ts1 > ts2:
-            return (ts1 - ts2).total_seconds() / 3600
-        else:
-            return (ts2 - ts1).total_seconds() / 3600
-
-    def msg_diff_stats(self, msg1, msg2):
-
-        """
-        Compute the stats required to determine if two points are continuous.  Input
-        messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
-        `timestamp` must be an instance of `datetime.datetime()`.
-
-        Parameters
-        ----------
-        msg1 : dict
-            A GPSD message.
-        msg2 : dict
-            See `msg1`.
-
-        Returns
-        -------
-        dict
-            distance : float
-                Distance in natucal miles between the points.
-            timedelta : float
-                Amount of time between the two points in hours.
-            speed : float
-                Required speed in knots to travel between the two points within the
-                time allotted by `timedelta`.
-        """
-
-        x1 = msg1['lon']
-        y1 = msg1['lat']
-
-        x2 = msg2['lon']
-        y2 = msg2['lat']
-
-        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
-        timedelta = self.timedelta(msg1, msg2)
-
-        try:
-            speed = (distance / timedelta)
-        except ZeroDivisionError:
-            speed = INFINITE_SPEED
-
-        return {
-            'distance': distance,
-            'timedelta': timedelta,
-            'speed': speed
-        }
-
-    def _compute_best(self, msg):
-
-        """
-        Compute which segment is the best segment
-
-        Returns
-        -------
-        int or None
-            ID of best segment or `None` no segments exist or all are out of
-            range.
-        """
-
-        logger.debug("Computing best segment for %s", msg)
-
-        # best_stats are the stats between the input message and the current best segment
-        # segment_stats are the stats between the input message and the current segment
-        best_stats = None
-        best = None
-        best_metric = None
-        for segment in self._segments.values():
-            if best is None and segment.last_time_posit_msg:
-                best = segment
-                best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
-                best_metric = best_stats['timedelta'] * best_stats['distance']
-                logger.debug("    No best - auto-assigned %s", best.id)
-
-            elif segment.last_time_posit_msg:
-                segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
-                segment_metric = segment_stats['timedelta'] * segment_stats['distance']
-
-                if segment_metric < best_metric:
-                    best = segment
-                    best_metric = segment_metric
-                    best_stats = segment_stats
-
-        if best is None:
-            best = self._segments[sorted(self._segments.keys())[0]]
-            logger.debug("Could not determine best, probably because none of the segments "
-                         "have any positional messages.  Defaulting to first: %s", best.id)
-            return best.id
-
-        logger.debug("Best segment is %s", best.id)
-        logger.debug("    Num segments: %s", len(self._segments))
-
-        # TODO: An explicit timedelta check should probably be added to the first part of if
-        #       Currently a point within noise distance but is outside time will be added
-        #       but ONLY if tracks are not closed when out of time range for some reason.
-        #       A better check is one that also incorporates max_hours rather than relying
-        #       on tracks that are outside the allowed time delta be closed.
-        #       Need to finish some unittests before adding this.
-        if best_stats['distance'] <= self.noise_dist or (
-                        best_stats['timedelta'] <= self.max_hours and
-                        best_stats['speed'] <= self.max_speed):
-            return best.id
-        else:
-            logger.debug("    Dropped best")
-            return None
-
-    def process(self):
-
-        """
-        The method that does all the work.  Creates a generator that spits out
-        finished segments.  Rather than calling this directly the intended use
-        of this class is:
-
-            >>> import gpsdio
-            >>> with gpsdio.open('infile.ext') as src:
-            ...    for segment in Segmentizer(src):
-            ...        # Do something with the segment
-
-        Yields
-        ------
-        Segment
-        """
-
-        logger.debug("Starting to segment %s",
-                     ' %s' % self._mmsi if self._mmsi is not None else ' - finding MMSI ...')
-
-        for idx, msg in enumerate(self.instream):
-
-            # Cache the MMSI and some other fields
-            mmsi = msg.get('mmsi')
-            y = msg.get('lat')
-            x = msg.get('lon')
-            timestamp = msg.get('timestamp')
-
-            # First check if there are any segments that are too far away
-            # in time and yield them.  It's possible for messages to not
-            # have a timestamp so only do this if the current point has a TS.
-            _yielded = []
-            for segment in self._segments.values():
-                if timestamp and segment.last_msg.get('timestamp'):
-                    td = self.timedelta(msg, segment.last_msg)
-                    if td > self.max_hours:
-                        _yielded.append(segment.id)
-                        # logger.debug("Segment %s exceeds max time: %s", segment.id, td)
-                        # logger.debug("    Current:  %s", msg['timestamp'])
-                        # logger.debug("    Previous: %s", segment.last_msg['timestamp'])
-                        # logger.debug("    Time D:   %s", td)
-                        # logger.debug("    Max H:    %s", self.max_hours)
-                        yield segment
-            for s_id in _yielded:
-                del self._segments[s_id]
-
-            # This is the first message with a valid MMSI
-            # Make it the previous message and create a new segment
-            if self.mmsi is None:
-                logger.debug("Found a valid MMSI - processing: %s", mmsi)
-                self._mmsi = mmsi
-                self._prev_msg = msg
-                self._create_segment(msg)
-                continue
-
-            # Found an MMSI that does not match - skip
-            elif mmsi != self.mmsi:
-                logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
-                continue
-
-            # Non positional message or lacking timestamp.  Add to the most recent segment.
-            elif not x or not y or not timestamp:
-                self._last_segment.add_msg(msg)
-
-            # All segments have been closed - create a new one
-            elif len(self._segments) is 0:
-                self._create_segment(msg)
-
-            # Everything is set up - process!
-            elif timestamp < self._prev_msg['timestamp']:
-                raise ValueError("Input data is unsorted")
-            else:
-                best_id = self._compute_best(msg)
-                if best_id is None:
-                    self._create_segment(msg)
-                else:
-                    self._segments[best_id].add_msg(msg)
-                    self._last_segment = self._segments[best_id]
-
-            if x and y and timestamp:
-                self._prev_msg = msg
-
-        # No more points to process.  Yield all the remaining segments.
-        for series, segment in self._segments.items():
-            yield segment
-
-
-class SegmentState:
-
-    """
-    A simple container to hold the current state of a Segment.   Get one of
-    these from `Segment.state` and pass it in when you create a new Segment
-    with `Segment.from_state()`.
-
-    The use case for this is when you a parsing a stream in chunks, perhaps
-    one chunk per day of data, and you need to preserve the state of the
-    `Segment()` from one processing run to the next  without keeping all the
-    old messages that you no longer need.
-    """
-
-    fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
-
-    def __init__(self):
-        self.id = None
-        self.mmsi = None
-        self.msgs = []
-        self.msg_count = 0
-
-    def to_dict(self):
-
-        """
-        Convert the state to a dictionary.
-
-            {
-                "id": Segment.id,
-                "mmsi": Segment.mmsi,
-                "msgs": Segment.msgs,
-                "msg_count": Segment.msg_count
-            }
-
-        Returns
-        -------
-        dict
-        """
-
-        return {
-            'id': self.id,
-            'mmsi': self.mmsi,
-            'msgs': self.msgs,
-            'msg_count': self.msg_count
-        }
-
-    @classmethod
-    def from_dict(cls, d):
-
-        """
-        Instantiate from a dictionary.  See `to_dict()` for expected format.
-
-        Returns
-        -------
-        SegmentState
-        """
-
-        s = cls()
-        s.mmsi = d['mmsi']
-        s.id = d['id']
-        s.msgs = d['msgs']
-        s.msg_count = d['msg_count']
-        return s
 
 
 class Segment(object):
@@ -467,7 +54,8 @@ class Segment(object):
 
         self._iter_idx = 0
 
-        logger.debug("Created an in instance of `Segment()` with ID: %s", id)
+        logger.debug("Created an instance of `{cname}()` with ID: {id}".format(
+            cname=self.__class__.__name__, id=self._id))
 
     def __repr__(self):
         return "<{cname}(id={id}, mmsi={mmsi}) with {msg_cnt} msgs at {hsh}>".format(
@@ -697,3 +285,470 @@ class Segment(object):
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:
             self._coords.append((msg['lon'], msg['lat']))
+
+
+class BadSegment(Segment):
+
+    """
+    Sometimes points cannot be segmented for some reason, like if their
+    location falls outside the world bounds, so rather than throw the point
+    away we stick it into a `BadSegment()` so the user can filter with an
+    instance check.
+    """
+
+
+class Segmentizer(object):
+
+    """
+    Group positional messages into related segments based on speed and distance.
+    """
+
+    def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
+                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
+
+        """
+        Looks at a stream of messages and pull out segments of points that are
+        related.  If an existing state is already known, instantiate from the
+        `Segmentizer()`
+
+            >>> import gpsdio
+            >>> from gpsdio_segment import Segmentizer
+            >>> with gpsdio.open(infile) as src, gpsdio.open(outfile) as dst:
+            ...     for segment in Segmentizer(src):
+            ...        for msg in segment:
+            ...            dst.write(msg)
+
+        Parameters
+        ----------
+        instream : iter
+            Stream of GPSd messages.
+        mmsi : int, optional
+            MMSI to pull out of the stream and process.  If not given the first
+            valid MMSI is used.  All messages with a different MMSI are thrown
+            away.
+        max_hours : int, optional
+            Maximum number of hours to allow between points.
+        max_speed : int, optional
+            Maximum speed allowed between points in nautical miles.
+        noise_dist : int, optional
+            If a point is within this distance (nautical miles) then add it to
+            the closes segment without looking at anything else.
+        """
+
+        self.max_hours = max_hours
+        self.max_speed = max_speed
+        self.noise_dist = noise_dist
+
+        # Exposed via properties
+        self._instream = instream
+
+        # Internal objects
+        self._geod = pyproj.Geod(ellps='WGS84')
+        self._segments = {}
+        self._mmsi = mmsi
+        self._prev_msg = None
+        self._last_segment = None
+
+        logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
+                     "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
+
+    def __iter__(self):
+
+        """
+        Produces completed, detached segments.
+
+        Yields
+        ------
+        Segment
+        """
+
+        return self.process()
+
+    def __repr__(self):
+        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>"\
+            .format(cname=self.__class__.__name__, mspeed=self.max_speed,
+                    mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
+
+    @classmethod
+    def from_seg_states(cls, seg_states, instream, **kwargs):
+
+        """
+        Create a Segmentizer and initialize its Segments from a stream of
+        `SegmentStates()`, or a stream of dictionaries that can be converted
+        via `SegmentState.fromdict()`.
+
+        Returns
+        -------
+        Segmentizer
+        """
+
+        s = cls(instream, **kwargs)
+        for state in seg_states:
+            seg = Segment.from_state(state)
+            s._segments[seg.id] = seg
+        if s._segments:
+            s._last_segment = max(
+                s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
+            s._prev_msg = s._last_segment.last_msg
+            if s._mmsi:
+                assert s._mmsi == s._last_segment.mmsi
+            s._mmsi = s._last_segment.mmsi
+        return s
+
+    @property
+    def instream(self):
+
+        """
+        Handle to the input data stream.
+        """
+
+        return self._instream
+
+    @property
+    def mmsi(self):
+
+        """
+        The MMSI being processed.
+        """
+
+        return self._mmsi
+
+    def _segment_unique_id(self, msg):
+
+        """
+        Generate a unique ID for a segment from a message, ideally its first.
+
+        Returns
+        -------
+        str
+        """
+
+        ts = msg['timestamp']
+        while True:
+            seg_id = '{}-{}'.format(msg['mmsi'], datetime2str(ts))
+            if seg_id not in self._segments:
+                return seg_id
+            ts += datetime.timedelta(milliseconds=1)
+
+    def _create_segment(self, msg):
+
+        """
+        Add a new segment to the segments container with its initial message.
+
+        Parameters
+        ----------
+        msg : dict
+            Initial message to place into the segment.
+        """
+
+        id_ = self._segment_unique_id(msg)
+        t = Segment(id_, self.mmsi)
+        t.add_msg(msg)
+
+        self._segments[id_] = t
+        self._last_segment = t
+
+    def timedelta(self, msg1, msg2):
+
+        """
+        Compute the timedelta between two messages in common units.
+        """
+
+        ts1 = msg1['timestamp']
+        ts2 = msg2['timestamp']
+        if ts1 > ts2:
+            return (ts1 - ts2).total_seconds() / 3600
+        else:
+            return (ts2 - ts1).total_seconds() / 3600
+
+    def msg_diff_stats(self, msg1, msg2):
+
+        """
+        Compute the stats required to determine if two points are continuous.  Input
+        messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
+        `timestamp` must be an instance of `datetime.datetime()`.
+
+        Parameters
+        ----------
+        msg1 : dict
+            A GPSD message.
+        msg2 : dict
+            See `msg1`.
+
+        Returns
+        -------
+        dict
+            distance : float
+                Distance in natucal miles between the points.
+            timedelta : float
+                Amount of time between the two points in hours.
+            speed : float
+                Required speed in knots to travel between the two points within the
+                time allotted by `timedelta`.
+        """
+
+        x1 = msg1['lon']
+        y1 = msg1['lat']
+
+        x2 = msg2['lon']
+        y2 = msg2['lat']
+
+        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
+        timedelta = self.timedelta(msg1, msg2)
+
+        try:
+            speed = (distance / timedelta)
+        except ZeroDivisionError:
+            speed = INFINITE_SPEED
+
+        return {
+            'distance': distance,
+            'timedelta': timedelta,
+            'speed': speed
+        }
+
+    def _compute_best(self, msg):
+
+        """
+        Compute which segment is the best segment
+
+        Returns
+        -------
+        int or None
+            ID of best segment or `None` no segments exist or all are out of
+            range.
+        """
+
+        logger.debug("Computing best segment for %s", msg)
+
+        # best_stats are the stats between the input message and the current best segment
+        # segment_stats are the stats between the input message and the current segment
+        best_stats = None
+        best = None
+        best_metric = None
+        for segment in self._segments.values():
+            if best is None and segment.last_time_posit_msg:
+                best = segment
+                best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
+                best_metric = best_stats['timedelta'] * best_stats['distance']
+                logger.debug("    No best - auto-assigned %s", best.id)
+
+            elif segment.last_time_posit_msg:
+                segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
+                segment_metric = segment_stats['timedelta'] * segment_stats['distance']
+
+                if segment_metric < best_metric:
+                    best = segment
+                    best_metric = segment_metric
+                    best_stats = segment_stats
+
+        if best is None:
+            best = self._segments[sorted(self._segments.keys())[0]]
+            logger.debug("Could not determine best, probably because none of the segments "
+                         "have any positional messages.  Defaulting to first: %s", best.id)
+            return best.id
+
+        logger.debug("Best segment is %s", best.id)
+        logger.debug("    Num segments: %s", len(self._segments))
+
+        # TODO: An explicit timedelta check should probably be added to the first part of if
+        #       Currently a point within noise distance but is outside time will be added
+        #       but ONLY if tracks are not closed when out of time range for some reason.
+        #       A better check is one that also incorporates max_hours rather than relying
+        #       on tracks that are outside the allowed time delta be closed.
+        #       Need to finish some unittests before adding this.
+        if best_stats['distance'] <= self.noise_dist or (
+                        best_stats['timedelta'] <= self.max_hours and
+                        best_stats['speed'] <= self.max_speed):
+            return best.id
+        else:
+            logger.debug("    Dropped best")
+            return None
+
+    def process(self):
+
+        """
+        The method that does all the work.  Creates a generator that spits out
+        finished segments.  Rather than calling this directly the intended use
+        of this class is:
+
+            >>> import gpsdio
+            >>> with gpsdio.open('infile.ext') as src:
+            ...    for segment in Segmentizer(src):
+            ...        # Do something with the segment
+
+        Yields
+        ------
+        Segment
+        """
+
+        logger.debug("Starting to segment %s",
+                     ' %s' % self._mmsi if self._mmsi is not None else ' - finding MMSI ...')
+
+        for idx, msg in enumerate(self.instream):
+
+            # Cache the MMSI and some other fields
+            mmsi = msg.get('mmsi')
+            y = msg.get('lat')
+            x = msg.get('lon')
+            timestamp = msg.get('timestamp')
+
+            # First check if there are any segments that are too far away
+            # in time and yield them.  It's possible for messages to not
+            # have a timestamp so only do this if the current point has a TS.
+            _yielded = []
+            for segment in self._segments.values():
+                if timestamp and segment.last_msg.get('timestamp'):
+                    td = self.timedelta(msg, segment.last_msg)
+                    if td > self.max_hours:
+                        _yielded.append(segment.id)
+                        # logger.debug("Segment %s exceeds max time: %s", segment.id, td)
+                        # logger.debug("    Current:  %s", msg['timestamp'])
+                        # logger.debug("    Previous: %s", segment.last_msg['timestamp'])
+                        # logger.debug("    Time D:   %s", td)
+                        # logger.debug("    Max H:    %s", self.max_hours)
+                        yield segment
+
+            # TODO: Is there a way to integrate this into the above for loop?  Maybe with dict.pop()?
+            for s_id in _yielded:
+                del self._segments[s_id]
+
+            # This is the first message with a valid MMSI
+            # Make it the previous message and create a new segment
+            if self.mmsi is None:
+                logger.debug("Found a valid MMSI - processing: %s", mmsi)
+
+                # We have to make sure the first message isn't out of bounds, otherwise
+                # any message compared to it will be
+                # It is far more efficient to ensure that no bad segments end up in the
+                # segments container rather than trying to yield them every iteration.
+                if x is not None and y is not None:
+                    try:
+                        self._geod.inv(0, 0, x, y)  # Argument order matters
+                    except ValueError:
+                        logger.debug(
+                            "    Could not compute a distance from the first point - "
+                            "producing a bad segment")
+                        bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
+                        bs.add_msg(msg)
+                        yield bs
+
+                        # We still don't have a good initial segment so keep looking ...
+                        logger.debug("Still looking for a good first message ...")
+                        continue
+
+                self._mmsi = mmsi
+                self._prev_msg = msg
+                self._create_segment(msg)
+                continue
+
+            # Found an MMSI that does not match - skip
+            elif mmsi != self.mmsi:
+                logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
+                continue
+
+            # Non positional message or lacking timestamp.  Add to the most recent segment.
+            elif x is None or y is None or timestamp is None:
+                self._last_segment.add_msg(msg)
+
+            # All segments have been closed - create a new one
+            elif len(self._segments) is 0:
+                self._create_segment(msg)
+
+            # Everything is set up - process!
+            elif timestamp < self._prev_msg['timestamp']:
+                raise ValueError("Input data is unsorted")
+            else:
+
+                # Points that are off the map raise an exception in pyproj
+                # Let them fall into their own segment for filtering later
+                # TODO: This throws away continuous out of bounds segments
+                #       which we may want to keep.
+                # best_id = self._compute_best(msg)
+                try:
+                    best_id = self._compute_best(msg)
+                except ValueError as e:
+                    logger.debug("    Could not compute best segment: {}".format(str(e)))
+                    logger.debug("    Bad msg: {}".format(msg))
+                    logger.debug("    Yielding bad segment")
+                    bs = BadSegment(self._segment_unique_id(msg), msg['mmsi'])
+                    bs.add_msg(msg)
+                    yield bs
+                    continue
+
+                if best_id is None:
+                    self._create_segment(msg)
+                else:
+                    self._segments[best_id].add_msg(msg)
+                    self._last_segment = self._segments[best_id]
+
+            if x and y and timestamp:
+                self._prev_msg = msg
+
+        # No more points to process.  Yield all the remaining segments.
+        for series, segment in self._segments.items():
+            yield segment
+
+
+class SegmentState:
+
+    """
+    A simple container to hold the current state of a Segment.   Get one of
+    these from `Segment.state` and pass it in when you create a new Segment
+    with `Segment.from_state()`.
+
+    The use case for this is when you a parsing a stream in chunks, perhaps
+    one chunk per day of data, and you need to preserve the state of the
+    `Segment()` from one processing run to the next  without keeping all the
+    old messages that you no longer need.
+    """
+
+    fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
+
+    def __init__(self):
+        self.id = None
+        self.mmsi = None
+        self.msgs = []
+        self.msg_count = 0
+
+    def to_dict(self):
+
+        """
+        Convert the state to a dictionary.
+
+            {
+                "id": Segment.id,
+                "mmsi": Segment.mmsi,
+                "msgs": Segment.msgs,
+                "msg_count": Segment.msg_count
+            }
+
+        Returns
+        -------
+        dict
+        """
+
+        return {
+            'id': self.id,
+            'mmsi': self.mmsi,
+            'msgs': self.msgs,
+            'msg_count': self.msg_count
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+
+        """
+        Instantiate from a dictionary.  See `to_dict()` for expected format.
+
+        Returns
+        -------
+        SegmentState
+        """
+
+        s = cls()
+        s.mmsi = d['mmsi']
+        s.id = d['id']
+        s.msgs = d['msgs']
+        s.msg_count = d['msg_count']
+        return s

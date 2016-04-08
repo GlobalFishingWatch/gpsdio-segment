@@ -15,10 +15,10 @@ import pyproj
 
 
 logger = logging.getLogger('gpsdio-segment')
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 
-# See `Segmentizer()` for more info
+# See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 40  # knots
 DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
@@ -54,8 +54,8 @@ class Segment(object):
 
         self._iter_idx = 0
 
-        logger.debug("Created an instance of `{cname}()` with ID: {id}".format(
-            cname=self.__class__.__name__, id=self._id))
+        # logger.debug("Created an instance of %s() with ID: %s",
+        #              self.__class__.__name__, self._id)
 
     def __repr__(self):
         return "<{cname}(id={id}, mmsi={mmsi}) with {msg_cnt} msgs at {hsh}>".format(
@@ -349,8 +349,9 @@ class Segmentizer(object):
         self._prev_msg = None
         self._last_segment = None
 
-        logger.debug("Created an instance of `Segmentizer()` with max_speed=%s, "
-                     "max_hours=%s, noise_dist=%s", max_speed, max_hours, noise_dist)
+        # logger.debug("Created an instance of Segmentizer() with "
+        #              "max_speed=%s, max_hours=%s, noise_dist=%s",
+        #              max_speed, max_hours, noise_dist)
 
     def __iter__(self):
 
@@ -365,9 +366,9 @@ class Segmentizer(object):
         return self.process()
 
     def __repr__(self):
-        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>"\
-            .format(cname=self.__class__.__name__, mspeed=self.max_speed,
-                    mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
+        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>".format(
+            cname=self.__class__.__name__, mspeed=self.max_speed,
+            mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
 
     @classmethod
     def from_seg_states(cls, seg_states, instream, **kwargs):
@@ -519,7 +520,7 @@ class Segmentizer(object):
             range.
         """
 
-        logger.debug("Computing best segment for %s", msg)
+        # logger.debug("Computing best segment for %s", msg)
 
         # best_stats are the stats between the input message and the current best segment
         # segment_stats are the stats between the input message and the current segment
@@ -531,7 +532,7 @@ class Segmentizer(object):
                 best = segment
                 best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
                 best_metric = best_stats['timedelta'] * best_stats['distance']
-                logger.debug("    No best - auto-assigned %s", best.id)
+                # logger.debug("    No best - auto-assigned %s", best.id)
 
             elif segment.last_time_posit_msg:
                 segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
@@ -544,12 +545,12 @@ class Segmentizer(object):
 
         if best is None:
             best = self._segments[sorted(self._segments.keys())[0]]
-            logger.debug("Could not determine best, probably because none of the segments "
-                         "have any positional messages.  Defaulting to first: %s", best.id)
+            # logger.debug("Could not determine best, probably because none of the segments "
+            #              "have any positional messages.  Defaulting to first: %s", best.id)
             return best.id
 
-        logger.debug("Best segment is %s", best.id)
-        logger.debug("    Num segments: %s", len(self._segments))
+        # logger.debug("Best segment is %s", best.id)
+        # logger.debug("    Num segments: %s", len(self._segments))
 
         # TODO: An explicit timedelta check should probably be added to the first part of if
         #       Currently a point within noise distance but is outside time will be added
@@ -562,7 +563,7 @@ class Segmentizer(object):
                         best_stats['speed'] <= self.max_speed):
             return best.id
         else:
-            logger.debug("    Dropped best")
+            # logger.debug("    Dropped best")
             return None
 
     def process(self):
@@ -582,8 +583,9 @@ class Segmentizer(object):
         Segment
         """
 
-        logger.debug("Starting to segment %s",
-                     ' %s' % self._mmsi if self._mmsi is not None else ' - finding MMSI ...')
+        # logger.debug(
+        #     "Starting to segment %s",
+        #     self._mmsi if self._mmsi is not None else '- finding MMSI ...')
 
         for idx, msg in enumerate(self.instream):
 
@@ -616,7 +618,7 @@ class Segmentizer(object):
             # This is the first message with a valid MMSI
             # Make it the previous message and create a new segment
             if self.mmsi is None:
-                logger.debug("Found a valid MMSI - processing: %s", mmsi)
+                # logger.debug("Found a valid MMSI - processing: %s", mmsi)
 
                 # We have to make sure the first message isn't out of bounds, otherwise
                 # any message compared to it will be
@@ -668,9 +670,9 @@ class Segmentizer(object):
                 try:
                     best_id = self._compute_best(msg)
                 except ValueError as e:
-                    logger.debug("    Could not compute best segment: {}".format(str(e)))
-                    logger.debug("    Bad msg: {}".format(msg))
-                    logger.debug("    Yielding bad segment")
+                    # logger.debug("    Could not compute best segment: %s", e)
+                    # logger.debug("    Bad msg: %s", msg)
+                    # logger.debug("    Yielding bad segment")
                     bs = BadSegment(self._segment_unique_id(msg), msg['mmsi'])
                     bs.add_msg(msg)
                     yield bs

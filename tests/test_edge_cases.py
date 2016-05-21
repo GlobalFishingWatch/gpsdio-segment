@@ -9,6 +9,7 @@ from datetime import timedelta
 import pytest
 
 from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.core import SegmentState
 
 
 def test_first_is_non_posit():
@@ -110,3 +111,23 @@ def test_bad_message_in_stream():
 
     assert len(bs) == 1
     assert bs.msgs == [messages[2]]
+
+
+def test_isssue_24_prev_state_nonpos_msg_gt_24_hour():
+
+    messages1 = [
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)}
+    ]
+    messages2 = [
+        {'mmsi': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 3, 1, 1, 1)}
+    ]
+
+    seg_states = [seg.state for seg in Segmentizer.from_seg_states(seg_states=[], instream=messages1)]
+
+    # these two should should produce the same result
+    seg_msg_count1 = [len(seg.msgs) for seg in list(Segmentizer.from_seg_states(seg_states=seg_states, instream=messages2))]
+    seg_msg_count2 = [len(seg.msgs) for seg in Segmentizer.from_seg_states(seg_states=seg_states, instream=messages2)]
+
+    expected = [0, 1]
+    assert expected == seg_msg_count1
+    assert expected == seg_msg_count2

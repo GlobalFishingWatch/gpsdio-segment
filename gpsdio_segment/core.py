@@ -649,13 +649,13 @@ class Segmentizer(object):
                 logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
                 continue
 
-            # Non positional message or lacking timestamp.  Add to the most recent segment.
-            elif x is None or y is None or timestamp is None:
-                self._last_segment.add_msg(msg)
-
             # All segments have been closed - create a new one
             elif len(self._segments) is 0:
                 self._create_segment(msg)
+
+            # Non positional message or lacking timestamp.  Add to the most recent segment.
+            elif x is None or y is None or timestamp is None:
+                self._last_segment.add_msg(msg)
 
             # Everything is set up - process!
             elif timestamp < self._prev_msg['timestamp']:

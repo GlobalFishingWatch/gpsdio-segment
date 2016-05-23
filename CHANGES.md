@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.4 - (2016-05-23)
+------------------
+
+- Handle an edge case where a non-posit is the first message encountered after clearing out _all_ segments.  #24
+
+
 0.3 - (2016-05-17)
 ------------------
 

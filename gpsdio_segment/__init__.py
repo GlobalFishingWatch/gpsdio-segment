@@ -15,7 +15,7 @@ from gpsdio_segment.core import Segmentizer
 logger = logging.getLogger('gpsdio-segment')
 
 
-__version__ = '0.3'
+__version__ = '0.4'
 __author__ = 'Kevin Wurster'
 __email__ = 'kevin@skytruth.org'
 __source__ = 'https://github.com/SkyTruth/gpsdio-segment'

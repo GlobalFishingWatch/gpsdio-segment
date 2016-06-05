@@ -431,6 +431,15 @@ class Segmentizer(object):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
+    def _validate_position(self, x, y):
+        """
+        Test to see if x and y are in valid range for lat/lon
+        """
+        try:
+            return x is None or y is None or (-180.0 <= float(x) <= 180.0 and -90.0 <= float(y) <= 90.0 )
+        except ValueError:
+            return False
+
     def _create_segment(self, msg):
 
         """
@@ -594,6 +603,14 @@ class Segmentizer(object):
             y = msg.get('lat')
             x = msg.get('lon')
             timestamp = msg.get('timestamp')
+
+            # Reject any message that has invalid position
+            if not self._validate_position(x, y):
+                bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
+                bs.add_msg(msg)
+                yield bs
+                logger.debug("Rejected bad message  mmsi: {mmsi} lat: {lat}  lon: {lon} timestamp: {timestamp} ".format(**msg))
+                continue
 
             # First check if there are any segments that are too far away
             # in time and yield them.  It's possible for messages to not

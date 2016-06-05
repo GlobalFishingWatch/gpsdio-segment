@@ -5,6 +5,7 @@ Tests for weird edge cases.
 
 from datetime import datetime
 from datetime import timedelta
+from collections import Counter
 
 import pytest
 
@@ -65,6 +66,21 @@ def test_with_non_posit():
         assert len(seg) == 3
 
 
+def test_with_non_posit_first():
+    """
+    non-pos message added first should have subsequent posit messages appended
+    """
+    messages = [
+        {'mmsi': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1)}
+    ]
+
+    segs = list(Segmentizer(messages))
+    assert len(segs) == 1
+
+
 def test_first_message_out_of_bounds():
 
     """
@@ -92,6 +108,43 @@ def test_first_message_out_of_bounds():
     # Good segment should have the rest of the messages
     assert len(s) == 3
     assert s.msgs == messages[1:]
+
+
+def test_first_message_out_of_bounds_gt_24h():
+    """
+    Out of bounds location as teh first message after all previous segments have been cleared.
+    Should put the bad message in a BadSegment and continue with the next good message
+    """
+
+    messages = [
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2)},
+        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 2)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 3)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 4)}
+    ]
+
+    segs = list(Segmentizer(messages))
+    assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 2, 'BadSegment': 1}
+
+
+def test_non_pos_first_followed_by_out_of_bounds():
+    """
+    When a non-pos message is first, a segement is created, and then when a message with a location comes along
+    it gets added to that segment, but since there is no positional message in the segment, no
+    location comparison is performed
+    """
+    messages = [
+        {'mmsi': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 3)},
+        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 4)}
+    ]
+
+    segs = list(Segmentizer(messages))
+    assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 1, 'BadSegment': 1}
 
 
 def test_bad_message_in_stream():

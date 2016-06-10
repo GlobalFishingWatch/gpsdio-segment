@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.5 - (2016-06-10)
+------------------
+
+- Better handling bad locations to prevent subsequent positions from being added to `BadSegment()`.  #29
+
+
 0.4 - (2016-05-23)
 ------------------
 

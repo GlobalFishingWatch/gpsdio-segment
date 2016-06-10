@@ -51,8 +51,7 @@ def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, noise_dist, segmen
     Group AIS data into continuous segments.
     """
 
-    logger = logging.getLogger('gpsdio-segment')
-    logger.setLevel(ctx.obj.get('verbosity', 1))
+    logger = logging.getLogger(__file__)
 
     with gpsdio.open(infile, driver=ctx.obj.get('i_drv'),
                      compression=ctx.obj.get('i_cmp')) as src, \

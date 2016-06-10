@@ -14,7 +14,7 @@ from gpsdio.schema import datetime2str
 import pyproj
 
 
-logger = logging.getLogger('gpsdio-segment')
+logger = logging.getLogger(__file__)
 # logger.setLevel(logging.DEBUG)
 
 
@@ -435,10 +435,7 @@ class Segmentizer(object):
         """
         Test to see if x and y are in valid range for lat/lon
         """
-        try:
-            return x is None or y is None or (-180.0 <= float(x) <= 180.0 and -90.0 <= float(y) <= 90.0 )
-        except ValueError:
-            return False
+        return x is None or y is None or (-180.0 <= x <= 180.0 and -90.0 <= y <= 90.0 )
 
     def _create_segment(self, msg):
 

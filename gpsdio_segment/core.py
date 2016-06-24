@@ -514,6 +514,27 @@ class Segmentizer(object):
             'speed': speed
         }
 
+
+    def _segment_match_metric(self, segment, msg):
+        if not segment.last_time_posit_msg:
+            return self.max_hours * self.max_speed
+
+        stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
+
+        # if msg['mmsi'] == 477320700:
+        #     print segment.id, msg['timestamp'], stats
+
+        if stats['timedelta'] > self.max_hours:
+            return None
+        elif stats['distance'] <= self.noise_dist:
+            return 0
+        elif stats['timedelta'] == 0:
+            return 0
+        elif stats['speed'] > self.max_speed:
+            return None
+        else:
+            return stats['timedelta'] * stats['distance']
+
     def _compute_best(self, msg):
 
         """
@@ -530,47 +551,18 @@ class Segmentizer(object):
 
         # best_stats are the stats between the input message and the current best segment
         # segment_stats are the stats between the input message and the current segment
-        best_stats = None
+
         best = None
         best_metric = None
         for segment in self._segments.values():
-            if best is None and segment.last_time_posit_msg:
-                best = segment
-                best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
-                best_metric = best_stats['timedelta'] * best_stats['distance']
-                # logger.debug("    No best - auto-assigned %s", best.id)
+            metric = self._segment_match_metric(segment, msg)
+            if metric is not None:
+                if best is None or metric < best_metric:
+                    best = segment.id
+                    best_metric = metric
 
-            elif segment.last_time_posit_msg:
-                segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
-                segment_metric = segment_stats['timedelta'] * segment_stats['distance']
+        return best
 
-                if segment_metric < best_metric:
-                    best = segment
-                    best_metric = segment_metric
-                    best_stats = segment_stats
-
-        if best is None:
-            best = self._segments[sorted(self._segments.keys())[0]]
-            # logger.debug("Could not determine best, probably because none of the segments "
-            #              "have any positional messages.  Defaulting to first: %s", best.id)
-            return best.id
-
-        # logger.debug("Best segment is %s", best.id)
-        # logger.debug("    Num segments: %s", len(self._segments))
-
-        # TODO: An explicit timedelta check should probably be added to the first part of if
-        #       Currently a point within noise distance but is outside time will be added
-        #       but ONLY if tracks are not closed when out of time range for some reason.
-        #       A better check is one that also incorporates max_hours rather than relying
-        #       on tracks that are outside the allowed time delta be closed.
-        #       Need to finish some unittests before adding this.
-        if best_stats['distance'] <= self.noise_dist or (
-                        best_stats['timedelta'] <= self.max_hours and
-                        best_stats['speed'] <= self.max_speed):
-            return best.id
-        else:
-            # logger.debug("    Dropped best")
-            return None
 
     def process(self):
 

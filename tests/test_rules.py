@@ -91,3 +91,5 @@ def test_bad_speed_good_time():
     assert len(segments) == 2
     for seg in segments:
         assert len(seg) == 1
+
+

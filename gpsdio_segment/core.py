@@ -519,6 +519,11 @@ class Segmentizer(object):
         if not segment.last_time_posit_msg:
             return self.max_hours * self.max_speed
 
+        # TODO: Use a max spped function that accounts for short and long distances
+        #       something like  max_speed + (1 / distance)
+        # TODO: Add a factor in the netric for the number of positions in the segment
+        #       something like timedelta * distance / n_positions
+
         stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
 
         # if msg['mmsi'] == 477320700:

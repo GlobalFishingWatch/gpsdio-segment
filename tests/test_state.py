@@ -30,7 +30,7 @@ def test_Segment_state_save_load(msg_generator):
     seg1.add_msg(msg_generator.next_time_posit_msg())
     state = seg1.state
     assert state.msg_count == 4
-    assert len(state.msgs) == 1
+    assert len(state.msgs) == 2
     seg1.add_msg(msg_generator.next_msg())
     state = seg1.state
 
@@ -67,7 +67,7 @@ def test_Segment_state_save_load(msg_generator):
 
     assert len(seg2) == 4
     state = seg2.state
-    assert len(state.msgs) == 2
+    assert len(state.msgs) == 3
     assert state.msg_count == 9
 
 

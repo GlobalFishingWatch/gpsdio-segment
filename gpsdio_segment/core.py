@@ -131,12 +131,15 @@ class Segment(object):
         state.id = self.id
         state.mmsi = self.mmsi
         state.msgs = []
-        if self.last_time_posit_msg:
-            state.msgs.append(self.last_time_posit_msg)
-        if self.last_posit_msg is not self.last_time_posit_msg:
-            state.msgs.append(self.last_posit_msg)
-        if self.last_msg is not self.last_posit_msg:
-            state.msgs.append(self.last_msg)
+
+        prev_msg = None
+        for msg in [self.first_msg,
+                    self.last_time_posit_msg,
+                    self.last_posit_msg,
+                    self.last_msg]:
+            if msg is not None and msg is not prev_msg:
+                state.msgs.append(msg)
+                prev_msg = msg
 
         state.msg_count += len(self)
 
@@ -258,6 +261,11 @@ class Segment(object):
         return self._prev_segment.last_time_posit_msg if self._prev_segment else None
 
     @property
+    def first_msg (self):
+
+        return self._prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
+
+    @property
     def bounds(self):
 
         """
@@ -271,6 +279,31 @@ class Segment(object):
 
         c = list(chain(*self.coords))
         return min(c[0::2]), min(c[1::2]), max(c[2::2]), max(c[3::2])
+
+    @property
+    def temporal_extent(self):
+        """
+        earliest and latest timestamp for messages in this segment
+
+        Returns
+        -------
+        tuple
+            tsmin, tsmax
+        """
+
+        return self.first_msg.get('timestamp', None), self.last_msg.get('timestamp', None)
+
+    @property
+    def total_seconds(self):
+        """
+        Total number of seconds from the first message to the last messsage in the segment
+
+        Returns
+        float
+        """
+
+        t1, t2 = self.temporal_extent
+        return (t2 - t1).total_seconds()
 
     def add_msg(self, msg):
 
@@ -468,6 +501,12 @@ class Segmentizer(object):
         else:
             return (ts2 - ts1).total_seconds() / 3600
 
+    def reported_speed(self, msg1, msg2):
+        """
+        compute the average reported speed (SOG) from the two messages
+        """
+        return max(msg1.get('speed', 0),  msg2.get('speed', 0))
+
     def msg_diff_stats(self, msg1, msg2):
 
         """
@@ -502,6 +541,7 @@ class Segmentizer(object):
 
         distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
         timedelta = self.timedelta(msg1, msg2)
+        reported_speed = self.reported_speed(msg1, msg2)
 
         try:
             speed = (distance / timedelta)
@@ -511,7 +551,8 @@ class Segmentizer(object):
         return {
             'distance': distance,
             'timedelta': timedelta,
-            'speed': speed
+            'speed': speed,
+            'reported_speed': reported_speed
         }
 
 
@@ -519,26 +560,22 @@ class Segmentizer(object):
         if not segment.last_time_posit_msg:
             return self.max_hours * self.max_speed
 
-        # TODO: Use a max spped function that accounts for short and long distances
-        #       something like  max_speed + (1 / distance)
-        # TODO: Add a factor in the netric for the number of positions in the segment
-        #       something like timedelta * distance / n_positions
-
         stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
 
-        # if msg['mmsi'] == 477320700:
-        #     print segment.id, msg['timestamp'], stats
+        # allow a higher max computed speed for vessels that report a high speed
+        max_speed = max(self.max_speed * 2, stats['reported_speed'] * 2)
+        seg_duration = max(1.0, segment.total_seconds) / 3600
 
         if stats['timedelta'] > self.max_hours:
             return None
-        elif stats['distance'] <= self.noise_dist:
-            return 0
         elif stats['timedelta'] == 0:
-            return 0
-        elif stats['speed'] > self.max_speed:
+            return stats['distance'] / seg_duration
+        elif stats['distance'] == 0:
+            return stats['timedelta'] / seg_duration
+        elif stats['speed'] > (max_speed  + (max_speed * (max_speed / stats['distance']))) / 2:
             return None
         else:
-            return stats['timedelta'] * stats['distance']
+            return stats['timedelta'] / seg_duration
 
     def _compute_best(self, msg):
 

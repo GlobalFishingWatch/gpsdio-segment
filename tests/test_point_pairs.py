@@ -209,7 +209,7 @@ def test_240000000(tmpdir):
 
 def test_204814000(tmpdir):
     pair_def = {
-        'is_same': False,
+        'is_same': True,
         'mmsi': 204814000,
 
         'ts1': '2014-08-02 00:20:10',
@@ -245,7 +245,7 @@ def test_224108190(tmpdir):
 
 def test_600011817(tmpdir):
     pair_def = {
-        'is_same': False,
+        'is_same': True,
         'mmsi': 600011817,
 
         'ts1': '2014-08-19 02:14:59',
@@ -263,7 +263,7 @@ def test_600011817(tmpdir):
 
 def test_538004505(tmpdir):
     pair_def = {
-        'is_same': False,
+        'is_same': True,
         'mmsi': 538004505,
 
         'ts1': '2014-08-29 19:08:16',

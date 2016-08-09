@@ -21,7 +21,7 @@ logger = logging.getLogger(__file__)
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 40  # knots
-DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
+DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # DEPRECATED nautical miles
 INFINITE_SPEED = 1000000
 
 
@@ -364,7 +364,7 @@ class Segmentizer(object):
         max_speed : int, optional
             Maximum speed allowed between points in nautical miles.
         noise_dist : int, optional
-            If a point is within this distance (nautical miles) then add it to
+            DEPRECATED If a point is within this distance (nautical miles) then add it to
             the closes segment without looking at anything else.
         """
 
@@ -382,9 +382,6 @@ class Segmentizer(object):
         self._prev_msg = None
         self._last_segment = None
 
-        # logger.debug("Created an instance of Segmentizer() with "
-        #              "max_speed=%s, max_hours=%s, noise_dist=%s",
-        #              max_speed, max_hours, noise_dist)
 
     def __iter__(self):
 

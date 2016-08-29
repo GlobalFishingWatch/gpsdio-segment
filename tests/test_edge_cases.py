@@ -49,14 +49,14 @@ def test_with_non_posit():
 
     # Continuous
     msg1 = {'idx': 0, 'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
-    msg2 = {'idx': 1, 'mmsi': 1}
+    msg2 = {'idx': 1, 'mmsi': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
     msg3 = {'idx': 2, 'mmsi': 1, 'lat': 0.00001, 'lon': 0.00001,
             'timestamp': msg1['timestamp'] + timedelta(hours=12)}
 
     # Also continuous but not to the previous trio
     msg4 = {'idx': 3, 'mmsi': 1, 'lat': 65, 'lon': 65,
             'timestamp': msg3['timestamp'] + timedelta(days=100)}
-    msg5 = {'idx': 4, 'mmsi': 1}
+    msg5 = {'idx': 4, 'mmsi': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
     msg6 = {'idx': 5, 'mmsi': 1, 'lat': 65.00001, 'lon': 65.00001,
             'timestamp': msg4['timestamp'] + timedelta(hours=12)}
 

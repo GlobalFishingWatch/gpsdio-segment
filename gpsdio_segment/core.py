@@ -21,7 +21,7 @@ logger = logging.getLogger(__file__)
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 40  # knots
-DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # nautical miles
+DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # DEPRECATED nautical miles
 INFINITE_SPEED = 1000000
 
 
@@ -131,12 +131,15 @@ class Segment(object):
         state.id = self.id
         state.mmsi = self.mmsi
         state.msgs = []
-        if self.last_time_posit_msg:
-            state.msgs.append(self.last_time_posit_msg)
-        if self.last_posit_msg is not self.last_time_posit_msg:
-            state.msgs.append(self.last_posit_msg)
-        if self.last_msg is not self.last_posit_msg:
-            state.msgs.append(self.last_msg)
+
+        prev_msg = None
+        for msg in [self.first_msg,
+                    self.last_time_posit_msg,
+                    self.last_posit_msg,
+                    self.last_msg]:
+            if msg is not None and msg is not prev_msg:
+                state.msgs.append(msg)
+                prev_msg = msg
 
         state.msg_count += len(self)
 
@@ -258,6 +261,11 @@ class Segment(object):
         return self._prev_segment.last_time_posit_msg if self._prev_segment else None
 
     @property
+    def first_msg (self):
+
+        return self._prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
+
+    @property
     def bounds(self):
 
         """
@@ -271,6 +279,31 @@ class Segment(object):
 
         c = list(chain(*self.coords))
         return min(c[0::2]), min(c[1::2]), max(c[2::2]), max(c[3::2])
+
+    @property
+    def temporal_extent(self):
+        """
+        earliest and latest timestamp for messages in this segment
+
+        Returns
+        -------
+        tuple
+            tsmin, tsmax
+        """
+
+        return self.first_msg.get('timestamp', None), self.last_msg.get('timestamp', None)
+
+    @property
+    def total_seconds(self):
+        """
+        Total number of seconds from the first message to the last messsage in the segment
+
+        Returns
+        float
+        """
+
+        t1, t2 = self.temporal_extent
+        return (t2 - t1).total_seconds()
 
     def add_msg(self, msg):
 
@@ -331,7 +364,7 @@ class Segmentizer(object):
         max_speed : int, optional
             Maximum speed allowed between points in nautical miles.
         noise_dist : int, optional
-            If a point is within this distance (nautical miles) then add it to
+            DEPRECATED If a point is within this distance (nautical miles) then add it to
             the closes segment without looking at anything else.
         """
 
@@ -349,9 +382,6 @@ class Segmentizer(object):
         self._prev_msg = None
         self._last_segment = None
 
-        # logger.debug("Created an instance of Segmentizer() with "
-        #              "max_speed=%s, max_hours=%s, noise_dist=%s",
-        #              max_speed, max_hours, noise_dist)
 
     def __iter__(self):
 
@@ -468,6 +498,12 @@ class Segmentizer(object):
         else:
             return (ts2 - ts1).total_seconds() / 3600
 
+    def reported_speed(self, msg1, msg2):
+        """
+        compute the average reported speed (SOG) from the two messages
+        """
+        return max(msg1.get('speed', 0),  msg2.get('speed', 0))
+
     def msg_diff_stats(self, msg1, msg2):
 
         """
@@ -502,6 +538,7 @@ class Segmentizer(object):
 
         distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
         timedelta = self.timedelta(msg1, msg2)
+        reported_speed = self.reported_speed(msg1, msg2)
 
         try:
             speed = (distance / timedelta)
@@ -511,8 +548,31 @@ class Segmentizer(object):
         return {
             'distance': distance,
             'timedelta': timedelta,
-            'speed': speed
+            'speed': speed,
+            'reported_speed': reported_speed
         }
+
+
+    def _segment_match_metric(self, segment, msg):
+        if not segment.last_time_posit_msg:
+            return self.max_hours * self.max_speed
+
+        stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
+
+        # allow a higher max computed speed for vessels that report a high speed
+        max_speed = max(self.max_speed * 2, stats['reported_speed'] * 2)
+        seg_duration = max(1.0, segment.total_seconds) / 3600
+
+        if stats['timedelta'] > self.max_hours:
+            return None
+        elif stats['timedelta'] == 0:
+            return stats['distance'] / seg_duration
+        elif stats['distance'] == 0:
+            return stats['timedelta'] / seg_duration
+        elif stats['speed'] > (max_speed  + (max_speed * (max_speed / stats['distance']))) / 2:
+            return None
+        else:
+            return stats['timedelta'] / seg_duration
 
     def _compute_best(self, msg):
 
@@ -530,47 +590,18 @@ class Segmentizer(object):
 
         # best_stats are the stats between the input message and the current best segment
         # segment_stats are the stats between the input message and the current segment
-        best_stats = None
+
         best = None
         best_metric = None
         for segment in self._segments.values():
-            if best is None and segment.last_time_posit_msg:
-                best = segment
-                best_stats = self.msg_diff_stats(msg, best.last_time_posit_msg)
-                best_metric = best_stats['timedelta'] * best_stats['distance']
-                # logger.debug("    No best - auto-assigned %s", best.id)
+            metric = self._segment_match_metric(segment, msg)
+            if metric is not None:
+                if best is None or metric < best_metric:
+                    best = segment.id
+                    best_metric = metric
 
-            elif segment.last_time_posit_msg:
-                segment_stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
-                segment_metric = segment_stats['timedelta'] * segment_stats['distance']
+        return best
 
-                if segment_metric < best_metric:
-                    best = segment
-                    best_metric = segment_metric
-                    best_stats = segment_stats
-
-        if best is None:
-            best = self._segments[sorted(self._segments.keys())[0]]
-            # logger.debug("Could not determine best, probably because none of the segments "
-            #              "have any positional messages.  Defaulting to first: %s", best.id)
-            return best.id
-
-        # logger.debug("Best segment is %s", best.id)
-        # logger.debug("    Num segments: %s", len(self._segments))
-
-        # TODO: An explicit timedelta check should probably be added to the first part of if
-        #       Currently a point within noise distance but is outside time will be added
-        #       but ONLY if tracks are not closed when out of time range for some reason.
-        #       A better check is one that also incorporates max_hours rather than relying
-        #       on tracks that are outside the allowed time delta be closed.
-        #       Need to finish some unittests before adding this.
-        if best_stats['distance'] <= self.noise_dist or (
-                        best_stats['timedelta'] <= self.max_hours and
-                        best_stats['speed'] <= self.max_speed):
-            return best.id
-        else:
-            # logger.debug("    Dropped best")
-            return None
 
     def process(self):
 

@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.6 - (2016-08-30)
+------------------
+
+- Improved segmenting algorithm to handle high speed better .  #32, #34
+
 
 0.5 - (2016-06-10)
 ------------------

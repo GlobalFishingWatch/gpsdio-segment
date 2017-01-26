@@ -502,7 +502,7 @@ class Segmentizer(object):
         """
         compute the average reported speed (SOG) from the two messages
         """
-        return max(msg1.get('speed', 0),  msg2.get('speed', 0))
+        return max(msg1.get('speed', 0) or 0,  msg2.get('speed', 0) or 0)
 
     def msg_diff_stats(self, msg1, msg2):
 
@@ -560,7 +560,7 @@ class Segmentizer(object):
         stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
 
         # allow a higher max computed speed for vessels that report a high speed
-        max_speed = max(self.max_speed * 2, stats['reported_speed'] * 2)
+        max_speed = max(self.max_speed, stats['reported_speed']) * 2
         seg_duration = max(1.0, segment.total_seconds) / 3600
 
         if stats['timedelta'] > self.max_hours:

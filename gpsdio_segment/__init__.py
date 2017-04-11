@@ -5,8 +5,8 @@ Includes a CLI plugin for `gpsdio` to run the algorithm.
 """
 
 
-from gpsdio_segment.core import BadSegment
-from gpsdio_segment.core import Segment
+from gpsdio_segment.segment import BadSegment
+from gpsdio_segment.segment import Segment
 from gpsdio_segment.core import Segmentizer
 
 

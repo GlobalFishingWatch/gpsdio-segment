@@ -256,10 +256,12 @@ class Segmentizer(object):
             return stats['distance'] / seg_duration
         elif stats['distance'] == 0:
             return stats['timedelta'] / seg_duration
-        elif stats['speed'] > (max_speed_at_inf  + (max_speed_at_inf * (max_speed_at_inf / stats['distance']))) / 2:
-            return None
         else:
-            return stats['timedelta'] / seg_duration
+            max_speed_at_distance = max_speed_at_inf * ((1 + max_speed_at_inf / stats['distance']) / 2)
+            if stats['speed'] > max_speed_at_distance:
+                return None
+            else:
+                return stats['timedelta'] / seg_duration
 
     def _compute_best(self, msg):
         best = None

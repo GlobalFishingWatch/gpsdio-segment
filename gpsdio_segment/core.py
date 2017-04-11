@@ -36,6 +36,8 @@ and for any finite distance it is
 
 max_speed_at_distance = max_speed_at_inf * ((1 + max_speed_at_inf / distance) / 2)
 
+which grows to infinity at zero distance.
+
 If none of the tracks fulfills these requirements, a new track is
 opened for the point. If any track is ignored due to the
 max_hours, that track is closed, as points are assumed to be

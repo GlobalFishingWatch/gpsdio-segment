@@ -255,7 +255,12 @@ class Segmentizer(object):
         if stats['timedelta'] > self.max_hours:
             return None
         elif stats['timedelta'] == 0:
-            return stats['distance'] / seg_duration
+            # only keep idenitcal timestamps if the distance is small
+            # allow for the distance you can go at max speed for one minute
+            if stats['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
+                return stats['distance'] / seg_duration
+            else:
+                return None
         elif stats['distance'] == 0:
             return stats['timedelta'] / seg_duration
         else:

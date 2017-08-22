@@ -41,6 +41,15 @@ def test_same_point_absurd_timedelta():
     for seg in segments:
         assert len(seg) == 1
 
+def test_same_time_absurd_distance():
+    t = datetime.now()
+    msg1 = {'mmsi': 10000, 'lat': 0, 'lon': 0, 'timestamp': t}
+    msg2 = {'mmsi': 10000, 'lat': 10, 'lon': 10, 'timestamp': t}
+    segments = list(Segmentizer([msg1, msg2]))
+    assert len(segments) == 2
+    for seg in segments:
+        assert len(seg) == 1
+
 
 def test_with_non_posit():
     # Non-positional messages should be added to the segment that was last touched

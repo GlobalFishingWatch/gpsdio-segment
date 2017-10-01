@@ -25,8 +25,8 @@ Usage
       --max-hours FLOAT    Points with a time delta larger than N hours are forced
                            to be discontinuous. (default: 24)
       --max-speed FLOAT    Units are knots.  Points with a speed above this value
-                           are always considered discontinuous. (default: 40)
-      --noise-dist FLOAT   Units are nautical miles.  Points within this distance
+                           are always considered discontinuous. (default: 30)
+      --noise-dist FLOAT   DEPRECATED. Units are nautical miles.  Points within this distance
                            are always considered continuous.  Used to allow a
                            certain amount of GPS noise. (default: 0.27)
       --segment-field TEXT Add the segment ID to this field when writing messages.

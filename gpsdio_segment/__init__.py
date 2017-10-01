@@ -10,15 +10,16 @@ from gpsdio_segment.segment import Segment
 from gpsdio_segment.core import Segmentizer
 
 
-__version__ = '0.8'
-__author__ = 'Kevin Wurster'
-__email__ = 'kevin@skytruth.org'
+__version__ = '0.8d'
+__author__ = 'Paul Woods'
+__email__ = 'paul@skytruth.org'
 __source__ = 'https://github.com/SkyTruth/gpsdio-segment'
 __license__ = """
-Copyright 2015-2016 SkyTruth
+Copyright 2015-2017 SkyTruth
 Authors:
 
 Kevin Wurster <kevin@skytruth.org>
+Paul Woods <paul@skytruth.org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

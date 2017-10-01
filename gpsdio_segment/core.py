@@ -28,15 +28,7 @@ Points are not added to tracks where the timedelta is greater
 than max_hours=24hours. In addition, it is neither added if the speed
 implied by the distance and and time delta between the end of the
 track and the new point is greater than a cutoff max speed dependant
-on the distance. For an infinite distance, this is
-
-max_speed_at_inf = max(max_speed=40knots, reported_speed) * 2
-
-and for any finite distance it is
-
-max_speed_at_distance = max_speed_at_inf * ((1 + max_speed_at_inf / distance) / 2)
-
-which grows to infinity at zero distance.
+on the distance, which grows to infinity at zero distance.
 
 If none of the tracks fulfills these requirements, a new track is
 opened for the point. If any track is ignored due to the

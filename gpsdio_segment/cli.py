@@ -36,7 +36,7 @@ from gpsdio_segment.core import DEFAULT_NOISE_DIST
 )
 @click.option(
     '--noise-dist', type=click.FLOAT, default=DEFAULT_NOISE_DIST,
-    help="Units are nautical miles.  Points within this distance are always considered "
+    help="DEPRECATED. Units are nautical miles.  Points within this distance are always considered "
          "continuous.  Used to allow a certain amount of GPS noise. "
          "(default: {})".format(DEFAULT_NOISE_DIST)
 )

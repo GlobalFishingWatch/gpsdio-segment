@@ -29,8 +29,8 @@ Usage
       --noise-dist FLOAT   Units are nautical miles.  Points within this distance
                            are always considered continuous.  Used to allow a
                            certain amount of GPS noise. (default: 0.27)
-      --series-field TEXT  Add the segment ID to this field when writing messages.
-                           (default: series)
+      --segment-field TEXT Add the segment ID to this field when writing messages.
+                           (default: segment)
       --help               Show this message and exit.
 
 

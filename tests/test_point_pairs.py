@@ -101,8 +101,8 @@ def compare(pair_def, stream):
 
     assert msg1['segment'] is not None
     assert msg2['segment'] is not None
-    print(msg1['segment'])
-    print(msg2['segment'])
+    # print(msg1['segment'])
+    # print(msg2['segment'])
     return (msg1['segment'] == msg2['segment']) == pair_def['is_same']
 
 
@@ -209,7 +209,7 @@ def test_240000000(tmpdir):
 
 def test_204814000(tmpdir):
     pair_def = {
-        'is_same': True,
+        'is_same': False,
         'mmsi': 204814000,
 
         'ts1': '2014-08-02 00:20:10',
@@ -245,7 +245,7 @@ def test_224108190(tmpdir):
 
 def test_600011817(tmpdir):
     pair_def = {
-        'is_same': True,
+        'is_same': False,
         'mmsi': 600011817,
 
         'ts1': '2014-08-19 02:14:59',

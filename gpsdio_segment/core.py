@@ -48,6 +48,8 @@ Points that do not have a timestamp or lat/lon are added to the track
 last added to.
 """
 
+# TODO: Update the algorithm description above to reflect how it actually works now
+
 
 from __future__ import division
 
@@ -73,7 +75,12 @@ DEFAULT_MAX_SPEED = 30  # knots
 DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # DEPRECATED nautical miles
 INFINITE_SPEED = 1000000
 
-
+# The values 52 and 102.3 are both almost always noise, and don't
+# reflect the vessel's actual speed. They need to be commented out.
+# The value 102.3 is reserved for "bad value." It looks like 51.2
+# is also almost always noise. Because the values are floats,
+# and not always exactly 102.3 or 51.2, we give a range.
+REPORTED_SPEED_EXCLUSION_RANGES = [(51.0, 51.3),(102.2,103.0)]
 
 
 class Segmentizer(object):
@@ -197,22 +204,12 @@ class Segmentizer(object):
         else:
             return (ts2 - ts1).total_seconds() / 3600
 
-    def reported_speed(self, msg1, msg2):
-        """
-        The values 52 and 102.3 are both almost always noise, and don't 
-        reflect the vessel's actual speed. They need to be commented out. 
-        The value 102.3 is reserved for "bad value." It looks like 51.2 
-        is also almost always noise. Because the values are floats,
-        and not always exactly 102.3 or 51.2, we give a range.
-        """
-
-        sp1 = msg1.get('speed', 0) or 0
-        if sp1 > 51.0 and sp1 < 51.3: sp1 = 0
-        if sp1 > 102.2 and sp1 < 103: sp1 = 0
-        sp2 = msg2.get('speed', 0) or 0
-        if sp2 > 51.0 and sp2 < 51.3: sp2 = 0
-        if sp2 > 102.2 and sp2 < 103: sp2 = 0
-        return max(sp1, sp2)
+    def reported_speed(self, msg):
+        s = msg.get('speed', 0) or 0
+        for r in REPORTED_SPEED_EXCLUSION_RANGES:
+            if r[0] < s < r[1]:
+                s = 0
+        return s
 
     def msg_diff_stats(self, msg1, msg2):
 
@@ -241,7 +238,7 @@ class Segmentizer(object):
 
         distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
         timedelta = self.timedelta(msg1, msg2)
-        reported_speed = self.reported_speed(msg1, msg2)
+        reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
 
         try:
             speed = (distance / timedelta)
@@ -262,6 +259,8 @@ class Segmentizer(object):
 
         stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
 
+        # print msg['timestamp'], stats
+
         # allow a higher max computed speed for vessels that report a high speed
         # multiply reported speed by 1.1 to give a 10 percent speed buffer
         max_speed_at_inf = max(self.max_speed, stats['reported_speed']*1.1) * 2
@@ -281,7 +280,7 @@ class Segmentizer(object):
         else:
             max_speed_at_distance = max_speed_at_inf * ((1 + 5 / (stats['distance'])**2) / 2) 
             # This previously gave an unrealistic speed. This new version, with max speed 
-            # of 30, and thus max_pseed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
+            # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
             # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops
             # to about 30 knots. In other words, below gaps between points of under 
             # 20 minutes, faster speeds are allowed. 

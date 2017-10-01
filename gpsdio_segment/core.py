@@ -40,8 +40,6 @@ Points that do not have a timestamp or lat/lon are added to the track
 last added to.
 """
 
-# TODO: Update the algorithm description above to reflect how it actually works now
-
 
 from __future__ import division
 

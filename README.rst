@@ -56,6 +56,12 @@ Developing
     $ py.test tests --cov gpsdio_segment --cov-report term-missing
 
 
+Helpful Recipes
+---------------
+.. code-block:: console
+    cat tests/data/segmented-416000000.json | jq -s -c '. | sort_by(.timestamp)[]' | gpsdio --i-drv JSON segment --segment-field=new_seg - test.json
+
+
 License
 -------
 

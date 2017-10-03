@@ -253,7 +253,6 @@ class Segmentizer(object):
 
         # allow a higher max computed speed for vessels that report a high speed
         # multiply reported speed by 1.1 to give a 10 percent speed buffer
-        max_speed_at_inf = max(self.max_speed, stats['reported_speed']*1.1) * 2
         seg_duration = max(1.0, segment.total_seconds) / 3600
 
         if stats['timedelta'] > self.max_hours:
@@ -268,7 +267,8 @@ class Segmentizer(object):
         elif stats['distance'] == 0:
             return stats['timedelta'] / seg_duration
         else:
-            max_speed_at_distance = max_speed_at_inf * ((1 + 5 / (stats['distance'])**2) / 2) 
+            max_speed_at_inf = max(self.max_speed, stats['reported_speed'] * 1.1)
+            max_speed_at_distance = max_speed_at_inf * (1 + 15 / (stats['distance'])**1.3)
             # This previously gave an unrealistic speed. This new version, with max speed 
             # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
             # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops

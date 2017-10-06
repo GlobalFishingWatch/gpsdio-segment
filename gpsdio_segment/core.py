@@ -139,7 +139,7 @@ class Segmentizer(object):
         self._geod = pyproj.Geod(ellps='WGS84')
         self._segments = {}
         self._mmsi = mmsi
-        self._prev_msg = None
+        self._prev_timestamp = None
         self._last_segment = None
 
     def __repr__(self):
@@ -162,7 +162,7 @@ class Segmentizer(object):
         if s._segments:
             s._last_segment = max(
                 s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
-            s._prev_msg = s._last_segment.last_msg
+            s._prev_timestamp = s._last_segment.last_msg['timestamp']
             if s._mmsi:
                 assert s._mmsi == s._last_segment.mmsi
             s._mmsi = s._last_segment.mmsi
@@ -373,7 +373,7 @@ class Segmentizer(object):
                         continue
 
                 self._mmsi = mmsi
-                self._prev_msg = msg
+                self._prev_timestamp = msg['timestamp']
                 self._add_segment(msg)
                 continue
 
@@ -387,7 +387,7 @@ class Segmentizer(object):
             elif x is None or y is None or timestamp is None:
                 self._last_segment.add_msg(msg)
 
-            elif timestamp < self._prev_msg['timestamp']:
+            elif timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
 
             else:
@@ -413,7 +413,7 @@ class Segmentizer(object):
                     self._last_segment = self._segments[best_id]
 
             if x and y and timestamp:
-                self._prev_msg = msg
+                self._prev_timestamp = msg['timestamp']
 
         for series, segment in self._segments.items():
             yield segment

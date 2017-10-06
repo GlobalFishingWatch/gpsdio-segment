@@ -64,6 +64,9 @@ DEFAULT_MAX_HOURS = 24  # hours
 DEFAULT_MAX_SPEED = 30  # knots
 DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # DEPRECATED nautical miles
 INFINITE_SPEED = 1000000
+REPORTED_SPEED_MULTIPLIER = 1.1 # multiply this by reported speed in max speed calculation
+MAX_SPEED_MULTIPLIER = 15     # magic number used to compute max_speed_at_distance
+MAX_SPEED_EXPONENT = 1.3     # magic number used to compute max_speed_at_distance
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -80,7 +83,11 @@ class Segmentizer(object):
     """
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
+                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST,
+                 reported_speed_multiplier=REPORTED_SPEED_MULTIPLIER,
+                 max_speed_multiplier = MAX_SPEED_MULTIPLIER,
+                 max_speed_exponent=MAX_SPEED_EXPONENT,
+                 ):
 
         """
         Looks at a stream of messages and pull out segments of points that are
@@ -114,6 +121,9 @@ class Segmentizer(object):
         self.max_hours = max_hours
         self.max_speed = max_speed
         self.noise_dist = noise_dist
+        self.reported_speed_multiplier = reported_speed_multiplier
+        self.max_speed_multiplier = max_speed_multiplier
+        self.max_speed_exponent = max_speed_exponent
 
         # Exposed via properties
         self._instream = instream
@@ -226,7 +236,7 @@ class Segmentizer(object):
         x2 = msg2['lon']
         y2 = msg2['lat']
 
-        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
+        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
         timedelta = self.timedelta(msg1, msg2)
         reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
 
@@ -267,8 +277,9 @@ class Segmentizer(object):
         elif stats['distance'] == 0:
             return stats['timedelta'] / seg_duration
         else:
-            max_speed_at_inf = max(self.max_speed, stats['reported_speed'] * 1.1)
-            max_speed_at_distance = max_speed_at_inf * (1 + 15 / (stats['distance'])**1.3)
+            max_speed_at_inf = max(self.max_speed, stats['reported_speed'] * self.reported_speed_multiplier)
+            max_speed_at_distance = max_speed_at_inf * \
+                                    (1 + self.max_speed_multiplier / (stats['distance'])**self.max_speed_exponent)
             # This previously gave an unrealistic speed. This new version, with max speed 
             # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
             # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops

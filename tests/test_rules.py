@@ -11,23 +11,41 @@ from click.testing import CliRunner
 import gpsdio_segment.cli
 from gpsdio_segment.core import Segmentizer
 
+# deltas = [{'distance': 0, 'speed': 0, 'duration': 0}]
+# distances are in nautical miles
+# speeds are in knots
+# durations are in hours
+# specify 2 of the 3 possible values
+def generate_messages_from_deltas(deltas):
+    msg = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
+    yield msg
+    for d in deltas:
+        distance = d.get('distance') or d['speed'] * d['duration']
+        duration = d.get('duration') or d['speed'] / d['distance']
+        lon = msg['lon'] + (distance / 60.0)
+        ts = msg['timestamp'] + timedelta(hours=duration)
+        msg = dict(mmsi=msg['mmsi'], lat=msg['lat'], lon=lon, timestamp=ts)
+        yield msg
 
-def test_inside_noise_distance_inside_time_infinite_speed():
-    # If inside the noise distance and inside max time then point
-    # should be added regardless of its inferred speed
-    p1 = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
-    p2 = {'mmsi': 1, 'lat': 0.0000001, 'lon': 0.0000001, 'timestamp': datetime.now()}
-    segmenter = Segmentizer([p1, p2])
+def test_noise_distance():
+    # adding a point inside noise distance but with too high max speed should result in the
+    # point being emitted in a separate segment
+    deltas = [
+        {'duration': 1, 'speed': 5},
+        {'duration': 1, 'speed': 5},
+        {'duration': 1, 'speed': 5},
+        {'duration': 0.1, 'speed': 100},
+        {'duration': 0.1, 'speed': 5},
+        ]
+
+    messages = list(generate_messages_from_deltas(deltas))
+    segmenter = Segmentizer(messages, noise_dist=30)
     segments = list(segmenter)
+    assert {len(s.msgs) for s in segments} == {4, 1, 1}
 
-    # Should produce a single segment containing two points
-    stats = segmenter.msg_diff_stats(p1, p2)
-    assert len(segments) == 1
-    assert stats['distance'] <= segmenter.noise_dist
-    assert stats['speed'] > segmenter.max_speed
-    assert stats['timedelta'] <= segmenter.max_hours
-    for seg in segments:
-        assert len(seg) == 2
+    segmenter = Segmentizer(messages, noise_dist=0)
+    segments = list(segmenter)
+    assert {len(s.msgs) for s in segments} == {4, 2}
 
 
 def test_two_different_mmsi():

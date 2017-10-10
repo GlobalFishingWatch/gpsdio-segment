@@ -193,3 +193,14 @@ def test_isssue_24_prev_state_nonpos_msg_gt_24_hour():
     expected = [0, 1]
     assert expected == seg_msg_count1
     assert expected == seg_msg_count2
+
+
+def test_max_hours_exceeded_with_non_pos_message():
+    messages = [
+        {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 0, 0, 0)},
+        {'mmsi': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 1, 12, 0, 0)},
+        {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 0, 0)}
+    ]
+
+    seg_msg_count = [len(seg) for seg in Segmentizer(messages, max_hours=24)]
+    assert seg_msg_count == [2, 1]

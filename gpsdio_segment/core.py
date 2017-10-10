@@ -339,7 +339,8 @@ class Segmentizer(object):
             _yielded = []
             for segment in self._segments.values():
                 if timestamp and segment.last_msg.get('timestamp'):
-                    td = self.timedelta(msg, segment.last_msg)
+                    last_msg = segment.last_time_posit_msg or segment.last_msg
+                    td = self.timedelta(msg, last_msg)
                     if td > self.max_hours:
                         if False:
                             logger.debug("Segment %s exceeds max time: %s", segment.id, td)

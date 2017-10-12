@@ -61,8 +61,8 @@ logger = logging.getLogger(__file__)
 
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
-DEFAULT_MAX_SPEED = 30  # knots
-DEFAULT_NOISE_DIST = 0  # nautical miles
+DEFAULT_MAX_SPEED = 25  # knots
+DEFAULT_NOISE_DIST = 100  # nautical miles
 INFINITE_SPEED = 1000000
 REPORTED_SPEED_MULTIPLIER = 1.1 # multiply this by reported speed in max speed calculation
 MAX_SPEED_MULTIPLIER = 15     # magic number used to compute max_speed_at_distance
@@ -274,7 +274,7 @@ class Segmentizer(object):
 
         seg_duration = max(1.0, segment.total_seconds) / 3600
 
-        if seg_duration > 2.0 and stats['distance'] > 0:
+        if stats['distance'] > 0:
             noise_factor = self.noise_dist / stats['distance']
         else:
             noise_factor = 0

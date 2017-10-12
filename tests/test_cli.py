@@ -6,6 +6,8 @@ def test_segment_via_cli(tmpdir):
     outfile = str(tmpdir.mkdir('out').join('segmented.json'))
     result = CliRunner().invoke(gpsdio.cli.main.main_group, [
         'segment',
+        '--noise-dist=0',
+        '--max-speed=30',
         'tests/data/416000000.json',
         outfile
     ])

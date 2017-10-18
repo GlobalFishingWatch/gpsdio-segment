@@ -65,8 +65,8 @@ DEFAULT_MAX_SPEED = 25  # knots
 DEFAULT_NOISE_DIST = 100  # nautical miles
 INFINITE_SPEED = 1000000
 REPORTED_SPEED_MULTIPLIER = 1.1 # multiply this by reported speed in max speed calculation
-MAX_SPEED_MULTIPLIER = 15     # magic number used to compute max_speed_at_distance
-MAX_SPEED_EXPONENT = 1.3     # magic number used to compute max_speed_at_distance
+MAX_SPEED_MULTIPLIER = 1600     # magic number used to compute max_speed_at_distance
+MAX_SPEED_EXPONENT = 2.0     # magic number used to compute max_speed_at_distance
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.

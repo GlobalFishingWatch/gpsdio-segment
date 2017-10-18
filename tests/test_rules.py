@@ -34,12 +34,12 @@ def test_noise_distance():
         {'duration': 1, 'speed': 5},
         {'duration': 1, 'speed': 5},
         {'duration': 1, 'speed': 5},
-        {'duration': 0.1, 'speed': 100},
+        {'duration': 0.5, 'speed': 100},
         {'duration': 0.1, 'speed': 5},
         ]
 
     messages = list(generate_messages_from_deltas(deltas))
-    segmenter = Segmentizer(messages, noise_dist=30)
+    segmenter = Segmentizer(messages, noise_dist=100)
     segments = list(segmenter)
     assert {len(s.msgs) for s in segments} == {4, 1, 1}
 

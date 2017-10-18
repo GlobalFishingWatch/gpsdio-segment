@@ -245,7 +245,7 @@ def test_224108190(tmpdir):
 
 def test_600011817(tmpdir):
     pair_def = {
-        'is_same': False,
+        'is_same': True,
         'mmsi': 600011817,
 
         'ts1': '2014-08-19 02:14:59',

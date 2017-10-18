@@ -58,8 +58,20 @@ Developing
 
 Helpful Recipes
 ---------------
+
+If you make changes and you know they are right, but test_cli.py is failing because the expectd output is now
+different, you can update the expected output with this
+
 .. code-block:: console
-    cat tests/data/segmented-416000000.json | jq -s -c '. | sort_by(.timestamp)[]' | gpsdio --i-drv JSON segment --segment-field=new_seg - test.json
+    gpsdio segment ./tests/data/416000000.json ./tests/data/segmented-416000000.json
+
+
+
+To sort a newlineJSON file by timestamp
+.. code-block:: console
+    cat tests/data/416000000.json | jq -s -c '. | sort_by(.timestamp)[]'
+
+
 
 
 License

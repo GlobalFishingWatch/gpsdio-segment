@@ -1,10 +1,10 @@
 Changelog
 =========
 
-0.9-alpha - (2017-09-30)
-------------------------
+0.9 - (2017-10-18)
+------------------
 
-- New experimental parameters that reduce the allowable speed at distance
+- New parameters that reduce the allowable speed at distance and handle noise better #42
 
 
 0.8 - (2017-08-22)

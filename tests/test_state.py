@@ -75,19 +75,19 @@ def test_Segmentizer_state_save_load(tmpdir):
     outfile = str(tmpdir.mkdir('test_Segmentizer_state_save_load').join('segmented.json'))
 
     with gpsdio.open('tests/data/416000000.json') as src:
-        segmentizer = Segmentizer(src)
+        segmentizer = Segmentizer(src, noise_dist=0)
         segs = [seg for seg in segmentizer]
         full_run_seg_states = [seg.state for seg in segs]
         full_run_msg_count = sum(len(seg) for seg in segs)
 
     with gpsdio.open('tests/data/416000000.json') as src:
         n = 800
-        segmentizer = Segmentizer(itertools.islice(src, n))
+        segmentizer = Segmentizer(itertools.islice(src, n), noise_dist=0)
         first_half_seg_states = [seg.state for seg in segmentizer]
 
         assert n == sum([st.msg_count for st in first_half_seg_states])
 
-        segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
+        segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src, noise_dist=0)
         assert sum([seg._prev_state.msg_count for seg in segmentizer._segments.values()]) == n
 
         segs = [seg for seg in segmentizer]

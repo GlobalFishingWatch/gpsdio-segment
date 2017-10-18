@@ -1,6 +1,24 @@
 Changelog
 =========
 
+0.9-alpha - (2017-09-30)
+------------------------
+
+- New experimental parameters that reduce the allowable speed at distance
+
+
+0.8 - (2017-08-22)
+------------------
+
+- Documentation and reorganization
+
+
+0.7 - (2017-01-26)
+------------------
+
+- Bugfix for no reported speed.
+
+
 0.6 - (2016-08-30)
 ------------------
 

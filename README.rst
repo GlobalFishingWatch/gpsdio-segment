@@ -25,12 +25,12 @@ Usage
       --max-hours FLOAT    Points with a time delta larger than N hours are forced
                            to be discontinuous. (default: 24)
       --max-speed FLOAT    Units are knots.  Points with a speed above this value
-                           are always considered discontinuous. (default: 40)
-      --noise-dist FLOAT   Units are nautical miles.  Points within this distance
+                           are always considered discontinuous. (default: 30)
+      --noise-dist FLOAT   DEPRECATED. Units are nautical miles.  Points within this distance
                            are always considered continuous.  Used to allow a
                            certain amount of GPS noise. (default: 0.27)
-      --series-field TEXT  Add the segment ID to this field when writing messages.
-                           (default: series)
+      --segment-field TEXT Add the segment ID to this field when writing messages.
+                           (default: segment)
       --help               Show this message and exit.
 
 
@@ -54,6 +54,24 @@ Developing
     $ source venv/bin/activate
     $ pip install -e .\[dev\]
     $ py.test tests --cov gpsdio_segment --cov-report term-missing
+
+
+Helpful Recipes
+---------------
+
+If you make changes and you know they are right, but test_cli.py is failing because the expectd output is now
+different, you can update the expected output with this
+
+.. code-block:: console
+    gpsdio segment ./tests/data/416000000.json ./tests/data/segmented-416000000.json
+
+
+
+To sort a newlineJSON file by timestamp
+.. code-block:: console
+    cat tests/data/416000000.json | jq -s -c '. | sort_by(.timestamp)[]'
+
+
 
 
 License

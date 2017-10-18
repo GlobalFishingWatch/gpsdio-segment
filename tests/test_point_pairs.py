@@ -101,8 +101,8 @@ def compare(pair_def, stream):
 
     assert msg1['segment'] is not None
     assert msg2['segment'] is not None
-    print(msg1['segment'])
-    print(msg2['segment'])
+    # print(msg1['segment'])
+    # print(msg2['segment'])
     return (msg1['segment'] == msg2['segment']) == pair_def['is_same']
 
 

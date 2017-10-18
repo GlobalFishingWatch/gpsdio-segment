@@ -28,15 +28,7 @@ Points are not added to tracks where the timedelta is greater
 than max_hours=24hours. In addition, it is neither added if the speed
 implied by the distance and and time delta between the end of the
 track and the new point is greater than a cutoff max speed dependant
-on the distance. For an infinite distance, this is
-
-max_speed_at_inf = max(max_speed=40knots, reported_speed) * 2
-
-and for any finite distance it is
-
-max_speed_at_distance = max_speed_at_inf * ((1 + max_speed_at_inf / distance) / 2)
-
-which grows to infinity at zero distance.
+on the distance, which grows to infinity at zero distance.
 
 If none of the tracks fulfills these requirements, a new track is
 opened for the point. If any track is ignored due to the
@@ -69,11 +61,19 @@ logger = logging.getLogger(__file__)
 
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
-DEFAULT_MAX_SPEED = 40  # knots
-DEFAULT_NOISE_DIST = round(500 / 1852, 3)  # DEPRECATED nautical miles
+DEFAULT_MAX_SPEED = 25  # knots
+DEFAULT_NOISE_DIST = 100  # nautical miles
 INFINITE_SPEED = 1000000
+REPORTED_SPEED_MULTIPLIER = 1.1 # multiply this by reported speed in max speed calculation
+MAX_SPEED_MULTIPLIER = 1600     # magic number used to compute max_speed_at_distance
+MAX_SPEED_EXPONENT = 2.0     # magic number used to compute max_speed_at_distance
 
-
+# The values 52 and 102.3 are both almost always noise, and don't
+# reflect the vessel's actual speed. They need to be commented out.
+# The value 102.3 is reserved for "bad value." It looks like 51.2
+# is also almost always noise. Because the values are floats,
+# and not always exactly 102.3 or 51.2, we give a range.
+REPORTED_SPEED_EXCLUSION_RANGES = [(51.0, 51.3),(102.2,103.0)]
 
 
 class Segmentizer(object):
@@ -83,7 +83,11 @@ class Segmentizer(object):
     """
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST):
+                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST,
+                 reported_speed_multiplier=REPORTED_SPEED_MULTIPLIER,
+                 max_speed_multiplier = MAX_SPEED_MULTIPLIER,
+                 max_speed_exponent=MAX_SPEED_EXPONENT,
+                 ):
 
         """
         Looks at a stream of messages and pull out segments of points that are
@@ -109,14 +113,24 @@ class Segmentizer(object):
             Maximum number of hours to allow between points.
         max_speed : int, optional
             Maximum speed allowed between points in nautical miles.
-        noise_dist : int, optional
-            DEPRECATED If a point is within this distance (nautical miles) then add it to
-            the closes segment without looking at anything else.
+        noise_dist : float, optional
+            If a point is within this distance (nautical miles) to an existing segment
+            but does not match with any segment, then consider it to be noise and
+            emit it in a singleton segment. Set to 0 to disable this. Default: 0
+        reported_speed_multiplier: float
+            multiplier applied to reported speed to determine the max allowable speed
+        max_speed_multiplier: float
+            multiplier used to compute the max allowable speed
+        max_speed_exponent: float
+            exponent used to compute max allowable speed (see usage in _segment_match_metric())
         """
 
         self.max_hours = max_hours
         self.max_speed = max_speed
         self.noise_dist = noise_dist
+        self.reported_speed_multiplier = reported_speed_multiplier
+        self.max_speed_multiplier = max_speed_multiplier
+        self.max_speed_exponent = max_speed_exponent
 
         # Exposed via properties
         self._instream = instream
@@ -125,7 +139,7 @@ class Segmentizer(object):
         self._geod = pyproj.Geod(ellps='WGS84')
         self._segments = {}
         self._mmsi = mmsi
-        self._prev_msg = None
+        self._prev_timestamp = None
         self._last_segment = None
 
     def __repr__(self):
@@ -148,7 +162,7 @@ class Segmentizer(object):
         if s._segments:
             s._last_segment = max(
                 s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
-            s._prev_msg = s._last_segment.last_msg
+            s._prev_timestamp = s._last_segment.last_msg['timestamp']
             if s._mmsi:
                 assert s._mmsi == s._last_segment.mmsi
             s._mmsi = s._last_segment.mmsi
@@ -185,8 +199,12 @@ class Segmentizer(object):
         id_ = self._segment_unique_id(msg)
         t = Segment(id_, self.mmsi)
         t.add_msg(msg)
+        return t
 
-        self._segments[id_] = t
+    def _add_segment(self, msg):
+        t = self._create_segment(msg)
+
+        self._segments[t.id] = t
         self._last_segment = t
 
     def timedelta(self, msg1, msg2):
@@ -197,8 +215,12 @@ class Segmentizer(object):
         else:
             return (ts2 - ts1).total_seconds() / 3600
 
-    def reported_speed(self, msg1, msg2):
-        return max(msg1.get('speed', 0) or 0,  msg2.get('speed', 0) or 0)
+    def reported_speed(self, msg):
+        s = msg.get('speed', 0) or 0
+        for r in REPORTED_SPEED_EXCLUSION_RANGES:
+            if r[0] < s < r[1]:
+                s = 0
+        return s
 
     def msg_diff_stats(self, msg1, msg2):
 
@@ -225,9 +247,9 @@ class Segmentizer(object):
         x2 = msg2['lon']
         y2 = msg2['lat']
 
-        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850
+        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
         timedelta = self.timedelta(msg1, msg2)
-        reported_speed = self.reported_speed(msg1, msg2)
+        reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
 
         try:
             speed = (distance / timedelta)
@@ -244,42 +266,57 @@ class Segmentizer(object):
 
     def _segment_match_metric(self, segment, msg):
         if not segment.last_time_posit_msg:
-            return self.max_hours * self.max_speed
+            return self.max_hours * self.max_speed, 0
 
         stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
 
-        # allow a higher max computed speed for vessels that report a high speed
-        max_speed_at_inf = max(self.max_speed, stats['reported_speed']) * 2
+        # print msg['timestamp'], stats
+
         seg_duration = max(1.0, segment.total_seconds) / 3600
 
+        if stats['distance'] > 0:
+            noise_factor = self.noise_dist / stats['distance']
+        else:
+            noise_factor = 0
+
         if stats['timedelta'] > self.max_hours:
-            return None
+            return None, noise_factor
         elif stats['timedelta'] == 0:
             # only keep idenitcal timestamps if the distance is small
             # allow for the distance you can go at max speed for one minute
             if stats['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
-                return stats['distance'] / seg_duration
+                return stats['distance'] / seg_duration, noise_factor
             else:
-                return None
+                return None, noise_factor
         elif stats['distance'] == 0:
-            return stats['timedelta'] / seg_duration
+            return stats['timedelta'] / seg_duration, noise_factor
         else:
-            max_speed_at_distance = max_speed_at_inf * ((1 + max_speed_at_inf / stats['distance']) / 2)
+            # allow a higher max computed speed for vessels that report a high speed
+            max_speed_at_inf = max(self.max_speed, stats['reported_speed'] * self.reported_speed_multiplier)
+            max_speed_at_distance = max_speed_at_inf * \
+                                    (1 + self.max_speed_multiplier / (stats['distance'])**self.max_speed_exponent)
+            # This previously gave an unrealistic speed. This new version, with max speed 
+            # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
+            # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops
+            # to about 30 knots. In other words, below gaps between points of under 
+            # 20 minutes, faster speeds are allowed. 
             if stats['speed'] > max_speed_at_distance:
-                return None
+                return None, noise_factor
             else:
-                return stats['timedelta'] / seg_duration
+                return stats['timedelta'] / seg_duration, noise_factor
 
     def _compute_best(self, msg):
         best = None
         best_metric = None
+        max_noise_factor = 0
         for segment in self._segments.values():
-            metric = self._segment_match_metric(segment, msg)
+            metric, noise_factor = self._segment_match_metric(segment, msg)
+            max_noise_factor = max(noise_factor, max_noise_factor)
             if metric is not None:
                 if best is None or metric < best_metric:
                     best = segment.id
                     best_metric = metric
-        return best
+        return best, max_noise_factor
 
     def __iter__(self):
         return self.process()
@@ -302,7 +339,8 @@ class Segmentizer(object):
             _yielded = []
             for segment in self._segments.values():
                 if timestamp and segment.last_msg.get('timestamp'):
-                    td = self.timedelta(msg, segment.last_msg)
+                    last_msg = segment.last_time_posit_msg or segment.last_msg
+                    td = self.timedelta(msg, last_msg)
                     if td > self.max_hours:
                         if False:
                             logger.debug("Segment %s exceeds max time: %s", segment.id, td)
@@ -336,8 +374,8 @@ class Segmentizer(object):
                         continue
 
                 self._mmsi = mmsi
-                self._prev_msg = msg
-                self._create_segment(msg)
+                self._prev_timestamp = msg['timestamp']
+                self._add_segment(msg)
                 continue
 
             elif mmsi != self.mmsi:
@@ -345,17 +383,17 @@ class Segmentizer(object):
                 continue
 
             elif len(self._segments) is 0:
-                self._create_segment(msg)
+                self._add_segment(msg)
 
             elif x is None or y is None or timestamp is None:
                 self._last_segment.add_msg(msg)
 
-            elif timestamp < self._prev_msg['timestamp']:
+            elif timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
 
             else:
                 try:
-                    best_id = self._compute_best(msg)
+                    best_id, noise_factor = self._compute_best(msg)
                 except ValueError as e:
                     if False:
                         logger.debug("    Out of bound points, could not compute best segment: %s", e)
@@ -367,13 +405,16 @@ class Segmentizer(object):
                     continue
 
                 if best_id is None:
-                    self._create_segment(msg)
+                    if noise_factor > 1.0:
+                        yield self._create_segment(msg)
+                    else:
+                        self._add_segment(msg)
                 else:
                     self._segments[best_id].add_msg(msg)
                     self._last_segment = self._segments[best_id]
 
             if x and y and timestamp:
-                self._prev_msg = msg
+                self._prev_timestamp = msg['timestamp']
 
         for series, segment in self._segments.items():
             yield segment

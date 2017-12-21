@@ -260,63 +260,88 @@ class Segmentizer(object):
             'distance': distance,
             'timedelta': timedelta,
             'speed': speed,
-            'reported_speed': reported_speed
+            'reported_speed': reported_speed,
+            'noise_factor': self.noise_dist / distance if distance > 0 else 0
         }
 
 
-    def _segment_match_metric(self, segment, msg):
+    def _segment_match(self, segment, msg):
+        match = {'seg_id': segment.id,
+                 'noise_factor': 0,
+                 'metric': None}
+
         if not segment.last_time_posit_msg:
-            return self.max_hours * self.max_speed, 0
+            match['metric'] = self.max_hours * self.max_speed
+            return match
 
-        stats = self.msg_diff_stats(msg, segment.last_time_posit_msg)
-
-        # print msg['timestamp'], stats
+        match.update(self.msg_diff_stats(msg, segment.last_time_posit_msg))
 
         seg_duration = max(1.0, segment.total_seconds) / 3600
 
-        if stats['distance'] > 0:
-            noise_factor = self.noise_dist / stats['distance']
-        else:
-            noise_factor = 0
-
-        if stats['timedelta'] > self.max_hours:
-            return None, noise_factor
-        elif stats['timedelta'] == 0:
-            # only keep idenitcal timestamps if the distance is small
+        if match['timedelta'] > self.max_hours:
+            match['metric'] = None
+        elif match['timedelta'] == 0:
+            # only keep identical timestamps if the distance is small
             # allow for the distance you can go at max speed for one minute
-            if stats['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
-                return stats['distance'] / seg_duration, noise_factor
-            else:
-                return None, noise_factor
-        elif stats['distance'] == 0:
-            return stats['timedelta'] / seg_duration, noise_factor
+            if match['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
+                match['metric'] = match['distance'] / seg_duration
+        elif match['distance'] == 0:
+            match['metric'] = match['timedelta'] / seg_duration
         else:
             # allow a higher max computed speed for vessels that report a high speed
-            max_speed_at_inf = max(self.max_speed, stats['reported_speed'] * self.reported_speed_multiplier)
+            max_speed_at_inf = max(self.max_speed, match['reported_speed'] * self.reported_speed_multiplier)
             max_speed_at_distance = max_speed_at_inf * \
-                                    (1 + self.max_speed_multiplier / (stats['distance'])**self.max_speed_exponent)
+                                    (1 + self.max_speed_multiplier / (match['distance'])**self.max_speed_exponent)
             # This previously gave an unrealistic speed. This new version, with max speed 
             # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
             # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops
             # to about 30 knots. In other words, below gaps between points of under 
             # 20 minutes, faster speeds are allowed. 
-            if stats['speed'] > max_speed_at_distance:
-                return None, noise_factor
-            else:
-                return stats['timedelta'] / seg_duration, noise_factor
+            if match['speed'] <= max_speed_at_distance:
+                match['metric'] = match['timedelta'] / seg_duration
+
+        return match
 
     def _compute_best(self, msg):
-        best = None
-        best_metric = None
-        max_noise_factor = 0
-        for segment in self._segments.values():
-            metric, noise_factor = self._segment_match_metric(segment, msg)
-            max_noise_factor = max(noise_factor, max_noise_factor)
-            if metric is not None:
-                if best is None or metric < best_metric:
-                    best = segment.id
-                    best_metric = metric
-        return best, max_noise_factor
+        # figure out which segment is the best match for the given mesage
+
+        segs = self._segments.values()
+        result = (None, 0)
+
+        if len(segs) == 1:
+            # This is the most common case, so make it optimal
+            # and avoid all the messing around with lists in the num_segs > 1 case
+
+            match = self._segment_match(segs[0], msg)
+            # msg['matches'] = [match]
+            if match['metric'] is not None:
+                result = (match, match['noise_factor'])
+            else:
+                # metric is none, so this segment is not a match candidate
+                result = (None, match['noise_factor'])
+
+        elif len(segs) > 1:
+            # get match metrics for all candidate segments
+            matches = [self._segment_match(seg, msg) for seg in segs]
+            # msg['matches'] = matches
+
+            # max noise distance includes all segments, even if they are not match candidates
+            max_noise_factor = max(match['noise_factor'] for match in matches)
+
+            # If metric is none, then the segment is not a match candidate
+            metrics = list((match['metric'], match) for match in matches if match['metric'] is not None)
+
+            if metrics:
+                # find the smallest metric value
+                min_metric = min(metrics, key=lambda x: x[0])
+
+                result = (min_metric[1], max_noise_factor)
+            else:
+                result = (None, max_noise_factor)
+
+            assert max_noise_factor is not None
+
+        return result
 
     def __iter__(self):
         return self.process()
@@ -393,7 +418,8 @@ class Segmentizer(object):
 
             else:
                 try:
-                    best_id, noise_factor = self._compute_best(msg)
+                    best_match, noise_factor = self._compute_best(msg)
+                    assert noise_factor is not None
                 except ValueError as e:
                     if False:
                         logger.debug("    Out of bound points, could not compute best segment: %s", e)
@@ -404,14 +430,15 @@ class Segmentizer(object):
                     yield bs
                     continue
 
-                if best_id is None:
+                if best_match is None:
                     if noise_factor > 1.0:
                         yield self._create_segment(msg)
                     else:
                         self._add_segment(msg)
                 else:
-                    self._segments[best_id].add_msg(msg)
-                    self._last_segment = self._segments[best_id]
+                    id = best_match['seg_id']
+                    self._segments[id].add_msg(msg)
+                    self._last_segment = self._segments[id]
 
             if x and y and timestamp:
                 self._prev_timestamp = msg['timestamp']

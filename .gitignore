@@ -61,5 +61,9 @@ target/
 # PyCharm
 .idea
 
-
 .~lock*
+
+#osx
+.DS_Store
+
+debug/

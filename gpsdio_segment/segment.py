@@ -237,3 +237,13 @@ class BadSegment(Segment):
     away we stick it into a `BadSegment()` so the user can filter with an
     instance check.
     """
+
+class NoiseSegment(Segment):
+    """
+    When a message cannot be added to any segment because of a high implied sped, but it
+    is within the configured noise distance from at least one existing segment, the message is
+    emitted in a singleton segment and generally should be considered noise and discarded.
+
+    These messages are emitted in a NoiseSegment to make them easy to distinguish from other
+    segments that contain only a single message
+    """

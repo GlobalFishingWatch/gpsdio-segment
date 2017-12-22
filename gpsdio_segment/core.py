@@ -53,6 +53,7 @@ import pyproj
 
 
 from gpsdio_segment.segment import Segment, BadSegment
+from gpsdio_segment.segment import Segment, NoiseSegment
 from gpsdio_segment.state import SegmentState
 
 logger = logging.getLogger(__file__)
@@ -197,9 +198,10 @@ class Segmentizer(object):
     def _validate_position(self, x, y):
         return x is None or y is None or (-180.0 <= x <= 180.0 and -90.0 <= y <= 90.0 )
 
-    def _create_segment(self, msg):
+    def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
-        t = Segment(id_, self.mmsi)
+        mmsi = self.mmsi if self.mmsi is not None else msg['mmsi']
+        t = cls(id_, mmsi)
         t.add_msg(msg)
         return t
 
@@ -356,9 +358,10 @@ class Segmentizer(object):
 
             # Reject any message that has invalid position
             if not self._validate_position(x, y):
-                bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
-                bs.add_msg(msg)
-                yield bs
+                yield self._create_segment(msg, cls=BadSegment)
+                # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
+                # bs.add_msg(msg)
+                # yield bs
                 logger.debug("Rejected bad message  mmsi: {mmsi} lat: {lat}  lon: {lon} timestamp: {timestamp} ".format(**msg))
                 continue
 
@@ -392,9 +395,10 @@ class Segmentizer(object):
                         logger.debug(
                             "    Could not compute a distance from the first point - "
                             "producing a bad segment")
-                        bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
-                        bs.add_msg(msg)
-                        yield bs
+                        yield self._create_segment(msg, cls=BadSegment)
+                        # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
+                        # bs.add_msg(msg)
+                        # yield bs
 
                         logger.debug("Still looking for a good first message ...")
                         continue
@@ -426,14 +430,18 @@ class Segmentizer(object):
                         logger.debug("    Out of bound points, could not compute best segment: %s", e)
                         logger.debug("    Bad msg: %s", msg)
                         logger.debug("    Yielding bad segment")
-                    bs = BadSegment(self._segment_unique_id(msg), msg['mmsi'])
-                    bs.add_msg(msg)
-                    yield bs
+                    yield self._create_segment(msg, cls=BadSegment)
+                    # bs = BadSegment(self._segment_unique_id(msg), msg['mmsi'])
+                    # bs.add_msg(msg)
+                    # yield bs
                     continue
 
                 if best_match is None:
                     if noise_factor > 1.0:
-                        yield self._create_segment(msg)
+                        yield self._create_segment(msg, cls=NoiseSegment)
+                        # s = NoiseSegment(self._segment_unique_id(msg), msg['mmsi'])
+                        # s.add_msg(msg)
+                        # yield s
                     else:
                         self._add_segment(msg)
                 else:

@@ -87,6 +87,7 @@ class Segmentizer(object):
                  reported_speed_multiplier=REPORTED_SPEED_MULTIPLIER,
                  max_speed_multiplier = MAX_SPEED_MULTIPLIER,
                  max_speed_exponent=MAX_SPEED_EXPONENT,
+                 collect_match_stats=False
                  ):
 
         """
@@ -131,6 +132,7 @@ class Segmentizer(object):
         self.reported_speed_multiplier = reported_speed_multiplier
         self.max_speed_multiplier = max_speed_multiplier
         self.max_speed_exponent = max_speed_exponent
+        self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
         self._instream = instream
@@ -303,27 +305,27 @@ class Segmentizer(object):
         return match
 
     def _compute_best(self, msg):
-        # figure out which segment is the best match for the given mesage
+        # figure out which segment is the best match for the given message
 
         segs = self._segments.values()
-        result = (None, 0)
+        best_metric = None
+        max_noise_factor = 0
+        matches = []
 
         if len(segs) == 1:
             # This is the most common case, so make it optimal
             # and avoid all the messing around with lists in the num_segs > 1 case
 
             match = self._segment_match(segs[0], msg)
-            # msg['matches'] = [match]
+            matches = [match]
+            max_noise_factor = match['noise_factor']
+
             if match['metric'] is not None:
-                result = (match, match['noise_factor'])
-            else:
-                # metric is none, so this segment is not a match candidate
-                result = (None, match['noise_factor'])
+                best_metric = match
 
         elif len(segs) > 1:
             # get match metrics for all candidate segments
             matches = [self._segment_match(seg, msg) for seg in segs]
-            # msg['matches'] = matches
 
             # max noise distance includes all segments, even if they are not match candidates
             max_noise_factor = max(match['noise_factor'] for match in matches)
@@ -333,15 +335,12 @@ class Segmentizer(object):
 
             if metrics:
                 # find the smallest metric value
-                min_metric = min(metrics, key=lambda x: x[0])
+                best_metric = min(metrics, key=lambda x: x[0])[1]
 
-                result = (min_metric[1], max_noise_factor)
-            else:
-                result = (None, max_noise_factor)
+        if self.collect_match_stats:
+            msg['segment_matches'] = matches
 
-            assert max_noise_factor is not None
-
-        return result
+        return (best_metric, max_noise_factor)
 
     def __iter__(self):
         return self.process()
@@ -352,6 +351,8 @@ class Segmentizer(object):
             y = msg.get('lat')
             x = msg.get('lon')
             timestamp = msg.get('timestamp')
+            if self.collect_match_stats:
+                msg['segment_matches'] = []
 
             # Reject any message that has invalid position
             if not self._validate_position(x, y):

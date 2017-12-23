@@ -38,15 +38,9 @@ def test_bad_segment():
             segs = [seg for seg in segmentizer]
             seg_types[day] = Counter([seg.__class__.__name__ for seg in segs])
 
-            # THIS BREAKS
-            #seg_states[day] = [seg.state for seg in segs]
-
-            # THIS WORKS
-            seg_states[day] = [seg.state for seg in segs if not isinstance(seg, BadSegment)]
+            seg_states[day] = [seg.state for seg in segs]
 
         # 1 bad segment the first day that does not get passed back in on the second day
         assert seg_types == {15: {'Segment': 1, 'BadSegment': 1},
                              16: {'Segment': 1}}
 
-        # should be 1 good segment on each day
-        assert {day:len(states) for day, states in seg_states.iteritems()} == {15: 1, 16: 1}

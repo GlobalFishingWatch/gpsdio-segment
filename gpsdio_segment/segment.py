@@ -94,7 +94,7 @@ class Segment(object):
         SegmentState
         """
 
-        state = self._prev_state or SegmentState()
+        state = SegmentState()
         state.id = self.id
         state.mmsi = self.mmsi
         state.noise = self.noise
@@ -109,8 +109,9 @@ class Segment(object):
                 state.msgs.append(msg)
                 prev_msg = msg
 
-        state.msg_count += len(self)
-
+        state.msg_count = len(self)
+        if self._prev_state:
+            state.msg_count += self._prev_state.msg_count
         return state
 
     @property

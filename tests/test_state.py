@@ -100,3 +100,18 @@ def test_Segmentizer_state_save_load(tmpdir):
 
     assert sorted([st.to_dict() for st in full_run_seg_states], key=lambda x: x['id']) == \
         sorted([st.to_dict() for st in second_half_seg_states], key=lambda x: x['id'])
+
+def test_Segmentizer_state_message_count_bug(msg_generator):
+    id = 1
+    mmsi = 123456789
+    seg = Segment(id=1, mmsi=123456789)
+    seg.add_msg(msg_generator.next_msg())
+    state = seg.state
+    assert state.msg_count == 1
+
+    seg = Segment.from_state(state)
+    seg.add_msg(msg_generator.next_msg())
+    state = seg.state
+    assert state.msg_count == 2
+    state = seg.state
+    assert state.msg_count == 2

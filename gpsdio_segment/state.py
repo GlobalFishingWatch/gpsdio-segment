@@ -13,7 +13,8 @@ class SegmentState:
     old messages that you no longer need.
     """
 
-    fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
+    # TODO delete this?
+    # fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
 
     def __init__(self):
         self.id = None

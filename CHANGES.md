@@ -1,6 +1,19 @@
 Changelog
 =========
 
+0.10 - (2017-12-22)
+-------------------
+
+* ['#50'](https://github.com/SkyTruth/gpsdio-segment/pull/50)
+  Emit noise messages in a new segment class `NoiseSegment` that works like 
+  `BadSegment`
+
+* ['#49'](https://github.com/SkyTruth/gpsdio-segment/pull/49)
+  New option `collect_match_stats` for Segmentizer that captures all the stats used to 
+  determine which segment a message is added to.  The stats are added to the message in 
+  a field called `segment_matches`
+
+  
 0.9 - (2017-10-18)
 ------------------
 

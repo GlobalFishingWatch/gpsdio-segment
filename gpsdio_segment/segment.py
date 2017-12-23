@@ -14,6 +14,8 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
+    _noise=False
+
 
     def __init__(self, id, mmsi):
 
@@ -57,6 +59,7 @@ class Segment(object):
             state = SegmentState.from_dict(state)
 
         seg = cls(state.id, state.mmsi)
+        seg._noise = state.noise
         seg._prev_state = state
         seg._prev_segment = Segment(state.id, state.mmsi)
         for msg in state.msgs:
@@ -91,9 +94,10 @@ class Segment(object):
         SegmentState
         """
 
-        state = self._prev_state or SegmentState()
+        state = SegmentState()
         state.id = self.id
         state.mmsi = self.mmsi
+        state.noise = self.noise
         state.msgs = []
 
         prev_msg = None
@@ -105,8 +109,9 @@ class Segment(object):
                 state.msgs.append(msg)
                 prev_msg = msg
 
-        state.msg_count += len(self)
-
+        state.msg_count = len(self)
+        if self._prev_state:
+            state.msg_count += self._prev_state.msg_count
         return state
 
     @property
@@ -117,6 +122,9 @@ class Segment(object):
     def mmsi(self):
         return self._mmsi
 
+    @property
+    def noise(self):
+        return self._noise
 
     @property
     def coords(self):
@@ -237,6 +245,7 @@ class BadSegment(Segment):
     away we stick it into a `BadSegment()` so the user can filter with an
     instance check.
     """
+    _noise=True
 
 class NoiseSegment(Segment):
     """
@@ -247,3 +256,4 @@ class NoiseSegment(Segment):
     These messages are emitted in a NoiseSegment to make them easy to distinguish from other
     segments that contain only a single message
     """
+    _noise=True

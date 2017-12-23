@@ -13,20 +13,23 @@ class SegmentState:
     old messages that you no longer need.
     """
 
-    fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
+    # TODO delete this?
+    # fields = {'id': None, 'mmsi': None, 'msgs': [], 'msg_count': 0}
 
     def __init__(self):
         self.id = None
         self.mmsi = None
         self.msgs = []
         self.msg_count = 0
+        self.noise = False
 
     def to_dict(self):
         return {
             'id': self.id,
             'mmsi': self.mmsi,
             'msgs': self.msgs,
-            'msg_count': self.msg_count
+            'msg_count': self.msg_count,
+            'noise': self.noise
         }
 
     @classmethod
@@ -36,4 +39,5 @@ class SegmentState:
         s.id = d['id']
         s.msgs = d['msgs']
         s.msg_count = d['msg_count']
+        s.noise = d.get('noise', False)
         return s

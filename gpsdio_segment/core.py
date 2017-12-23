@@ -159,9 +159,10 @@ class Segmentizer(object):
         """
 
         s = cls(instream, **kwargs)
-        for state in seg_states:
-            seg = Segment.from_state(state)
-            s._segments[seg.id] = seg
+        for seg in [Segment.from_state(state) for state in seg_states]:
+            # ignore segments that contain only noise messages (bad lat,lon, timestamp etc.)
+            if not seg.noise:
+                s._segments[seg.id] = seg
         if s._segments:
             s._last_segment = max(
                 s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))

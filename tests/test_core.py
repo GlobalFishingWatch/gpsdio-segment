@@ -112,17 +112,14 @@ def test_last_msg_combinations():
 
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit
-    assert seg.last_posit_msg is None
     assert seg.last_time_posit_msg is None
 
     seg.add_msg(posit)
     assert seg.last_msg == posit
-    assert seg.last_posit_msg == posit
     assert seg.last_time_posit_msg is None
 
     seg.add_msg(time_posit)
     assert seg.last_msg == time_posit
-    assert seg.last_posit_msg == time_posit
     assert seg.last_time_posit_msg == time_posit
 
     # Make sure posit and posit time are being returned instead of just the last message
@@ -131,17 +128,14 @@ def test_last_msg_combinations():
     seg.add_msg(posit)
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit
-    assert seg.last_posit_msg == posit
     assert seg.last_time_posit_msg is None
 
     seg.add_msg(time_posit)
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit
-    assert seg.last_posit_msg == time_posit
     assert seg.last_time_posit_msg == time_posit
 
     seg.add_msg(time_posit)
     seg.add_msg(non_posit)
     assert seg.last_msg == non_posit
-    assert seg.last_posit_msg == time_posit
     assert seg.last_time_posit_msg == time_posit

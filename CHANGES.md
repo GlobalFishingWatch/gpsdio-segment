@@ -1,6 +1,16 @@
 Changelog
 =========
 
+0.10 - (2017-12-31)
+-------------------
+
+* ['#54'](https://github.com/SkyTruth/gpsdio-segment/pull/54)
+  Ignore noise segments in Segmentizer.from_seg_states()
+
+* ['#56'](https://github.com/SkyTruth/gpsdio-segment/pull/56)
+  Performance improvement for the special case where all messages added to a segment are 
+  non-positional (have no lat/lon as is the case with type 5 AIS messages)
+
 0.10 - (2017-12-22)
 -------------------
 

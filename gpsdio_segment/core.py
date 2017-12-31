@@ -368,8 +368,8 @@ class Segmentizer(object):
 
             _yielded = []
             for segment in self._segments.values():
-                if timestamp and segment.last_msg.get('timestamp'):
-                    last_msg = segment.last_time_posit_msg or segment.last_msg
+                last_msg = segment.last_time_posit_msg or segment.last_msg
+                if timestamp and last_msg:
                     td = self.timedelta(msg, last_msg)
                     if td > self.max_hours:
                         if False:
@@ -425,7 +425,6 @@ class Segmentizer(object):
             else:
                 try:
                     best_match, noise_factor = self._compute_best(msg)
-                    assert noise_factor is not None
                 except ValueError as e:
                     if False:
                         logger.debug("    Out of bound points, could not compute best segment: %s", e)

@@ -33,6 +33,7 @@ class Segment(object):
 
         self._prev_state = None
         self._prev_segment = None
+        self._last_time_posit_msg = None
 
         self._msgs = []
         self._coords = []
@@ -103,7 +104,7 @@ class Segment(object):
         prev_msg = None
         for msg in [self.first_msg,
                     self.last_time_posit_msg,
-                    self.last_posit_msg,
+                    # self.last_posit_msg,
                     self.last_msg]:
             if msg is not None and msg is not prev_msg:
                 state.msgs.append(msg)
@@ -160,33 +161,16 @@ class Segment(object):
             return self._prev_segment.last_msg if self._prev_segment else None
 
     @property
-    def last_posit_msg(self):
-        """
-        Return the last message added to the segment with lat and lon values
-        that are not `None`.
-        """
-
-        for msg in reversed(self.msgs):
-            if msg.get('lat') is not None \
-                    and msg.get('lon') is not None:
-                return msg
-
-        return self._prev_segment.last_posit_msg if self._prev_segment else None
-
-    @property
     def last_time_posit_msg(self):
         """
         Return the last message added to the segment with `lat`, `lon`, and
         `timestamp` fields that are not `None`.
         """
 
-        for msg in reversed(self.msgs):
-            if msg.get('lat') is not None \
-                    and msg.get('lon') is not None \
-                    and msg.get('timestamp') is not None:
-                return msg
-
-        return self._prev_segment.last_time_posit_msg if self._prev_segment else None
+        if self._last_time_posit_msg:
+            return self._last_time_posit_msg
+        else:
+            return self._prev_segment.last_time_posit_msg if self._prev_segment else None
 
     @property
     def first_msg (self):
@@ -236,6 +220,8 @@ class Segment(object):
         self._msgs.append(msg)
         if msg.get('lat') is not None and msg.get('lon') is not None:
             self._coords.append((msg['lon'], msg['lat']))
+            if msg.get('timestamp') is not None:
+                self._last_time_posit_msg = msg
 
 
 class BadSegment(Segment):

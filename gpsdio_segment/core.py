@@ -75,7 +75,15 @@ MAX_SPEED_EXPONENT = 2.0     # magic number used to compute max_speed_at_distanc
 # is also almost always noise. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
 REPORTED_SPEED_EXCLUSION_RANGES = [(51.0, 51.3),(102.2,103.0)]
-
+MESSAGE_TYPE = {
+    1: 'A',
+    2: 'A',
+    3: 'A',
+    5: 'A',
+    18: 'B',
+    19: 'B',
+    24: 'B'
+}
 
 class Segmentizer(object):
 
@@ -227,6 +235,9 @@ class Segmentizer(object):
                 s = 0
         return s
 
+    def message_type(self, msg):
+        return MESSAGE_TYPE.get(msg.get('type'))
+
     def msg_diff_stats(self, msg1, msg2):
 
         """
@@ -246,27 +257,38 @@ class Segmentizer(object):
                 time allotted by `timedelta`.
         """
 
-        x1 = msg1['lon']
-        y1 = msg1['lat']
-
-        x2 = msg2['lon']
-        y2 = msg2['lat']
-
-        distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
+        type1 = self.message_type(msg1)
+        type2 = self.message_type(msg2)
+        type_match = None if type1 is None or type2 is None else type1 == type2
         timedelta = self.timedelta(msg1, msg2)
         reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
 
-        try:
-            speed = (distance / timedelta)
-        except ZeroDivisionError:
-            speed = INFINITE_SPEED
+
+        x1 = msg1.get('lon')
+        y1 = msg1.get('lat')
+
+        if (x1 is None or y1 is None):
+            distance = None
+            speed = None
+
+        else:
+            x2 = msg2['lon']
+            y2 = msg2['lat']
+
+            distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
+
+            try:
+                speed = (distance / timedelta)
+            except ZeroDivisionError:
+                speed = INFINITE_SPEED
 
         return {
             'distance': distance,
             'timedelta': timedelta,
             'speed': speed,
             'reported_speed': reported_speed,
-            'noise_factor': self.noise_dist / distance if distance > 0 else 0
+            'noise_factor': self.noise_dist / distance if distance > 0 else 0,
+            'type_match': type_match
         }
 
 
@@ -285,13 +307,13 @@ class Segmentizer(object):
 
         if match['timedelta'] > self.max_hours:
             match['metric'] = None
+        elif match['distance'] == 0 or match['distance'] is None:
+            match['metric'] = match['timedelta'] / seg_duration
         elif match['timedelta'] == 0:
             # only keep identical timestamps if the distance is small
             # allow for the distance you can go at max speed for one minute
             if match['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
                 match['metric'] = match['distance'] / seg_duration
-        elif match['distance'] == 0:
-            match['metric'] = match['timedelta'] / seg_duration
         else:
             # allow a higher max computed speed for vessels that report a high speed
             max_speed_at_inf = max(self.max_speed, match['reported_speed'] * self.reported_speed_multiplier)
@@ -334,7 +356,13 @@ class Segmentizer(object):
             max_noise_factor = max(match['noise_factor'] for match in matches)
 
             # If metric is none, then the segment is not a match candidate
-            metrics = list((match['metric'], match) for match in matches if match['metric'] is not None)
+
+            # first try to limit to just matching segments with the same message type
+            metrics = list((match['metric'], match) for match in matches if match['metric'] is not None and match['type_match'])
+
+            # but if we get no matches, then loosen up and allow mis-matched types
+            if not metrics:
+                metrics = list((match['metric'], match) for match in matches if match['metric'] is not None)
 
             if metrics:
                 # find the smallest metric value
@@ -351,11 +379,12 @@ class Segmentizer(object):
     def process(self):
         for idx, msg in enumerate(self.instream):
             mmsi = msg.get('mmsi')
-            y = msg.get('lat')
-            x = msg.get('lon')
             timestamp = msg.get('timestamp')
             if self.collect_match_stats:
                 msg['segment_matches'] = []
+
+            y = msg.get('lat')
+            x = msg.get('lon')
 
             # Reject any message that has invalid position
             if not self._validate_position(x, y):
@@ -387,7 +416,6 @@ class Segmentizer(object):
 
             if self.mmsi is None:
                 # logger.debug("Found a valid MMSI - processing: %s", mmsi)
-
                 if x is not None and y is not None:
                     try:
                         # We have to make sure the first message isn't out of bounds
@@ -416,7 +444,7 @@ class Segmentizer(object):
             elif len(self._segments) is 0:
                 self._add_segment(msg)
 
-            elif x is None or y is None or timestamp is None:
+            elif timestamp is None:
                 self._last_segment.add_msg(msg)
 
             elif timestamp < self._prev_timestamp:

@@ -1,7 +1,13 @@
 Changelog
 =========
 
-0.10 - (2017-12-31)
+0.12
+-------------------
+* [#60](https://github.com/SkyTruth/gpsdio-segment/pull/60) 
+  Prefer segments with the same message type
+
+
+0.11 - (2017-12-31)
 -------------------
 
 * ['#54'](https://github.com/SkyTruth/gpsdio-segment/pull/54)

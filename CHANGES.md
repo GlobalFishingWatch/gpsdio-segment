@@ -1,7 +1,7 @@
 Changelog
 =========
 
-0.12-dev 
+0.12
 -------------------
 * [#60](https://github.com/SkyTruth/gpsdio-segment/pull/60) 
   Prefer segments with the same message type

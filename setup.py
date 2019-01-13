@@ -60,7 +60,7 @@ setup(
     ''',
     extras_require={
         'dev': [
-            'pytest',
+            'pytest>=3.6',
             'pytest-cov',
             'coverage'
         ]

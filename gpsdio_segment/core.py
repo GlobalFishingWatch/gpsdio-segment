@@ -289,7 +289,7 @@ class Segmentizer(object):
             'timedelta': timedelta,
             'speed': speed,
             'reported_speed': reported_speed,
-            'noise_factor': self.noise_dist / distance if distance > 0 else 0,
+            'noise_factor': self.noise_dist / distance if distance is not None and distance > 0 else 0,
             'type_match': type_match
         }
 
@@ -352,7 +352,7 @@ class Segmentizer(object):
     def _compute_best(self, msg):
         # figure out which segment is the best match for the given message
 
-        segs = self._segments.values()
+        segs = list(self._segments.values())
         best_metric = None
         max_noise_factor = 0
         matches = []

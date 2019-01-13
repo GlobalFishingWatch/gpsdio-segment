@@ -34,6 +34,8 @@ class Segment(object):
         self._prev_state = None
         self._prev_segment = None
         self._last_time_posit_msg = None
+        self._best_shipname_msg = None
+        self._best_callsign_msg = None
 
         self._msgs = []
         self._coords = []
@@ -102,13 +104,18 @@ class Segment(object):
         state.msgs = []
 
         prev_msg = None
-        for msg in [self.first_msg,
-                    self.last_time_posit_msg,
-                    # self.last_posit_msg,
-                    self.last_msg]:
-            if msg is not None and msg is not prev_msg:
+        keep_messages = [self.first_msg,
+                         self.last_time_posit_msg,
+                         self.best_shipname_msg,
+                         self.best_callsign_msg,
+                         self.last_msg
+                        ]
+        message_ids = set()
+        for msg in keep_messages:
+            i = id(msg)
+            if msg is not None and i not in message_ids:
                 state.msgs.append(msg)
-                prev_msg = msg
+                message_ids.add(i)
 
         state.msg_count = len(self)
         if self._prev_state:
@@ -151,6 +158,30 @@ class Segment(object):
     @property
     def msgs(self):
         return self._msgs
+
+    @property
+    def best_shipname_msg(self):
+        """
+        Return the last message added to the segment with `shipname` field. Prefer
+        messages that also have `lat` and `lon`.
+        """
+
+        if self._best_shipname_msg:
+            return self._best_shipname_msg
+        else:
+            return self._prev_segment.best_shipname_msg if self._prev_segment else None
+
+    @property
+    def best_callsign_msg(self):
+        """
+        Return the last message added to the segment with `callsign` field. Prefer
+        messages that also have `lat` and `lon`.
+        """
+
+        if self._best_callsign_msg:
+            return self._best_callsign_msg
+        else:
+            return self._prev_segment.best_callsign_msg if self._prev_segment else None
 
     @property
     def last_msg(self):
@@ -201,7 +232,7 @@ class Segment(object):
             tsmin, tsmax
         """
 
-        return self.first_msg.get('timestamp', None), self.last_msg.get('timestamp', None)
+        return self.first_msg.get('timestamp', None), self.last_time_posit_msg.get('timestamp', None)
 
     @property
     def total_seconds(self):
@@ -213,15 +244,31 @@ class Segment(object):
         return (t2 - t1).total_seconds()
 
     def add_msg(self, msg):
+        mmsi = msg.get('mmsi')
+
         if msg.get('mmsi') != self.mmsi:
             raise ValueError(
                 'MMSI mismatch: {internal} != {new}'.format(
                     internal=self.mmsi, new=msg.get('mmsi')))
         self._msgs.append(msg)
-        if msg.get('lat') is not None and msg.get('lon') is not None:
-            self._coords.append((msg['lon'], msg['lat']))
+
+        lat = msg.get('lat')
+        lon = msg.get('lon')
+
+        if lat is not None and lon is not None:
+            self._coords.append((lon, lat))
             if msg.get('timestamp') is not None:
                 self._last_time_posit_msg = msg
+
+        if msg.get('shipname') is not None:
+            best_shipname_msg = self.best_shipname_msg
+            if best_shipname_msg is None or best_shipname_msg.get('lat') is None:
+                self._best_shipname_msg = msg
+
+        if msg.get('callsign') is not None:
+            best_callsign_msg = self.best_callsign_msg
+            if best_callsign_msg is None or best_callsign_msg.get('lat') is None:
+                self._best_callsign_msg = msg
 
 
 class BadSegment(Segment):
@@ -235,7 +282,7 @@ class BadSegment(Segment):
 
 class NoiseSegment(Segment):
     """
-    When a message cannot be added to any segment because of a high implied sped, but it
+    When a message cannot be added to any segment because of a high implied speed, but it
     is within the configured noise distance from at least one existing segment, the message is
     emitted in a singleton segment and generally should be considered noise and discarded.
 

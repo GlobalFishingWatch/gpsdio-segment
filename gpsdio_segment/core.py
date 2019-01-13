@@ -56,6 +56,7 @@ from gpsdio_segment.segment import Segment, BadSegment
 from gpsdio_segment.segment import Segment, NoiseSegment
 from gpsdio_segment.state import SegmentState
 
+
 logger = logging.getLogger(__file__)
 # logger.setLevel(logging.DEBUG)
 
@@ -75,10 +76,9 @@ MAX_SPEED_EXPONENT = 2.0     # magic number used to compute max_speed_at_distanc
 # is also almost always noise. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
 REPORTED_SPEED_EXCLUSION_RANGES = [(51.0, 51.3),(102.2,103.0)]
-MESSAGE_TYPE = {
+AIS_CLASS = {
     1: 'A',
     2: 'A',
-    3: 'A',
     5: 'A',
     18: 'B',
     19: 'B',
@@ -235,8 +235,10 @@ class Segmentizer(object):
                 s = 0
         return s
 
-    def message_type(self, msg):
-        return MESSAGE_TYPE.get(msg.get('type'))
+
+    @staticmethod
+    def message_type(msg):
+        return AIS_CLASS.get(msg.get('type'))
 
     def msg_diff_stats(self, msg1, msg2):
 
@@ -292,6 +294,20 @@ class Segmentizer(object):
         }
 
 
+    def msg_shipname_match(self, msg1, msg2):
+        shipname1 = msg1.get('shipname')
+        shipname2 = msg2.get('shipname') if msg2 is not None else None
+        return dict(
+            shipname_match=shipname1 is not None and shipname1 == shipname2
+        )
+
+    def msg_callsign_match(self, msg1, msg2):
+        callsign1 = msg1.get('callsign')
+        callsign2 = msg2.get('callsign') if msg2 is not None else None
+        return dict(
+            callsign_match=callsign1 is not None and callsign1 == callsign2
+        )
+
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
                  'noise_factor': 0,
@@ -303,7 +319,11 @@ class Segmentizer(object):
 
         match.update(self.msg_diff_stats(msg, segment.last_time_posit_msg))
 
-        seg_duration = max(1.0, segment.total_seconds) / 3600
+        if match['distance'] is None:
+            match.update(self.msg_shipname_match(msg, segment.best_shipname_msg))
+            match.update(self.msg_callsign_match(msg, segment.best_callsign_msg))
+
+        seg_duration = max(1.0, segment.total_seconds / 3600)
 
         if match['timedelta'] > self.max_hours:
             match['metric'] = None
@@ -356,13 +376,18 @@ class Segmentizer(object):
             max_noise_factor = max(match['noise_factor'] for match in matches)
 
             # If metric is none, then the segment is not a match candidate
+            matches = [m for m in matches if m['metric'] is not None]
 
-            # first try to limit to just matching segments with the same message type
-            metrics = list((match['metric'], match) for match in matches if match['metric'] is not None and match['type_match'])
+            # try limiting to just segments with the same message type, if there are any
+            type_matches = [m for m in matches if m['type_match']] or matches
 
-            # but if we get no matches, then loosen up and allow mis-matched types
-            if not metrics:
-                metrics = list((match['metric'], match) for match in matches if match['metric'] is not None)
+            # try limiting to just segments with matching shipname, if there are any
+            shipname_matches = [m for m in type_matches if m.get('shipname_match')] or type_matches
+
+            # try limiting to just segments with matching callsign, if there are any
+            callsign_matches = [m for m in shipname_matches if m.get('callsign_match')] or shipname_matches
+
+            metrics  = list((match['metric'], match) for match in callsign_matches)
 
             if metrics:
                 # find the smallest metric value

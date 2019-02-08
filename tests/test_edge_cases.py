@@ -204,3 +204,32 @@ def test_max_hours_exceeded_with_non_pos_message():
 
     seg_msg_count = [len(seg) for seg in Segmentizer(messages, max_hours=24)]
     assert seg_msg_count == [2, 1]
+
+
+def test_duplicate_pos_msg():
+    msg1 = {'mmsi': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27)}
+    msg2 = {'mmsi': 1, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27)}
+
+    segments = list(Segmentizer([msg1, msg1, msg1, msg1, msg2]))
+    assert len(segments) == 1
+    for seg in segments:
+        assert len(seg) == 5
+
+def test_duplicate_ts_multiple_segs():
+    # example from mmsi 316004240 2018-05-18 to 2018-05-19
+    # 2 segments present because of a noise position in idx=1
+    # so we have 2 segments [0,2,3] and [1] when idx=4 comes along
+    # in this case, the duplicate timestamp means we can't do a speed test with the longer segment and more
+    # recent segment (which is the better match), and it ends up matching the singlton from the previous day
+    # in this case we want to force the message to be noise and emit it in a singleton noise segment
+    messages = [
+        {'idx': 0, 'mmsi': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12)},
+        {'idx': 1, 'mmsi': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8)},
+        {'idx': 2, 'mmsi': 1, 'lat': 44.63896, 'lon': -63.55386, 'timestamp': datetime(2018, 5, 18, 14, 43, 16)},
+        {'idx': 3, 'mmsi': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 07, 48, 12)},
+        {'idx': 4, 'mmsi': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 07, 48, 12)},
+    ]
+
+    segments = list(Segmentizer(messages))
+    # idx=4 comes out first because it is emitted as a noise segment
+    assert [{4}, {0, 2, 3},{1}] == [{msg['idx'] for msg in seg} for seg in segments]

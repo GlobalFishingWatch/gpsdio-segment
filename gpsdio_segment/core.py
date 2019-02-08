@@ -289,7 +289,8 @@ class Segmentizer(object):
             'timedelta': timedelta,
             'speed': speed,
             'reported_speed': reported_speed,
-            'noise_factor': self.noise_dist / distance if distance is not None and distance > 0 else 0,
+            # 'noise_factor': self.noise_dist / distance if distance is not None and distance > 0 else 0,
+            'noise_factor': 1.0 if distance < self.noise_dist else 0.0,
             'type_match': type_match
         }
 
@@ -310,7 +311,7 @@ class Segmentizer(object):
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
-                 'noise_factor': 0,
+                 'noise_factor': 0.0,
                  'metric': None}
 
         if not segment.last_time_posit_msg:
@@ -334,6 +335,9 @@ class Segmentizer(object):
             # allow for the distance you can go at max speed for one minute
             if match['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
                 match['metric'] = match['distance'] / seg_duration
+            elif match['distance'] < self.noise_dist:
+                # kick this out as noise
+                match['noise_factor'] = 2.0
         else:
             # allow a higher max computed speed for vessels that report a high speed
             max_speed_at_inf = max(self.max_speed, match['reported_speed'] * self.reported_speed_multiplier)
@@ -354,7 +358,7 @@ class Segmentizer(object):
 
         segs = list(self._segments.values())
         best_metric = None
-        max_noise_factor = 0
+        max_noise_factor = 0.0
         matches = []
 
         if len(segs) == 1:
@@ -489,12 +493,11 @@ class Segmentizer(object):
                     # yield bs
                     continue
 
-                if best_match is None:
-                    if noise_factor > 1.0:
+                if noise_factor == 2.0:
+                    yield self._create_segment(msg, cls=NoiseSegment)
+                elif best_match is None:
+                    if noise_factor == 1.0:
                         yield self._create_segment(msg, cls=NoiseSegment)
-                        # s = NoiseSegment(self._segment_unique_id(msg), msg['mmsi'])
-                        # s.add_msg(msg)
-                        # yield s
                     else:
                         self._add_segment(msg)
                 else:

@@ -1,6 +1,11 @@
 Changelog
 =========
 
+DEV
+-------------------
+* [#61](https://github.com/SkyTruth/gpsdio-segment/issues/61)
+  Prefer segments with matching shipname and/or callsign
+
 0.12
 -------------------
 * [#60](https://github.com/SkyTruth/gpsdio-segment/pull/60) 

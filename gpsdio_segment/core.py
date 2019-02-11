@@ -338,6 +338,9 @@ class Segmentizer(object):
             elif match['distance'] < self.noise_dist:
                 # kick this out as noise
                 match['noise_factor'] = 2.0
+            else:
+                # Allow this to match another existing segment, but do not create a new segment
+                match['noise_factor'] = 1.0
         else:
             # allow a higher max computed speed for vessels that report a high speed
             max_speed_at_inf = max(self.max_speed, match['reported_speed'] * self.reported_speed_multiplier)

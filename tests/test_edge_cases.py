@@ -233,3 +233,12 @@ def test_duplicate_ts_multiple_segs():
     segments = list(Segmentizer(messages))
     # idx=4 comes out first because it is emitted as a noise segment
     assert [{4}, {0, 2, 3},{1}] == [{msg['idx'] for msg in seg} for seg in segments]
+
+def test_duplicate_ts_noise_dist_zero():
+    messages = [
+        {'idx': 0, 'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime(2018, 1, 1, 1, 0, 0)},
+        {'idx': 1, 'mmsi': 1, 'lat': 0.01, 'lon': 0.01, 'timestamp': datetime(2018, 1, 1, 1, 0, 0)},
+    ]
+
+    segments = list(Segmentizer(messages, noise_dist=0))
+    assert [({1}, True), ({0}, False)] == [({msg['idx'] for msg in seg}, seg.noise) for seg in segments]

@@ -83,7 +83,7 @@ from gpsdio_segment.core import Segmentizer
     ),
 ])
 def test_seg_ident(message_stubs, msg_generator):
-    messages = list(msg_generator.generate_messages(messae_stubs))
+    messages = list(msg_generator.generate_messages(message_stubs))
     segments = list(Segmentizer(messages))
 
     # group the input messages into exected segment groups based on the 'seg' field

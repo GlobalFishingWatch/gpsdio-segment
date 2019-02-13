@@ -328,8 +328,10 @@ class Segmentizer(object):
 
         if match['timedelta'] > self.max_hours:
             match['metric'] = None
-        elif match['distance'] == 0 or match['distance'] is None:
+        elif match['distance'] == 0:
             match['metric'] = match['timedelta'] / seg_duration
+        elif match['distance'] is None:
+            match['metric'] = match['timedelta']
         elif match['timedelta'] == 0:
             # only keep identical timestamps if the distance is small
             # allow for the distance you can go at max speed for one minute

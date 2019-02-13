@@ -96,6 +96,16 @@ def generate_messages(message_stubs):
       {'seg': 0, 'type': 24, 'callsign': '1'},  # goes to seg 0 because it matches
       {'seg': 1, 'type': 24, 'callsign': '2'}]  # goes to seg 1 because that is the most recent position
     ),
+    ([{'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 1, 'type': 18},
+      {'seg': 1, 'type': 24, 'shipname': 'A'}, # no specific match, so it goes to the segment with the most recent position
+      ]
+    ),
 ])
 def test_seg_ident(message_stubs):
     messages = list(generate_messages(message_stubs))
@@ -116,4 +126,3 @@ def test_seg_ident(message_stubs):
         assert actual == expected
 
     # assert False
-

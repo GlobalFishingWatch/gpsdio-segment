@@ -7,6 +7,8 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+* [#66](https://github.com/SkyTruth/gpsdio-segment/issues/66)
+  When no shipname or callsign matches, prefer the segment with the most recent position
 
 ### ADDED
 * [#61](https://github.com/SkyTruth/gpsdio-segment/issues/61)

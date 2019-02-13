@@ -13,31 +13,6 @@ from gpsdio_segment.core import Segmentizer
 
 
 
-def generate_messages(message_stubs):
-    t = datetime.now()
-    lat = 0
-    lon = 0
-
-    for idx, stub in enumerate(message_stubs):
-        msg = dict(
-            idx=idx,
-            mmsi=1,
-            timestamp = t
-        )
-        msg.update(stub)
-
-        if msg.get('type', 99) in (1, 18, 19):
-            msg['lat'] = lat + (msg['seg'] * 2)
-            msg['lon'] = lon + (msg['seg'] * 2)
-
-        t += timedelta(hours=1)
-        lat += 0.01
-        lon += 0.01
-
-        yield msg
-
-
-
 @pytest.mark.parametrize("message_stubs", [
     ( [{'seg': 0, 'type': 1},                   # one segement, one name
        {'seg': 0, 'type': 5, 'shipname': 'A'}]
@@ -107,8 +82,8 @@ def generate_messages(message_stubs):
       ]
     ),
 ])
-def test_seg_ident(message_stubs):
-    messages = list(generate_messages(message_stubs))
+def test_seg_ident(message_stubs, msg_generator):
+    messages = list(msg_generator.generate_messages(messae_stubs))
     segments = list(Segmentizer(messages))
 
     # group the input messages into exected segment groups based on the 'seg' field

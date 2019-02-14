@@ -1,5 +1,7 @@
 import pytest
 import datetime
+from itertools import groupby
+from gpsdio_segment.core import Segmentizer
 
 
 class MessageGenerator(object):
@@ -39,11 +41,12 @@ class MessageGenerator(object):
             mmsi=self.mmsi,
             timestamp=self.timestamp
         )
-        msg.update(stub)
-        seg = msg.get('seg', 0)
-        if msg.get('type', 99) in (1, 3, 18, 19):
+        seg = stub.get('seg', 0)
+        type = stub.get('type', 99)
+        if type in (1, 3, 18, 19):
             msg['lat'] = self.lat + (seg * 2)
             msg['lon'] = self.lon + (seg * 2)
+        msg.update(stub)
 
         return msg
 
@@ -51,6 +54,24 @@ class MessageGenerator(object):
         self.reset()
         for stub in message_stubs:
             yield self.next_msg_from_stub(stub)
+
+    def assert_segments(self, message_stubs, label='None'):
+        messages = list(self.generate_messages(message_stubs))
+        segments = list(Segmentizer(messages))
+
+        # group the input messages into exected segment groups based on the 'seg' field
+        sorted_messages = sorted(messages, key=lambda x: x['seg'])
+        grouped_messages = groupby(sorted_messages, key=lambda x: x['seg'])
+        expected_seg_messages = [set(m['idx'] for m in msgs) for _, msgs in grouped_messages]
+
+        # put segments in time order and extract message indexes
+        sorted_segments = sorted(segments, key=lambda x: x.temporal_extent)
+        actual_seg_messages = [set(m['idx'] for m in seg) for seg in sorted_segments]
+
+        # compare the sets of message indexes in the actual and expected segment groups
+        assert len(actual_seg_messages) == len(expected_seg_messages)
+        for actual, expected in zip(actual_seg_messages, expected_seg_messages):
+            assert actual == expected
 
 
 @pytest.fixture(scope='function')

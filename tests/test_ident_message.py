@@ -13,31 +13,6 @@ from gpsdio_segment.core import Segmentizer
 
 
 
-def generate_messages(message_stubs):
-    t = datetime.now()
-    lat = 0
-    lon = 0
-
-    for idx, stub in enumerate(message_stubs):
-        msg = dict(
-            idx=idx,
-            mmsi=1,
-            timestamp = t
-        )
-        msg.update(stub)
-
-        if msg.get('type', 99) in (1, 18, 19):
-            msg['lat'] = lat + (msg['seg'] * 2)
-            msg['lon'] = lon + (msg['seg'] * 2)
-
-        t += timedelta(hours=1)
-        lat += 0.01
-        lon += 0.01
-
-        yield msg
-
-
-
 @pytest.mark.parametrize("message_stubs", [
     ( [{'seg': 0, 'type': 1},                   # one segement, one name
        {'seg': 0, 'type': 5, 'shipname': 'A'}]
@@ -96,9 +71,19 @@ def generate_messages(message_stubs):
       {'seg': 0, 'type': 24, 'callsign': '1'},  # goes to seg 0 because it matches
       {'seg': 1, 'type': 24, 'callsign': '2'}]  # goes to seg 1 because that is the most recent position
     ),
+    ([{'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 0, 'type': 18},
+      {'seg': 1, 'type': 18},
+      {'seg': 1, 'type': 24, 'shipname': 'A'}, # no specific match, so it goes to the segment with the most recent position
+      ]
+    ),
 ])
-def test_seg_ident(message_stubs):
-    messages = list(generate_messages(message_stubs))
+def test_seg_ident(message_stubs, msg_generator):
+    messages = list(msg_generator.generate_messages(message_stubs))
     segments = list(Segmentizer(messages))
 
     # group the input messages into exected segment groups based on the 'seg' field
@@ -116,4 +101,3 @@ def test_seg_ident(message_stubs):
         assert actual == expected
 
     # assert False
-

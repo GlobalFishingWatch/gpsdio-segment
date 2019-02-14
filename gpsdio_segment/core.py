@@ -261,7 +261,7 @@ class Segmentizer(object):
 
         type1 = self.message_type(msg1)
         type2 = self.message_type(msg2)
-        type_match = None if type1 is None or type2 is None else type1 == type2
+        type_mismatch = None if type1 is None or type2 is None else type1 != type2
         timedelta = self.timedelta(msg1, msg2)
         reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
 
@@ -291,7 +291,7 @@ class Segmentizer(object):
             'reported_speed': reported_speed,
             # 'noise_factor': self.noise_dist / distance if distance is not None and distance > 0 else 0,
             'noise_factor': 1.0 if distance < self.noise_dist else 0.0,
-            'type_match': type_match
+            'type_mismatch': type_mismatch
         }
 
 
@@ -328,8 +328,10 @@ class Segmentizer(object):
 
         if match['timedelta'] > self.max_hours:
             match['metric'] = None
-        elif match['distance'] == 0 or match['distance'] is None:
+        elif match['distance'] == 0:
             match['metric'] = match['timedelta'] / seg_duration
+        elif match['distance'] is None:
+            match['metric'] = match['timedelta']
         elif match['timedelta'] == 0:
             # only keep identical timestamps if the distance is small
             # allow for the distance you can go at max speed for one minute
@@ -386,7 +388,7 @@ class Segmentizer(object):
             matches = [m for m in matches if m['metric'] is not None]
 
             # try limiting to just segments with the same message type, if there are any
-            type_matches = [m for m in matches if m['type_match']] or matches
+            type_matches = [m for m in matches if not m['type_mismatch']] or matches
 
             # try limiting to just segments with matching shipname, if there are any
             shipname_matches = [m for m in type_matches if m.get('shipname_match')] or type_matches

@@ -60,7 +60,7 @@ setup(
     ''',
     extras_require={
         'dev': [
-            'pytest',
+            'pytest>=3.6',
             'pytest-cov',
             'coverage'
         ]
@@ -70,7 +70,8 @@ setup(
         'gpsdio==0.0.7',
         'click>=0.3',
         'pyproj',
-        'newlinejson<1.0'
+        'newlinejson<1.0',
+        'python-levenshtein'
     ],
     keywords='AIS GIS remote sensing',
     license="Apache 2.0",

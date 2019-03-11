@@ -69,7 +69,7 @@ setup(
     install_requires=[
         'gpsdio==0.0.7',
         'click>=0.3',
-        'pyproj',
+        'pyproj==1.9.6',
         'newlinejson<1.0'
     ],
     keywords='AIS GIS remote sensing',

@@ -8,7 +8,11 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
-### ADDED
+
+## 0.16
+
+### Changes
+* Fix version of pyproj to avoid going to 2.X
 
 ## 0.16
 

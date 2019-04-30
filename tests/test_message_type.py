@@ -16,6 +16,7 @@ from gpsdio_segment.core import Segmentizer
 
 @pytest.mark.parametrize("type,expected", [
     (1, 'A'),
+    (3, 'A'),
     (5, 'A'),
     (18, 'B'),
     (99, None),
@@ -55,17 +56,19 @@ def test_two_seg_same_message_type():
 
 def test_two_seg_diff_message_type():
     # test several points in two segments with the different message types
+    # Later messages have no lat/lon so should be treated as identity messages and
+    # matched by type
     t = datetime.now()
     points = [
         {'mmsi': 1, 'type': 1, 'lat': 0.0, 'lon': 0, 'timestamp': t},
         {'mmsi': 1, 'type': 18, 'lat': 2.0, 'lon': 0, 'timestamp': t + timedelta(hours=1)},
-        {'mmsi': 1, 'type': 1, 'lat': 0.5, 'lon': 0, 'timestamp': t + timedelta(hours=2)},
-        {'mmsi': 1, 'type': 18, 'lat': 1.5, 'lon': 0, 'timestamp': t + timedelta(hours=3)},
-        {'mmsi': 1, 'type': 1, 'lat': 1.0, 'lon': 0, 'timestamp': t + timedelta(hours=4)}
+        {'mmsi': 1, 'type': 1,  'timestamp': t + timedelta(hours=2)},
+        {'mmsi': 1, 'type': 18,  'timestamp': t + timedelta(hours=3)},
+        {'mmsi': 1, 'type': 1,  'timestamp': t + timedelta(hours=4)}
     ]
-    # Should produce two segments, with lat=1.0 grouped with lat=0.5
+    # Should produce two segments, one with type 1 messages and one with type 18
     segments = list(Segmentizer(points))
-    assert {tuple(msg['lat'] for msg in seg) for seg in segments} == {(2.0, 1.5),(0.0, 0.5, 1.0)}
+    assert {tuple(msg['type'] for msg in seg) for seg in segments} == {(18, 18),(1, 1, 1)}
 
 
 def test_ident_msg_24():

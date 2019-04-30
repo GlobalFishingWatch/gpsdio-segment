@@ -371,7 +371,7 @@ class Segmentizer(object):
 
             if (msg.get('lat'), msg.get('lon')) == (None, None):
                 # This is not a positional message, so try to limit to 
-                # just segments with the same message type, if there are any
+                # just segments with the same transmitter type, if there are any
                 matches = [m for m in matches if not m['type_mismatch']] or matches
 
             metrics = list((match['metric'], match) for match in matches)

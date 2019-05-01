@@ -77,19 +77,23 @@ from gpsdio_segment.core import Segmentizer
       {'seg': 1, 'type': 24, 'shipname': 'A'}, 
       ]
     ),
-      ([{'seg': 0, 'type': 18},
-        {'seg': 1, 'type': 1},
-        {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 0 because Tx type matches
-        {'seg': 0, 'type': 18},
-        {'seg': 1, 'type': 5, 'callsign' : 'B'}, # Goes to ` because Tx type matches
-      ]
-    ),
-      ([{'seg': 0, 'type': 18},
-        {'seg': 1, 'type': 18}, # Seg 1 has multiple Tx types
-        {'seg': 1, 'type': 1}, 
-        {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 1 because MOST recent Tx type for segment matches
-      ]                                           # NOTE: this is not ideal behavior, ideally it goes to 1
-    ),                                            # here, but that's a more complicated fix.
+
+    # These tests are currently not applicable because we have suspended
+    # Tx type matching
+
+    #   ([{'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 1},
+    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 0 because Tx type matches
+    #     {'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 5, 'callsign' : 'B'}, # Goes to ` because Tx type matches
+    #   ]
+    # ),
+    #   ([{'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 18}, # Seg 1 has multiple Tx types
+    #     {'seg': 1, 'type': 1}, 
+    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 1 because MOST recent Tx type for segment matches
+    #   ]                                           # NOTE: this is not ideal behavior, ideally it goes to 1
+    # ),                                            # here, but that's a more complicated fix.
 ])
 def test_seg_ident(message_stubs, msg_generator):
     messages = list(msg_generator.generate_messages(message_stubs))

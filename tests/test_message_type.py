@@ -54,6 +54,7 @@ def test_two_seg_same_message_type():
     assert {tuple(msg['lat'] for msg in seg) for seg in segments} == {(2.0, 1.5, 1.0),(0.0, 0.5)}
 
 
+@pytest.mark.skip('not doing Tx type matching currently')
 def test_two_seg_diff_message_type():
     # test several points in two segments with the different message types
     # Later messages have no lat/lon so should be treated as identity messages and
@@ -85,6 +86,7 @@ def test_ident_msg_24():
     segments = list(Segmentizer(points))
     assert {tuple(msg['id'] for msg in seg) for seg in segments} == {(2, 4, 5),(1, 3)}
 
+@pytest.mark.skip('not doing Tx type matching currently')
 def test_ident_msg_5():
     # test several points in two segments with the different message types
     t = datetime.now()

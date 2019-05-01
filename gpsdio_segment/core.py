@@ -369,10 +369,13 @@ class Segmentizer(object):
             # If metric is none, then the segment is not a match candidate
             matches = [m for m in matches if m['metric'] is not None]
 
-            if (msg.get('lat'), msg.get('lon')) == (None, None):
-                # This is not a positional message, so try to limit to 
-                # just segments with the same transmitter type, if there are any
-                matches = [m for m in matches if not m['type_mismatch']] or matches
+            # This seems like a good idea, but some of the tagblocks (receivers)
+            # mess up the message type, so commenting out for now.
+
+            # if (msg.get('lat'), msg.get('lon')) == (None, None):
+            #     # This is not a positional message, so try to limit to 
+            #     # just segments with the same transmitter type, if there are any
+            #     matches = [m for m in matches if not m['type_mismatch']] or matches
 
             metrics = list((match['metric'], match) for match in matches)
 

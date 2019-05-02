@@ -14,11 +14,11 @@ from gpsdio_segment.core import Segmentizer
 
 
 @pytest.mark.parametrize("message_stubs", [
-    ( [{'seg': 0, 'type': 1},                   # one segement, one name
+    ( [{'seg': 0, 'type': 1},                   # one segment, one name
        {'seg': 0, 'type': 5, 'shipname': 'A'}]
     ),
     ([{'seg': 0, 'type': 1},                    # only one position, so only one segment, so both names go to the
-      {'seg': 0, 'type': 5, 'shipname': 'A'},   # sane segment
+      {'seg': 0, 'type': 5, 'shipname': 'A'},   # same segment
       {'seg': 0, 'type': 5, 'shipname': 'B'}]
      ),
     ([{'seg': 0, 'type': 1},                    # seg 0 starts
@@ -30,46 +30,42 @@ from gpsdio_segment.core import Segmentizer
       {'seg': 0, 'type': 5, 'shipname': 'A'},   # seg 0 gets name A
       {'seg': 1, 'type': 1},                    # seg 1 starts
       {'seg': 1, 'type': 5, 'shipname': 'B'},   # seg 1 gets name B
-      {'seg': 0, 'type': 5, 'shipname': 'A'}]   # name A goes to seg 0 because the name matches, even though seg 1
-     ),                                         # has the more recent postion
-
+      {'seg': 1, 'type': 5, 'shipname': 'A'}]   # name A also goes to seg 1 because its more recent position
+    ),                                          
     ([{'seg': 0, 'type': 18},                   # seg 0 starts
       {'seg': 0, 'type': 24, 'shipname': 'A'},  # seg 0 gets name A
       {'seg': 1, 'type': 18},                   # seg 1 starts
-      {'seg': 1, 'type': 24, 'shipname': 'B'},  # seg 1 gets name B
-      {'seg': 0, 'type': 24, 'shipname': 'A'},  # name A goes to seg 1 because the name matches
-      {'seg': 1, 'type': 24, 'shipname': 'B'},  # name B goes to seg 2
-      {'seg': 1, 'type': 24, 'shipname': 'C'}]  # name C does not match either seg, so it goes to seg 1 because it has
-    ),                                          # the most recent position
-
+      {'seg': 1, 'type': 24, 'shipname': 'B'},  # seg 1 gets a bunch of names
+      {'seg': 1, 'type': 24, 'shipname': 'A'},  # 
+      {'seg': 1, 'type': 24, 'shipname': 'B'},  # 
+      {'seg': 1, 'type': 24, 'shipname': 'C'}]  # 
+    ),                                          
     ([{'seg': 0, 'type': 18},                   # seg 0 starts
       {'seg': 0, 'type': 24, 'shipname': 'A'},  # seg 0 name is now A
       {'seg': 1, 'type': 18},                   # seg 1 starts
       {'seg': 1, 'type': 24, 'shipname': 'B'},  # seg 1 name is now B
       {'seg': 1, 'type': 24, 'shipname': 'C'},  # seg 1 name changes to C, because seg 1 has the most recent position
-      {'seg': 0, 'type': 24, 'shipname': 'A'},  # seg 0 is still A
+      {'seg': 1, 'type': 24, 'shipname': 'A'},  # seg 1 is now A
       {'seg': 0, 'type': 18},                   # seg 0 now has the most recent positon
-      {'seg': 1, 'type': 24, 'shipname': 'C'},  # seg 1 is still C, even though seg 0 has the most recent position
-      {'seg': 0, 'type': 24, 'shipname': 'B'}]  # seg 0 name changes to B because it does not match A or C and
-                                                # seg 0 has the most recent position
+      {'seg': 0, 'type': 24, 'shipname': 'C'},  # seg 0 is now C
+      {'seg': 0, 'type': 24, 'shipname': 'B'}]  # seg 0 name changes to B
     ),
     ([{'seg': 0, 'type': 19, 'shipname': 'A'},  # seg 0 starts, with name A
       {'seg': 1, 'type': 18},                   # seg 1 starts
       {'seg': 1, 'type': 24, 'shipname': 'B'},  # seg 1 name is now B
       {'seg': 1, 'type': 24, 'shipname': 'C'},  # seg 1 name changes to C, because seg 1 has the most recent position
-      {'seg': 0, 'type': 24, 'shipname': 'A'},  # seg 0 is still A
+      {'seg': 1, 'type': 24, 'shipname': 'A'},  # seg 1 is now A
       {'seg': 0, 'type': 18},                   # seg 0 now has the most recent positon
-      {'seg': 1, 'type': 24, 'shipname': 'C'},  # seg 1 is still C, even though seg 0 has the most recent position
-      {'seg': 0, 'type': 24, 'shipname': 'B'},  # name B goes to seg 0 since it does not match A or C and seg 0 has
-                                                # the most recent position, but the name A is anchored by the type 19 msg
+      {'seg': 0, 'type': 24, 'shipname': 'C'},  # seg 0 is now C
+      {'seg': 0, 'type': 24, 'shipname': 'B'},  # name B goes to seg 0
       {'seg': 1, 'type': 18},                   # seg 1 now has the most recent positon
-      {'seg': 1, 'type': 24, 'shipname': 'B'}]  # this time B goes to seg 1, because seg 0 still has name A
+      {'seg': 1, 'type': 24, 'shipname': 'B'}]  # this time B goes to seg 1
     ),
     ([{'seg': 0, 'type': 19, 'shipname': 'A', 'callsign': '1'},  # seg 0 starts, with name A, callsign 1
       {'seg': 1, 'type': 18},                   # seg 1 starts
       {'seg': 1, 'type': 24, 'shipname': 'B'},  # seg 1 name is now B
-      {'seg': 0, 'type': 24, 'callsign': '1'},  # goes to seg 0 because it matches
-      {'seg': 1, 'type': 24, 'callsign': '2'}]  # goes to seg 1 because that is the most recent position
+      {'seg': 1, 'type': 24, 'callsign': '1'},  # goes to seg 1 
+      {'seg': 1, 'type': 24, 'callsign': '2'}]  # goes to seg 1 
     ),
     ([{'seg': 0, 'type': 18},
       {'seg': 0, 'type': 18},
@@ -78,9 +74,26 @@ from gpsdio_segment.core import Segmentizer
       {'seg': 0, 'type': 18},
       {'seg': 0, 'type': 18},
       {'seg': 1, 'type': 18},
-      {'seg': 1, 'type': 24, 'shipname': 'A'}, # no specific match, so it goes to the segment with the most recent position
+      {'seg': 1, 'type': 24, 'shipname': 'A'}, 
       ]
     ),
+
+    # These tests are currently not applicable because we have suspended
+    # Tx type matching
+
+    #   ([{'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 1},
+    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 0 because Tx type matches
+    #     {'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 5, 'callsign' : 'B'}, # Goes to ` because Tx type matches
+    #   ]
+    # ),
+    #   ([{'seg': 0, 'type': 18},
+    #     {'seg': 1, 'type': 18}, # Seg 1 has multiple Tx types
+    #     {'seg': 1, 'type': 1}, 
+    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 1 because MOST recent Tx type for segment matches
+    #   ]                                           # NOTE: this is not ideal behavior, ideally it goes to 1
+    # ),                                            # here, but that's a more complicated fix.
 ])
 def test_seg_ident(message_stubs, msg_generator):
     messages = list(msg_generator.generate_messages(message_stubs))

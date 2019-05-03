@@ -8,8 +8,16 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
+## 0.18
 
-## 0.16
+### Changes
+
+* [GlobalFishingWatch/GFW-Tasks#1015](https://github.com/GlobalFishingWatch/GFW-Tasks/issues/1015)
+  * Remove checks for name/callsign when assigning segments.
+  * Never check for transceiver type.
+  * Add type 3 messages to class A message types.
+
+## 0.17
 
 ### Changes
 * Fix version of pyproj to avoid going to 2.X

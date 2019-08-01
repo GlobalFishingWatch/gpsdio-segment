@@ -46,6 +46,7 @@ from __future__ import division
 from itertools import chain
 import logging
 import datetime
+import math
 
 from gpsdio.schema import datetime2str
 
@@ -58,24 +59,24 @@ from gpsdio_segment.state import SegmentState
 
 
 logger = logging.getLogger(__file__)
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 
 
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 24  # hours
-DEFAULT_MAX_SPEED = 25  # knots
-DEFAULT_NOISE_DIST = 100  # nautical miles
+DEFAULT_MAX_SPEED = 10  # knots
 INFINITE_SPEED = 1000000
-REPORTED_SPEED_MULTIPLIER = 1.1 # multiply this by reported speed in max speed calculation
-MAX_SPEED_MULTIPLIER = 1600     # magic number used to compute max_speed_at_distance
-MAX_SPEED_EXPONENT = 2.0     # magic number used to compute max_speed_at_distance
+DEFAULT_SHORT_SEG_THRESHOLD = 10
+DEFAULT_SHORT_SEG_WEIGHT = 10
+DEFAULT_SEG_LENGTH_WEIGHT = 10
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
 # The value 102.3 is reserved for "bad value." It looks like 51.2
-# is also almost always noise. Because the values are floats,
+# is also almost always noise. The value 63 means unavailable for
+# type 27 messages so we exclude that as well. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
-REPORTED_SPEED_EXCLUSION_RANGES = [(51.0, 51.3),(102.2,103.0)]
+REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25,102.35)]
 AIS_CLASS = {
     1: 'A',
     2: 'A',
@@ -93,12 +94,9 @@ class Segmentizer(object):
     """
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, noise_dist=DEFAULT_NOISE_DIST,
-                 reported_speed_multiplier=REPORTED_SPEED_MULTIPLIER,
-                 max_speed_multiplier = MAX_SPEED_MULTIPLIER,
-                 max_speed_exponent=MAX_SPEED_EXPONENT,
-                 collect_match_stats=False
-                 ):
+                 max_speed=DEFAULT_MAX_SPEED, short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
+                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, seg_length_weight=DEFAULT_SEG_LENGTH_WEIGHT,
+                 collect_match_stats=False):
 
         """
         Looks at a stream of messages and pull out segments of points that are
@@ -124,24 +122,13 @@ class Segmentizer(object):
             Maximum number of hours to allow between points.
         max_speed : int, optional
             Maximum speed allowed between points in nautical miles.
-        noise_dist : float, optional
-            If a point is within this distance (nautical miles) to an existing segment
-            but does not match with any segment, then consider it to be noise and
-            emit it in a singleton segment. Set to 0 to disable this. Default: 0
-        reported_speed_multiplier: float
-            multiplier applied to reported speed to determine the max allowable speed
-        max_speed_multiplier: float
-            multiplier used to compute the max allowable speed
-        max_speed_exponent: float
-            exponent used to compute max allowable speed (see usage in _segment_match_metric())
         """
 
         self.max_hours = max_hours
         self.max_speed = max_speed
-        self.noise_dist = noise_dist
-        self.reported_speed_multiplier = reported_speed_multiplier
-        self.max_speed_multiplier = max_speed_multiplier
-        self.max_speed_exponent = max_speed_exponent
+        self.short_seg_threshold = short_seg_threshold
+        self.short_seg_weight = short_seg_weight
+        self.seg_length_weight = seg_length_weight
         self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
@@ -155,9 +142,9 @@ class Segmentizer(object):
         self._last_segment = None
 
     def __repr__(self):
-        return "<{cname}() max_speed={mspeed} max_hours={mhours} noise_dist={ndist} at {id_}>".format(
+        return "<{cname}() max_speed={mspeed} max_hours={mhours} at {id_}>".format(
             cname=self.__class__.__name__, mspeed=self.max_speed,
-            mhours=self.max_hours, ndist=self.noise_dist, id_=hash(self))
+            mhours=self.max_hours, id_=hash(self))
 
     @classmethod
     def from_seg_states(cls, seg_states, instream, **kwargs):
@@ -205,8 +192,14 @@ class Segmentizer(object):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _validate_position(self, x, y):
-        return x is None or y is None or (-180.0 <= x <= 180.0 and -90.0 <= y <= 90.0 )
+    def _validate_message(self, x, y, course, speed):
+        return ((x is None and y is None) or # informational message
+                (-180.0 <= x <= 180.0 and 
+                 -90.0 <= y <= 90.0 and
+                 course is not None and 
+                 0.0 <= course < 360.0 and # 360 is invalid
+                 not any([(x >= v[0] and x <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
+                 )) 
 
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
@@ -229,10 +222,17 @@ class Segmentizer(object):
         else:
             return (ts2 - ts1).total_seconds() / 3600
 
+    def delta_hours(self, msg1, msg2):
+        ts1 = msg1['timestamp']
+        ts2 = msg2['timestamp']
+        return (ts2 - ts1).total_seconds() / 3600
+
     def reported_speed(self, msg):
-        s = msg.get('speed', 0) or 0
+        s = msg['speed']
         for r in REPORTED_SPEED_EXCLUSION_RANGES:
             if r[0] < s < r[1]:
+                logger.warning('This message should have been excluded by _validate_message: {}'.
+                    format(msg))
                 s = 0
         return s
 
@@ -241,102 +241,114 @@ class Segmentizer(object):
     def message_type(msg):
         return AIS_CLASS.get(msg.get('type'))
 
+    @staticmethod
+    def _compute_expected_position(msg, hours):
+        # TODO: is it worth looking into PyProj for this?
+        epsilon = 1e-3
+        x = msg['lon']
+        y = msg['lat']
+        # Speed is in knots, so `dist` is in nautical miles (nm)
+        dist = msg['speed'] * hours 
+        course = math.radians(90.0 - msg['course'])
+        deg_lat_per_nm = 1.0 / 60
+        deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
+        dx = math.cos(course) * dist * deg_lon_per_nm
+        dy = math.sin(course) * dist * deg_lat_per_nm
+        return x + dx, y + dy
+
     def msg_diff_stats(self, msg1, msg2):
 
         """
         Compute the stats required to determine if two points are continuous.  Input
-        messages must have a `lat`, `lon`, and `timestamp`, that are not `None` and
-        `timestamp` must be an instance of `datetime.datetime()`.
+        messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`, 
+        that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
 
         Returns
         -------
         dict
             distance : float
                 Distance in natucal miles between the points.
-            timedelta : float
-                Amount of time between the two points in hours.
+            delta_hours : float
+                Amount of time between the two points in hours (signed).
             speed : float
                 Required speed in knots to travel between the two points within the
                 time allotted by `timedelta`.
+            discrepancy : float
+                Difference in nautical miles between where the vessel is expected to 
+                be basted on position course and speed versus where it is in a second
+                message. Averaged between looking forward from msg1 and looking 
+                backward from msg2.
         """
 
-        type1 = self.message_type(msg1)
-        type2 = self.message_type(msg2)
-        type_mismatch = None if type1 is None or type2 is None else type1 != type2
-        timedelta = self.timedelta(msg1, msg2)
-        reported_speed = max(self.reported_speed(msg1), self.reported_speed(msg2))
+        hours = self.delta_hours(msg1, msg2)
 
-
-        x1 = msg1.get('lon')
-        y1 = msg1.get('lat')
+        x1 = msg1['lon']
+        y1 = msg1['lat']
 
         if (x1 is None or y1 is None):
             distance = None
             speed = None
-
+            discrepancy = None
         else:
             x2 = msg2['lon']
             y2 = msg2['lat']
 
+            x2p, y2p = self._compute_expected_position(msg1, hours)
+            x1p, y1p = self._compute_expected_position(msg2, -hours)
+
+            def wrap(x):
+                return (x + 180) % 360 - 180
+
+            deg_lat_per_nm = 1.0 / 60
+            y = 0.5 * (y1 + y2)
+            epsilon = 1e-3
+            deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
+            info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
+            discrepancy = 0.5 * (
+                math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
+                           1 / deg_lat_per_nm * (y1p - y1)) + 
+                math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
+                           1 / deg_lat_per_nm * (y2p - y2)))
+            
             distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
 
             try:
-                speed = (distance / timedelta)
+                speed = (distance / abs(hours))
             except ZeroDivisionError:
                 speed = INFINITE_SPEED
 
         return {
             'distance': distance,
-            'timedelta': timedelta,
+            'delta_hours' : hours,
             'speed': speed,
-            'reported_speed': reported_speed,
-            # 'noise_factor': self.noise_dist / distance if distance is not None and distance > 0 else 0,
-            'noise_factor': 1.0 if distance < self.noise_dist else 0.0,
-            'type_mismatch': type_mismatch
+            'discrepancy' : discrepancy,
+            'info' : info
         }
 
     def _segment_match(self, segment, msg):
-        match = {'seg_id': segment.id,
-                 'noise_factor': 0.0,
-                 'metric': None}
+        match = {'seg_id': segment.id}
 
         if not segment.last_time_posit_msg:
             match['metric'] = self.max_hours * self.max_speed
             return match
 
-        match.update(self.msg_diff_stats(msg, segment.last_time_posit_msg))
+        match.update(self.msg_diff_stats(segment.last_time_posit_msg, msg))
 
-        seg_duration = max(1.0, segment.total_seconds / 3600)
-
-        if match['timedelta'] > self.max_hours:
+        if abs(match['delta_hours']) > self.max_hours: 
+            # Too long has passed, we can't match this segment
             match['metric'] = None
-        elif match['distance'] == 0:
-            match['metric'] = match['timedelta'] / seg_duration
         elif match['distance'] is None:
-            match['metric'] = match['timedelta']
-        elif match['timedelta'] == 0:
-            # only keep identical timestamps if the distance is small
-            # allow for the distance you can go at max speed for one minute
-            if match['distance'] < (self.max_speed / 60):  # max_speed is nautical miles per hour, so divide by 60 for minutes
-                match['metric'] = match['distance'] / seg_duration
-            elif match['distance'] < self.noise_dist:
-                # kick this out as noise
-                match['noise_factor'] = 2.0
-            else:
-                # Allow this to match another existing segment, but do not create a new segment
-                match['noise_factor'] = 1.0
+            # Informational message, match closest position message in time.
+            match['metric'] = abs(match['delta_hours'])
         else:
-            # allow a higher max computed speed for vessels that report a high speed
-            max_speed_at_inf = max(self.max_speed, match['reported_speed'] * self.reported_speed_multiplier)
-            max_speed_at_distance = max_speed_at_inf * \
-                                    (1 + self.max_speed_multiplier / (match['distance'])**self.max_speed_exponent)
-            # This previously gave an unrealistic speed. This new version, with max speed 
-            # of 30, and thus max_speed_at_inf of 60, allows a vessel to travel 1nm 20 seconds,
-            # 1.5 nautical miles in a minute. After 20 minutes, the allowed speed drops
-            # to about 30 knots. In other words, below gaps between points of under 
-            # 20 minutes, faster speeds are allowed. 
-            if match['speed'] <= max_speed_at_distance:
-                match['metric'] = match['timedelta'] / seg_duration
+            discrepancy = match['discrepancy']
+            minute = 1.0 / 60
+            effective_hours = 10 * minute + abs(match['delta_hours'])
+            discrepancy_speed = discrepancy / effective_hours
+            if discrepancy_speed <= self.max_speed:
+                match['metric'] = discrepancy_speed
+            else:
+                match['metric'] = None
 
         return match
 
@@ -344,8 +356,7 @@ class Segmentizer(object):
         # figure out which segment is the best match for the given message
 
         segs = list(self._segments.values())
-        best_metric = None
-        max_noise_factor = 0.0
+        best_match = None
         matches = []
 
         if len(segs) == 1:
@@ -354,39 +365,40 @@ class Segmentizer(object):
 
             match = self._segment_match(segs[0], msg)
             matches = [match]
-            max_noise_factor = match['noise_factor']
 
             if match['metric'] is not None:
-                best_metric = match
+                best_match = match
 
         elif len(segs) > 1:
             # get match metrics for all candidate segments
             matches = [self._segment_match(seg, msg) for seg in segs]
 
-            # max noise distance includes all segments, even if they are not match candidates
-            max_noise_factor = max(match['noise_factor'] for match in matches)
-
             # If metric is none, then the segment is not a match candidate
+            valid_segs = [s for s, m in zip(segs, matches) if m is not None]
             matches = [m for m in matches if m['metric'] is not None]
 
-            # This seems like a good idea, but some of the tagblocks (receivers)
-            # mess up the message type, so commenting out for now.
+            # Fine the longest segment and compute scale factors
+            longest = max(len(s.msgs) for s in segs)
+            # lower the weight of short_segments, both absolute sense and relative sense
+            treshhold = float(self.short_seg_threshold)
 
-            # if (msg.get('lat'), msg.get('lon')) == (None, None):
-            #     # This is not a positional message, so try to limit to 
-            #     # just segments with the same transmitter type, if there are any
-            #     matches = [m for m in matches if not m['type_mismatch']] or matches
+            MAX_WEIGHT = 10 
+            scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / treshhold, 1))
+                            for s in valid_segs]
+            scales_2 = [1 / (1 + (self.seg_length_weight - 1) * len(s.msgs) / float(longest)) 
+                            for s in valid_segs]
+            scales = [s1 * s2 for (s1, s2) in zip(scales_1, scales_2)]
 
-            metrics = list((match['metric'], match) for match in matches)
+            metric_match_pairs = [(m['metric'] * s, m) for (m, s) in zip(matches, scales)]
 
-            if metrics:
+            if metric_match_pairs:
                 # find the smallest metric value
-                best_metric = min(metrics, key=lambda x: x[0])[1]
+                best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
 
         if self.collect_match_stats:
             msg['segment_matches'] = matches
 
-        return (best_metric, max_noise_factor)
+        return best_match
 
     def __iter__(self):
         return self.process()
@@ -400,9 +412,11 @@ class Segmentizer(object):
 
             y = msg.get('lat')
             x = msg.get('lon')
+            course = msg.get('course')
+            speed = msg.get('speed')
 
-            # Reject any message that has invalid position
-            if not self._validate_position(x, y):
+            # Reject any message that has invalid position, course or speed
+            if not self._validate_message(x, y, course, speed):
                 yield self._create_segment(msg, cls=BadSegment)
                 # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
                 # bs.add_msg(msg)
@@ -460,6 +474,7 @@ class Segmentizer(object):
                 self._add_segment(msg)
 
             elif timestamp is None:
+                raise ValueError("Message missing  timestamp")
                 self._last_segment.add_msg(msg)
 
             elif timestamp < self._prev_timestamp:
@@ -467,29 +482,22 @@ class Segmentizer(object):
 
             else:
                 try:
-                    best_match, noise_factor = self._compute_best(msg)
+                    best_match = self._compute_best(msg)
                 except ValueError as e:
                     if False:
                         logger.debug("    Out of bound points, could not compute best segment: %s", e)
                         logger.debug("    Bad msg: %s", msg)
                         logger.debug("    Yielding bad segment")
                     yield self._create_segment(msg, cls=BadSegment)
-                    # bs = BadSegment(self._segment_unique_id(msg), msg['mmsi'])
-                    # bs.add_msg(msg)
-                    # yield bs
                     continue
 
-                if noise_factor == 2.0:
-                    yield self._create_segment(msg, cls=NoiseSegment)
-                elif best_match is None:
-                    if noise_factor == 1.0:
-                        yield self._create_segment(msg, cls=NoiseSegment)
-                    else:
-                        self._add_segment(msg)
+                if best_match is None:
+                    self._add_segment(msg)
                 else:
                     id = best_match['seg_id']
                     self._segments[id].add_msg(msg)
                     self._last_segment = self._segments[id]
+
 
             if x and y and timestamp:
                 self._prev_timestamp = msg['timestamp']

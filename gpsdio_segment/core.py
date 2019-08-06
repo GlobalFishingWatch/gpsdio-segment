@@ -63,12 +63,17 @@ logger.setLevel(logging.DEBUG)
 
 
 # See Segmentizer() for more info
-DEFAULT_MAX_HOURS = 24  # hours
-DEFAULT_MAX_SPEED = 10  # knots
+DEFAULT_MAX_HOURS = 7 * 24 
+DEFAULT_PENALTY_HOURS = 24
+DEFAULT_HOURS_EXP = 2.0
+DEFAULT_BUFFER_HOURS = 10 / 60.0
+DEFAULT_LOOKBACK = 3
+DEFAULT_MIN_NM = 5
+DEFAULT_MAX_KNOTS = 25  
 INFINITE_SPEED = 1000000
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_WEIGHT = 10
-DEFAULT_SEG_LENGTH_WEIGHT = 10
+DEFAULT_SEG_LENGTH_WEIGHT = 2
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -94,7 +99,11 @@ class Segmentizer(object):
     """
 
     def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
-                 max_speed=DEFAULT_MAX_SPEED, short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
+                 penalty_hours=DEFAULT_PENALTY_HOURS, 
+                 buffer_hours=DEFAULT_BUFFER_HOURS,
+                 hours_exp=DEFAULT_HOURS_EXP,
+                 max_speed=DEFAULT_MAX_KNOTS, lookback=DEFAULT_LOOKBACK,
+                 short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
                  short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, seg_length_weight=DEFAULT_SEG_LENGTH_WEIGHT,
                  collect_match_stats=False):
 
@@ -118,14 +127,32 @@ class Segmentizer(object):
             MMSI to pull out of the stream and process.  If not given the first
             valid MMSI is used.  All messages with a different MMSI are thrown
             away.
-        max_hours : int, optional
-            Maximum number of hours to allow between points.
+        max_hours : float, optional
+            Maximum number of hours to allow between points in a segment.
+        penalty_hours : float, optional
+            The effective hours is reduced at around this point.
+        hours_exp: float, optional
+            Exponent used when computing the penalty hours correction.
+        buffer_hours: float, optional
+            Time between points is padded by this amount when computing metrics.
         max_speed : int, optional
             Maximum speed allowed between points in nautical miles.
+        lookback : int, optional
+            Number of points to look backwards when matching segments.
+        short_seg_threshold : int, optional
+            Segments shorter than this are penalized when computing metrics
+        short_seg_weight : float, optional
+            Maximum weight to apply when comparing short segments.
+        seg_length_weight : float, optional
+            Maximum weight to apply when comparing relative lengths of segments.
         """
 
         self.max_hours = max_hours
+        self.penalty_hours = penalty_hours
+        self.hours_exp = hours_exp
         self.max_speed = max_speed
+        self.buffer_hours = buffer_hours
+        self.lookback = lookback
         self.short_seg_threshold = short_seg_threshold
         self.short_seg_weight = short_seg_weight
         self.seg_length_weight = seg_length_weight
@@ -197,7 +224,8 @@ class Segmentizer(object):
                 (-180.0 <= x <= 180.0 and 
                  -90.0 <= y <= 90.0 and
                  course is not None and 
-                 0.0 <= course < 360.0 and # 360 is invalid
+                 ((speed == 0 and course == 360.0) or
+                 0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
                  not any([(x >= v[0] and x <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
                  )) 
 
@@ -243,7 +271,6 @@ class Segmentizer(object):
 
     @staticmethod
     def _compute_expected_position(msg, hours):
-        # TODO: is it worth looking into PyProj for this?
         epsilon = 1e-3
         x = msg['lon']
         y = msg['lat']
@@ -281,6 +308,8 @@ class Segmentizer(object):
         """
 
         hours = self.delta_hours(msg1, msg2)
+        alpha = abs(hours) / (self.penalty_hours + abs(hours))
+        effective_hours = hours / math.sqrt(1 + alpha ** self.hours_exp * abs(hours))
 
         x1 = msg1['lon']
         y1 = msg1['lat']
@@ -293,8 +322,8 @@ class Segmentizer(object):
             x2 = msg2['lon']
             y2 = msg2['lat']
 
-            x2p, y2p = self._compute_expected_position(msg1, hours)
-            x1p, y1p = self._compute_expected_position(msg2, -hours)
+            x2p, y2p = self._compute_expected_position(msg1, effective_hours)
+            x1p, y1p = self._compute_expected_position(msg2, -effective_hours)
 
             def wrap(x):
                 return (x + 180) % 360 - 180
@@ -320,35 +349,43 @@ class Segmentizer(object):
         return {
             'distance': distance,
             'delta_hours' : hours,
+            'effective_hours' : effective_hours,
             'speed': speed,
             'discrepancy' : discrepancy,
             'info' : info
         }
 
     def _segment_match(self, segment, msg):
-        match = {'seg_id': segment.id}
+        match = {'seg_id': segment.id,
+                 'discard_previous' : 0}
 
         if not segment.last_time_posit_msg:
             match['metric'] = self.max_hours * self.max_speed
             return match
 
-        match.update(self.msg_diff_stats(segment.last_time_posit_msg, msg))
+        candidates = [self.msg_diff_stats(x, msg)
+                        for x in segment.msgs[-self.lookback:]] 
+        match.update(candidates[-1])
+        match['metric'] = None
 
-        if abs(match['delta_hours']) > self.max_hours: 
-            # Too long has passed, we can't match this segment
-            match['metric'] = None
-        elif match['distance'] is None:
-            # Informational message, match closest position message in time.
-            match['metric'] = abs(match['delta_hours'])
-        else:
-            discrepancy = match['discrepancy']
-            minute = 1.0 / 60
-            effective_hours = 10 * minute + abs(match['delta_hours'])
-            discrepancy_speed = discrepancy / effective_hours
-            if discrepancy_speed <= self.max_speed:
-                match['metric'] = discrepancy_speed
+        for i, cnd in enumerate(candidates):
+            if abs(cnd['delta_hours']) > self.max_hours: 
+                # Too long has passed, we can't match this segment
+                pass
+            elif cnd['distance'] is None:
+                # Informational message, match closest position message in time.
+                match['metric'] = abs(cnd['delta_hours'])
             else:
-                match['metric'] = None
+                discrepancy = cnd['discrepancy']
+                hours = abs(cnd['effective_hours'])
+                buffered_hours = self.buffer_hours + hours
+                max_allowed_discrepancy = buffered_hours * self.max_speed
+                if discrepancy < max_allowed_discrepancy:
+                    metric = discrepancy / max_allowed_discrepancy
+                    if match['metric'] is None or metric < match['metric']:
+                        match['metric'] = metric
+                        match['discard_previous'] = len(candidates) - i - 1
+                        match.update(cnd)
 
         return match
 
@@ -377,13 +414,12 @@ class Segmentizer(object):
             valid_segs = [s for s, m in zip(segs, matches) if m is not None]
             matches = [m for m in matches if m['metric'] is not None]
 
-            # Fine the longest segment and compute scale factors
+            # Find the longest segment and compute scale factors
             longest = max(len(s.msgs) for s in segs)
             # lower the weight of short_segments, both absolute sense and relative sense
-            treshhold = float(self.short_seg_threshold)
+            threshhold = float(self.short_seg_threshold)
 
-            MAX_WEIGHT = 10 
-            scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / treshhold, 1))
+            scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / threshhold, 1))
                             for s in valid_segs]
             scales_2 = [1 / (1 + (self.seg_length_weight - 1) * len(s.msgs) / float(longest)) 
                             for s in valid_segs]
@@ -410,6 +446,7 @@ class Segmentizer(object):
             if self.collect_match_stats:
                 msg['segment_matches'] = []
 
+            msg['discard_previous'] = 0
             y = msg.get('lat')
             x = msg.get('lon')
             course = msg.get('course')
@@ -421,11 +458,12 @@ class Segmentizer(object):
                 # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
                 # bs.add_msg(msg)
                 # yield bs
-                logger.debug("Rejected bad message  mmsi: {mmsi} lat: {lat}  lon: {lon} timestamp: {timestamp} ".format(**msg))
+                logger.debug(("Rejected bad message  mmsi: {mmsi!r} lat: {lat!r}  lon: {lon!r} "
+                              "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**msg))
                 continue
 
             _yielded = []
-            for segment in self._segments.values():
+            for segment in list(self._segments.values()):
                 last_msg = segment.last_time_posit_msg or segment.last_msg
                 if timestamp and last_msg:
                     td = self.timedelta(msg, last_msg)
@@ -436,12 +474,7 @@ class Segmentizer(object):
                             logger.debug("    Previous: %s", segment.last_msg['timestamp'])
                             logger.debug("    Time D:   %s", td)
                             logger.debug("    Max H:    %s", self.max_hours)
-                        _yielded.append(segment.id)
-                        yield segment
-
-            # TODO: Is there a way to integrate this into the above for loop?  Maybe with dict.pop()?
-            for s_id in _yielded:
-                del self._segments[s_id]
+                        yield self._segments.pop(segment.id)
 
             if self.mmsi is None:
                 # logger.debug("Found a valid MMSI - processing: %s", mmsi)
@@ -477,7 +510,7 @@ class Segmentizer(object):
                 raise ValueError("Message missing  timestamp")
                 self._last_segment.add_msg(msg)
 
-            elif timestamp < self._prev_timestamp:
+            elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
 
             else:
@@ -495,6 +528,7 @@ class Segmentizer(object):
                     self._add_segment(msg)
                 else:
                     id = best_match['seg_id']
+                    msg['discard_previous'] = best_match.get('discard_previous', 0)
                     self._segments[id].add_msg(msg)
                     self._last_segment = self._segments[id]
 

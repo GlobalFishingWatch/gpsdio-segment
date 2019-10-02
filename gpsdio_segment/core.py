@@ -363,7 +363,8 @@ class Segmentizer(object):
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
-                 'discard_previous' : 0}
+                 'discard_previous' : 0,
+                 'metric' : None}
 
         assert segment.last_time_posit_msg
 
@@ -376,8 +377,16 @@ class Segmentizer(object):
             if len(candidates) >= self.lookback:
                 break
 
+        if not len(candidates):
+            if not len(segment.msgs):
+                logger.debug("no message in segment for {}".format(msg.get('mmsi')))
+            else:
+                logger.debug("No valid position messages for {}in segment with {} points\n".format(msg.get('mmsi'), 
+                                                                                                   len(candidates)) +
+                              "last point {}".format(segment.msgs[-1]))
+            return match
+
         match.update(candidates[0])
-        match['metric'] = None
 
         for i, cnd in enumerate(reversed(candidates)):
             if abs(cnd['delta_hours']) > self.max_hours: 
@@ -412,10 +421,10 @@ class Segmentizer(object):
             # and avoid all the messing around with lists in the num_segs > 1 case
 
             match = self._segment_match(segs[0], msg)
-            matches = [match]
 
             if match['metric'] is not None:
                 best_match = match
+                matches = [match]
 
         elif len(segs) > 1:
             # get match metrics for all candidate segments

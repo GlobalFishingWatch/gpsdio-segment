@@ -357,19 +357,20 @@ class Segmentizer(object):
             'info' : info
         }
 
+    @staticmethod
+    def is_informational(x):
+        return x['lat'] is None or x['lon'] is None
+
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
                  'discard_previous' : 0}
 
         assert segment.last_time_posit_msg
 
-        def is_informational(x):
-            return x['lat'] is None or x['lon'] is None
-
         # Get the stats for the last `lookback` positional messages
         candidates = []
         for x in reversed(segment.msgs):
-            if is_informational(x):
+            if self.is_informational(x):
                 continue
             candidates.append(self.msg_diff_stats(x, msg))
             if len(candidates) >= self.lookback:
@@ -487,23 +488,22 @@ class Segmentizer(object):
                         yield self._segments.pop(segment.id)
 
             if self.mmsi is None:
-                # logger.debug("Found a valid MMSI - processing: %s", mmsi)
-                if x is not None and y is not None:
-                    try:
-                        # We have to make sure the first message isn't out of bounds
-                        self._geod.inv(0, 0, x, y)  # Argument order matters
-                    except ValueError:
-                        logger.debug(
-                            "    Could not compute a distance from the first point - "
-                            "producing a bad segment")
-                        yield self._create_segment(msg, cls=BadSegment)
-                        # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
-                        # bs.add_msg(msg)
-                        # yield bs
+                if self.is_informational(msg):
+                    continue
+                try:
+                    # We have to make sure the first message isn't out of bounds
+                    self._geod.inv(0, 0, x, y)  # Argument order matters
+                except ValueError:
+                    logger.debug(
+                        "    Could not compute a distance from the first point - "
+                        "producing a bad segment")
+                    yield self._create_segment(msg, cls=BadSegment)
+                    # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
+                    # bs.add_msg(msg)
+                    # yield bs
 
-                        logger.debug("Still looking for a good first message ...")
-                        continue
-
+                    logger.debug("Still looking for a good first message ...")
+                    continue
                 self._mmsi = mmsi
                 self._prev_timestamp = msg['timestamp']
                 self._add_segment(msg)
@@ -513,7 +513,7 @@ class Segmentizer(object):
                 logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
 
             elif len(self._segments) is 0:
-                if x is None or y is None:
+                if self.is_informational(msg):
                     logger.debug("Skipping info message that would start a segment: %s", mmsi)
                 else:
                     self._add_segment(msg)
@@ -537,7 +537,10 @@ class Segmentizer(object):
                     continue
 
                 if best_match is None:
-                    self._add_segment(msg)
+                    if self.is_informational(msg):
+                        logger.debug("Skipping info message that would start a segment: %s", mmsi)
+                    else:
+                        self._add_segment(msg)
                 else:
                     id = best_match['seg_id']
                     msg['discard_previous'] = best_match.get('discard_previous', 0)

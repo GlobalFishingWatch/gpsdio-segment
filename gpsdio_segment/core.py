@@ -224,6 +224,7 @@ class Segmentizer(object):
                 (-180.0 <= x <= 180.0 and 
                  -90.0 <= y <= 90.0 and
                  course is not None and 
+                 speed is not None and
                  ((speed == 0 and course == 360.0) or
                  0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
                  not any([(x >= v[0] and x <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
@@ -313,15 +314,16 @@ class Segmentizer(object):
 
         x1 = msg1['lon']
         y1 = msg1['lat']
+        assert x1 is not None and y1 is not None
+        x2 = msg2['lon']
+        y2 = msg2['lat']
 
-        if (x1 is None or y1 is None):
+        if (x2 is None or y2 is None):
             distance = None
             speed = None
             discrepancy = None
+            info = None
         else:
-            x2 = msg2['lon']
-            y2 = msg2['lat']
-
             x2p, y2p = self._compute_expected_position(msg1, effective_hours)
             x1p, y1p = self._compute_expected_position(msg2, -effective_hours)
 
@@ -359,16 +361,24 @@ class Segmentizer(object):
         match = {'seg_id': segment.id,
                  'discard_previous' : 0}
 
-        if not segment.last_time_posit_msg:
-            match['metric'] = self.max_hours * self.max_speed
-            return match
+        assert segment.last_time_posit_msg
 
-        candidates = [self.msg_diff_stats(x, msg)
-                        for x in segment.msgs[-self.lookback:]] 
-        match.update(candidates[-1])
+        def is_informational(x):
+            return x['lat'] is None or x['lon'] is None
+
+        # Get the stats for the last `lookback` positional messages
+        candidates = []
+        for x in reversed(segment.msgs):
+            if is_informational(x):
+                continue
+            candidates.append(self.msg_diff_stats(x, msg))
+            if len(candidates) >= self.lookback:
+                break
+
+        match.update(candidates[0])
         match['metric'] = None
 
-        for i, cnd in enumerate(candidates):
+        for i, cnd in enumerate(reversed(candidates)):
             if abs(cnd['delta_hours']) > self.max_hours: 
                 # Too long has passed, we can't match this segment
                 pass
@@ -501,13 +511,15 @@ class Segmentizer(object):
 
             elif mmsi != self.mmsi:
                 logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
-                continue
 
             elif len(self._segments) is 0:
-                self._add_segment(msg)
+                if x is None or y is None:
+                    logger.debug("Skipping info message that would start a segment: %s", mmsi)
+                else:
+                    self._add_segment(msg)
 
             elif timestamp is None:
-                raise ValueError("Message missing  timestamp")
+                raise ValueError("Message missing timestamp")
                 self._last_segment.add_msg(msg)
 
             elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:

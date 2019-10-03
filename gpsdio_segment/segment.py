@@ -278,7 +278,7 @@ class BadSegment(Segment):
     away we stick it into a `BadSegment()` so the user can filter with an
     instance check.
     """
-    _noise=True
+    _noise = True
 
 class NoiseSegment(Segment):
     """
@@ -289,4 +289,16 @@ class NoiseSegment(Segment):
     These messages are emitted in a NoiseSegment to make them easy to distinguish from other
     segments that contain only a single message
     """
-    _noise=True
+    _noise = True
+
+class DiscardedSegment(Segment):
+    """
+    Points that are discarded during postprocssing of segments are emitted as 
+    Discarded segments.
+
+
+    These may not actually be noise, so it may next sense to mark them in some
+    other way in the future.
+
+    """
+    _noise = True

@@ -54,7 +54,7 @@ import pyproj
 
 
 from gpsdio_segment.segment import Segment, BadSegment
-from gpsdio_segment.segment import Segment, NoiseSegment
+from gpsdio_segment.segment import DiscardedSegment, NoiseSegment
 from gpsdio_segment.state import SegmentState
 
 
@@ -232,6 +232,10 @@ class Segmentizer(object):
 
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
+        if cls._noise:
+            # discard_previous not used on noise segments, so remove
+            # now so it doesn't contaminate output stream.
+            msg.pop('discard_previous', 0)
         mmsi = self.mmsi if self.mmsi is not None else msg['mmsi']
         t = cls(id_, mmsi)
         t.add_msg(msg)
@@ -414,28 +418,22 @@ class Segmentizer(object):
 
         segs = list(self._segments.values())
         best_match = None
-        matches = []
 
-        if len(segs) == 1:
+        # get match metrics for all candidate segments
+        raw_matches = [self._segment_match(seg, msg) for seg in segs]
+        # If metric is none, then the segment is not a match candidate
+        matches = [x for x in raw_matches if x['metric'] is not None]
+
+        if len(matches) == 1:
             # This is the most common case, so make it optimal
             # and avoid all the messing around with lists in the num_segs > 1 case
+            [best_match] = matches
 
-            match = self._segment_match(segs[0], msg)
-
-            if match['metric'] is not None:
-                best_match = match
-                matches = [match]
-
-        elif len(segs) > 1:
-            # get match metrics for all candidate segments
-            matches = [self._segment_match(seg, msg) for seg in segs]
-
-            # If metric is none, then the segment is not a match candidate
-            valid_segs = [s for s, m in zip(segs, matches) if m is not None]
-            matches = [m for m in matches if m['metric'] is not None]
+        elif len(matches) > 1:
+            valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
 
             # Find the longest segment and compute scale factors
-            longest = max(len(s.msgs) for s in segs)
+            longest = max(len(s.msgs) for s in valid_segs)
             # lower the weight of short_segments, both absolute sense and relative sense
             threshhold = float(self.short_seg_threshold)
 
@@ -459,6 +457,24 @@ class Segmentizer(object):
     def __iter__(self):
         return self.process()
 
+    def clean(self, segment):
+        n = len(segment.msgs) - 1
+        drop = set()
+        new_msgs = []
+        while n >= 0:
+            msg = segment.msgs[n]
+            discard_previous = msg.pop('discard_previous', 0)
+            for i in range(discard_previous):
+                drop.add(n - i - 1)
+            if n in drop:
+                drop.remove(n)
+                yield self._create_segment(msg, cls=DiscardedSegment)
+            else:
+                new_msgs.append(msg)
+            n -= 1
+        segment.msgs[:] = new_msgs[::-1]
+        yield segment
+
     def process(self):
         for idx, msg in enumerate(self.instream):
             mmsi = msg.get('mmsi')
@@ -475,14 +491,10 @@ class Segmentizer(object):
             # Reject any message that has invalid position, course or speed
             if not self._validate_message(x, y, course, speed):
                 yield self._create_segment(msg, cls=BadSegment)
-                # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
-                # bs.add_msg(msg)
-                # yield bs
                 logger.debug(("Rejected bad message  mmsi: {mmsi!r} lat: {lat!r}  lon: {lon!r} "
                               "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**msg))
                 continue
 
-            _yielded = []
             for segment in list(self._segments.values()):
                 last_msg = segment.last_time_posit_msg or segment.last_msg
                 if timestamp and last_msg:
@@ -494,7 +506,8 @@ class Segmentizer(object):
                             logger.debug("    Previous: %s", segment.last_msg['timestamp'])
                             logger.debug("    Time D:   %s", td)
                             logger.debug("    Max H:    %s", self.max_hours)
-                        yield self._segments.pop(segment.id)
+                        for x in self.clean(self._segments.pop(segment.id)):
+                            yield x
 
             if self.mmsi is None:
                 if self.is_informational(msg):
@@ -507,9 +520,6 @@ class Segmentizer(object):
                         "    Could not compute a distance from the first point - "
                         "producing a bad segment")
                     yield self._create_segment(msg, cls=BadSegment)
-                    # bs = BadSegment(self._segment_unique_id(msg), mmsi=msg['mmsi'])
-                    # bs.add_msg(msg)
-                    # yield bs
 
                     logger.debug("Still looking for a good first message ...")
                     continue
@@ -529,7 +539,6 @@ class Segmentizer(object):
 
             elif timestamp is None:
                 raise ValueError("Message missing timestamp")
-                self._last_segment.add_msg(msg)
 
             elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
@@ -538,10 +547,6 @@ class Segmentizer(object):
                 try:
                     best_match = self._compute_best(msg)
                 except ValueError as e:
-                    if False:
-                        logger.debug("    Out of bound points, could not compute best segment: %s", e)
-                        logger.debug("    Bad msg: %s", msg)
-                        logger.debug("    Yielding bad segment")
                     yield self._create_segment(msg, cls=BadSegment)
                     continue
 
@@ -561,5 +566,6 @@ class Segmentizer(object):
                 self._prev_timestamp = msg['timestamp']
 
         for series, segment in self._segments.items():
-            yield segment
+            for x in self.clean(segment):
+                yield x
 

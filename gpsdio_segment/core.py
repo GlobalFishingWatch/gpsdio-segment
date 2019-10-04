@@ -41,7 +41,7 @@ last added to.
 """
 
 
-from __future__ import division
+from __future__ import division, print_function
 
 from itertools import chain
 import logging
@@ -67,7 +67,8 @@ DEFAULT_MAX_HOURS = 7 * 24
 DEFAULT_PENALTY_HOURS = 24
 DEFAULT_HOURS_EXP = 2.0
 DEFAULT_BUFFER_HOURS = 10 / 60.0
-DEFAULT_LOOKBACK = 3
+DEFAULT_LOOKBACK = 10
+DEFAULT_LOOKBACK_FACTOR = 2
 DEFAULT_MIN_NM = 5
 DEFAULT_MAX_KNOTS = 25  
 INFINITE_SPEED = 1000000
@@ -98,13 +99,17 @@ class Segmentizer(object):
     Group positional messages into related segments based on speed and distance.
     """
 
-    def __init__(self, instream, mmsi=None, max_hours=DEFAULT_MAX_HOURS,
+    def __init__(self, instream, mmsi=None, 
+                 max_hours=DEFAULT_MAX_HOURS,
                  penalty_hours=DEFAULT_PENALTY_HOURS, 
                  buffer_hours=DEFAULT_BUFFER_HOURS,
                  hours_exp=DEFAULT_HOURS_EXP,
-                 max_speed=DEFAULT_MAX_KNOTS, lookback=DEFAULT_LOOKBACK,
+                 max_speed=DEFAULT_MAX_KNOTS, 
+                 lookback=DEFAULT_LOOKBACK,
+                 lookback_factor=DEFAULT_LOOKBACK_FACTOR,
                  short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
-                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, seg_length_weight=DEFAULT_SEG_LENGTH_WEIGHT,
+                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, 
+                 seg_length_weight=DEFAULT_SEG_LENGTH_WEIGHT,
                  collect_match_stats=False):
 
         """
@@ -153,6 +158,7 @@ class Segmentizer(object):
         self.max_speed = max_speed
         self.buffer_hours = buffer_hours
         self.lookback = lookback
+        self.lookback_factor = lookback_factor
         self.short_seg_threshold = short_seg_threshold
         self.short_seg_weight = short_seg_weight
         self.seg_length_weight = seg_length_weight
@@ -227,15 +233,11 @@ class Segmentizer(object):
                  speed is not None and
                  ((speed == 0 and course == 360.0) or
                  0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
-                 not any([(x >= v[0] and x <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
+                 not any([(speed >= v[0] and speed <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
                  )) 
 
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
-        if cls._noise:
-            # discard_previous not used on noise segments, so remove
-            # now so it doesn't contaminate output stream.
-            msg.pop('discard_previous', 0)
         mmsi = self.mmsi if self.mmsi is not None else msg['mmsi']
         t = cls(id_, mmsi)
         t.add_msg(msg)
@@ -319,8 +321,8 @@ class Segmentizer(object):
         x1 = msg1['lon']
         y1 = msg1['lat']
         assert x1 is not None and y1 is not None
-        x2 = msg2['lon']
-        y2 = msg2['lat']
+        x2 = msg2.get('lon')
+        y2 = msg2.get('lat')
 
         if (x2 is None or y2 is None):
             distance = None
@@ -363,7 +365,7 @@ class Segmentizer(object):
 
     @staticmethod
     def is_informational(x):
-        return x['lat'] is None or x['lon'] is None
+        return x.get('lat') is None or x.get('lon') is None
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
@@ -374,41 +376,46 @@ class Segmentizer(object):
 
         # Get the stats for the last `lookback` positional messages
         candidates = []
+
         for x in reversed(segment.msgs):
             if self.is_informational(x):
+                continue
+            if x.get('dropped'):
                 continue
             candidates.append(self.msg_diff_stats(x, msg))
             if len(candidates) >= self.lookback:
                 break
 
         if not len(candidates):
-            if not len(segment.msgs):
-                logger.debug("no message in segment for {}".format(msg.get('mmsi')))
-            else:
-                logger.debug("No valid position messages for {}in segment with {} points\n".format(msg.get('mmsi'), 
-                                                                                                   len(candidates)) +
-                              "last point {}".format(segment.msgs[-1]))
+            logger.debug("no candidate segments")
             return match
 
         match.update(candidates[0])
 
-        for i, cnd in enumerate(reversed(candidates)):
+        for lookback, cnd in enumerate(candidates):
             if abs(cnd['delta_hours']) > self.max_hours: 
                 # Too long has passed, we can't match this segment
-                pass
+                break
             elif cnd['distance'] is None:
                 # Informational message, match closest position message in time.
                 match['metric'] = abs(cnd['delta_hours'])
+                break
             else:
                 discrepancy = cnd['discrepancy']
                 hours = abs(cnd['effective_hours'])
                 buffered_hours = self.buffer_hours + hours
                 max_allowed_discrepancy = buffered_hours * self.max_speed
-                if discrepancy < max_allowed_discrepancy:
-                    metric = discrepancy / max_allowed_discrepancy
+                if discrepancy <= max_allowed_discrepancy:
+                    if discrepancy == 0:
+                        metric = 0
+                    else:
+                        metric = discrepancy / max_allowed_discrepancy
+                    # Scale the metric using the lookback factor so that it only
+                    # matches to points further in the past if they are noticeably better
+                    metric *= self.lookback_factor ** lookback
                     if match['metric'] is None or metric < match['metric']:
                         match['metric'] = metric
-                        match['discard_previous'] = len(candidates) - i - 1
+                        match['discard_previous'] = lookback
                         match.update(cnd)
 
         return match
@@ -416,8 +423,12 @@ class Segmentizer(object):
     def _compute_best(self, msg):
         # figure out which segment is the best match for the given message
 
-        segs = list(self._segments.values())
+        raw_segs = list(self._segments.values())
         best_match = None
+
+        segs = [seg for seg in raw_segs if seg.last_time_posit_msg]
+        if len(segs) < len(raw_segs):
+            logger.warning('Some segments have no positional messages: skipping')
 
         # get match metrics for all candidate segments
         raw_matches = [self._segment_match(seg, msg) for seg in segs]
@@ -432,18 +443,22 @@ class Segmentizer(object):
         elif len(matches) > 1:
             valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
 
-            # Find the longest segment and compute scale factors
-            longest = max(len(s.msgs) for s in valid_segs)
-            # lower the weight of short_segments, both absolute sense and relative sense
-            threshhold = float(self.short_seg_threshold)
+            if self.is_informational(msg):
+                # Use the metrics as is
+                metric_match_pairs = [(m['metric'], m) for m in matches]
+            else:
+                # Find the longest segment and compute scale factors
+                longest = max(len(s.msgs) for s in valid_segs)
+                # lower the weight of short_segments, both absolute sense and relative sense
+                threshhold = float(self.short_seg_threshold)
 
-            scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / threshhold, 1))
-                            for s in valid_segs]
-            scales_2 = [1 / (1 + (self.seg_length_weight - 1) * len(s.msgs) / float(longest)) 
-                            for s in valid_segs]
-            scales = [s1 * s2 for (s1, s2) in zip(scales_1, scales_2)]
+                scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / threshhold, 1))
+                                for s in valid_segs]
+                scales_2 = [1 / (1 + (self.seg_length_weight - 1) * len(s.msgs) / float(longest)) 
+                                for s in valid_segs]
+                scales = [s1 * s2 for (s1, s2) in zip(scales_1, scales_2)]
 
-            metric_match_pairs = [(m['metric'] * s, m) for (m, s) in zip(matches, scales)]
+                metric_match_pairs = [(m['metric'] * s, m) for (m, s) in zip(matches, scales)]
 
             if metric_match_pairs:
                 # find the smallest metric value
@@ -458,21 +473,14 @@ class Segmentizer(object):
         return self.process()
 
     def clean(self, segment):
-        n = len(segment.msgs) - 1
-        drop = set()
         new_msgs = []
-        while n >= 0:
-            msg = segment.msgs[n]
-            discard_previous = msg.pop('discard_previous', 0)
-            for i in range(discard_previous):
-                drop.add(n - i - 1)
-            if n in drop:
-                drop.remove(n)
+        for msg in segment.msgs:
+            drop = msg.pop('drop', False)
+            if drop:
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
                 new_msgs.append(msg)
-            n -= 1
-        segment.msgs[:] = new_msgs[::-1]
+        segment.msgs[:] = new_msgs
         yield segment
 
     def process(self):
@@ -482,7 +490,6 @@ class Segmentizer(object):
             if self.collect_match_stats:
                 msg['segment_matches'] = []
 
-            msg['discard_previous'] = 0
             y = msg.get('lat')
             x = msg.get('lon')
             course = msg.get('course')
@@ -491,8 +498,10 @@ class Segmentizer(object):
             # Reject any message that has invalid position, course or speed
             if not self._validate_message(x, y, course, speed):
                 yield self._create_segment(msg, cls=BadSegment)
+                safe_msg = {'course' : None, 'speed' : None}
+                safe_msg.update(msg)
                 logger.debug(("Rejected bad message  mmsi: {mmsi!r} lat: {lat!r}  lon: {lon!r} "
-                              "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**msg))
+                              "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**safe_msg))
                 continue
 
             for segment in list(self._segments.values()):
@@ -511,6 +520,7 @@ class Segmentizer(object):
 
             if self.mmsi is None:
                 if self.is_informational(msg):
+                    yield self._create_segment(msg)
                     continue
                 try:
                     # We have to make sure the first message isn't out of bounds
@@ -533,12 +543,13 @@ class Segmentizer(object):
 
             elif len(self._segments) is 0:
                 if self.is_informational(msg):
+                    yield self._create_segment(msg)
                     logger.debug("Skipping info message that would start a segment: %s", mmsi)
                 else:
                     self._add_segment(msg)
 
             elif timestamp is None:
-                raise ValueError("Message missing timestamp")
+                raise ValueError("Message missing timestamp")   
 
             elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
@@ -547,6 +558,7 @@ class Segmentizer(object):
                 try:
                     best_match = self._compute_best(msg)
                 except ValueError as e:
+                    logger.debug("Computing best segment failed: %s", mmsi)
                     yield self._create_segment(msg, cls=BadSegment)
                     continue
 
@@ -557,7 +569,8 @@ class Segmentizer(object):
                         self._add_segment(msg)
                 else:
                     id = best_match['seg_id']
-                    msg['discard_previous'] = best_match.get('discard_previous', 0)
+                    for i in range(best_match.get('discard_previous', 0)):
+                        self._segments[id]._msgs[-(i + 1)]['drop'] = True
                     self._segments[id].add_msg(msg)
                     self._last_segment = self._segments[id]
 

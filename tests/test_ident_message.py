@@ -77,29 +77,12 @@ from gpsdio_segment.core import Segmentizer
       {'seg': 1, 'type': 24, 'shipname': 'A'}, 
       ]
     ),
-
-    # These tests are currently not applicable because we have suspended
-    # Tx type matching
-
-    #   ([{'seg': 0, 'type': 18},
-    #     {'seg': 1, 'type': 1},
-    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 0 because Tx type matches
-    #     {'seg': 0, 'type': 18},
-    #     {'seg': 1, 'type': 5, 'callsign' : 'B'}, # Goes to ` because Tx type matches
-    #   ]
-    # ),
-    #   ([{'seg': 0, 'type': 18},
-    #     {'seg': 1, 'type': 18}, # Seg 1 has multiple Tx types
-    #     {'seg': 1, 'type': 1}, 
-    #     {'seg': 0, 'type': 24, 'callsign' : 'A'}, # Goes to 1 because MOST recent Tx type for segment matches
-    #   ]                                           # NOTE: this is not ideal behavior, ideally it goes to 1
-    # ),                                            # here, but that's a more complicated fix.
 ])
 def test_seg_ident(message_stubs, msg_generator):
     messages = list(msg_generator.generate_messages(message_stubs))
     segments = list(Segmentizer(messages))
 
-    # group the input messages into exected segment groups based on the 'seg' field
+    # group the input messages into expected segment groups based on the 'seg' field
     sorted_messages = sorted(messages, key=lambda x: x['seg'])
     grouped_messages = groupby(sorted_messages, key=lambda x: x['seg'])
     expected_seg_messages = [set(m['idx'] for m in msgs) for _, msgs in grouped_messages]
@@ -108,9 +91,14 @@ def test_seg_ident(message_stubs, msg_generator):
     sorted_segments = sorted(segments, key=lambda x: x.temporal_extent)
     actual_seg_messages = [set(m['idx'] for m in seg) for seg in sorted_segments]
 
+    # for ms in  [[(m, seg.id) for m in seg] for seg in sorted_segments[1:]]:
+      # assert [x[1] for x in ms] is None
+    # assert messages[-3:] is None
+
     # compare the sets of message indexes in the actual and expected segment groups
     assert len(actual_seg_messages) == len(expected_seg_messages)
     for actual, expected in zip(actual_seg_messages, expected_seg_messages):
-        assert actual == expected
+        assert actual == expected, sorted_segments
+
 
     # assert False

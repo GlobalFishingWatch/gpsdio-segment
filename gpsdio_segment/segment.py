@@ -183,6 +183,13 @@ class Segment(object):
         else:
             return self._prev_segment.best_callsign_msg if self._prev_segment else None
 
+    def all_reversed_msgs(self):
+        source = self
+        while source is not None:
+            for m in source._msgs[::-1]:
+                yield m
+            source = source._prev_segment
+
     @property
     def last_msg(self):
         try:

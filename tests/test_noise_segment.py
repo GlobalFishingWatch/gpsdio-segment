@@ -17,13 +17,14 @@ from gpsdio_segment.core import NoiseSegment
 def test_noise_segment():
 
     with gpsdio.open('tests/data/338013000.json') as src:
-        # Run the whole thing - makes 31 segments, one of them real, the rest are singleton NoiseSegments
+        # Run the whole thing - makes 21 segments, twp of them real, the rest are singleton NoiseSegments
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 31
-        assert {len(seg) for seg in segs} == {1, 1223}
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 1, 'NoiseSegment': 30}
-        assert Counter([seg.noise for seg in segs]) == {False: 1, True: 30}
+        assert len(segs) == 11
+        assert {len(seg) for seg in segs} == {1, 10, 1234}
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 2, 
+        'DiscardedSegment' : 9}
+
 
     with gpsdio.open('tests/data/338013000.json') as src:
         # now run it one day at a time and store the segment states in between
@@ -32,7 +33,7 @@ def test_noise_segment():
         for day, msgs in it.groupby(src, key=lambda x: x['timestamp'].day):
             prev_states = seg_states.get(day - 1)
             if prev_states:
-                segmentizer = Segmentizer.from_seg_states(prev_states, msgs)
+                segmentizer = Segmentizer.from_seg_states(prev_states, list(msgs)[:1])
             else:
                 segmentizer = Segmentizer(msgs)
 
@@ -41,7 +42,9 @@ def test_noise_segment():
 
             seg_states[day] = [seg.state for seg in segs]
 
-        # 1 noise segment the first day that does not get passed back in on the second day
-        assert seg_types == {18: {'Segment': 1, 'NoiseSegment': 1},
-                             19: {'Segment': 1, 'NoiseSegment': 3},
-                             20: {'Segment': 1, 'NoiseSegment': 26}}
+        # some noise segments on the first day that does not get passed back in on the second day
+        assert seg_types == {
+                              18: {'DiscardedSegment': 1, 'Segment': 1},
+                              19: {'Segment': 2},
+                              20: {'Segment': 3}
+                             }

@@ -439,14 +439,12 @@ class Segmentizer(object):
             # This is the most common case, so make it optimal
             # and avoid all the messing around with lists in the num_segs > 1 case
             [best_match] = matches
-
         elif len(matches) > 1:
-            valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
-
             if self.is_informational(msg):
                 # Use the metrics as is
                 metric_match_pairs = [(m['metric'], m) for m in matches]
             else:
+                valid_segs = [s for s, m in zip(segs, raw_matches) if m['metric'] is not None]
                 # Find the longest segment and compute scale factors
                 longest = max(len(s.msgs) for s in valid_segs)
                 # lower the weight of short_segments, both absolute sense and relative sense

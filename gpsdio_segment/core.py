@@ -66,15 +66,16 @@ logger.setLevel(logging.DEBUG)
 DEFAULT_MAX_HOURS = 7 * 24 
 DEFAULT_PENALTY_HOURS = 24
 DEFAULT_HOURS_EXP = 2.0
-DEFAULT_BUFFER_HOURS = 10 / 60.0
+DEFAULT_BUFFER_HOURS = 15 / 60.0
 DEFAULT_LOOKBACK = 10
-DEFAULT_LOOKBACK_FACTOR = 2
-DEFAULT_MIN_NM = 5
-DEFAULT_MAX_KNOTS = 25  
+DEFAULT_LOOKBACK_FACTOR = 1.1
+DEFAULT_MAX_KNOTS = 20  
 INFINITE_SPEED = 1000000
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_WEIGHT = 10
-DEFAULT_SEG_LENGTH_WEIGHT = 2
+DEFAULT_AMBIGUITY_FACTOR = 2
+
+MAX_OPEN_SEGMENTS = 20
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -109,7 +110,6 @@ class Segmentizer(object):
                  lookback_factor=DEFAULT_LOOKBACK_FACTOR,
                  short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
                  short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, 
-                 seg_length_weight=DEFAULT_SEG_LENGTH_WEIGHT,
                  collect_match_stats=False):
 
         """
@@ -148,8 +148,6 @@ class Segmentizer(object):
             Segments shorter than this are penalized when computing metrics
         short_seg_weight : float, optional
             Maximum weight to apply when comparing short segments.
-        seg_length_weight : float, optional
-            Maximum weight to apply when comparing relative lengths of segments.
         """
 
         self.max_hours = max_hours
@@ -161,7 +159,6 @@ class Segmentizer(object):
         self.lookback_factor = lookback_factor
         self.short_seg_threshold = short_seg_threshold
         self.short_seg_weight = short_seg_weight
-        self.seg_length_weight = seg_length_weight
         self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
@@ -242,6 +239,16 @@ class Segmentizer(object):
         t = cls(id_, mmsi)
         t.add_msg(msg)
         return t
+
+    def _remove_excess_segments(self):
+        while len(self._segments) >= MAX_OPEN_SEGMENTS:
+            # Remove oldest segment
+            segs = list(self._segments.items())
+            segs.sort(key=lambda x: x[1].last_time_posit_msg['timestamp'])
+            stalest_seg_id, _ = segs[0]
+            logger.warning('removing stale segment {}'.format(stalest_seg_id))
+            for x in self.clean(self._segments.pop(stalest_seg_id)):
+                yield x
 
     def _add_segment(self, msg):
         t = self._create_segment(msg)
@@ -369,7 +376,7 @@ class Segmentizer(object):
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
-                 'discard_previous' : 0,
+                 'ndxs_to_drop' : [],
                  'metric' : None}
 
         assert segment.last_time_posit_msg
@@ -377,12 +384,18 @@ class Segmentizer(object):
         # Get the stats for the last `lookback` positional messages
         candidates = []
 
-        for x in reversed(segment.msgs):
+        n = len(segment.msgs)
+        ndxs_to_drop = []
+        metric = 1e99
+        for x in segment.get_all_reversed_msgs():
+            n -= 1
             if self.is_informational(x):
                 continue
-            if x.get('dropped'):
+            if x.get('drop'):
                 continue
-            candidates.append(self.msg_diff_stats(x, msg))
+            candidates.append((metric, ndxs_to_drop[:], self.msg_diff_stats(x, msg)))
+            ndxs_to_drop.append(n)
+            metric = x.get('metric', 1e99)
             if len(candidates) >= self.lookback:
                 break
 
@@ -390,9 +403,9 @@ class Segmentizer(object):
             logger.debug("no candidate segments")
             return match
 
-        match.update(candidates[0])
+        match.update(candidates[0][-1])
 
-        for lookback, cnd in enumerate(candidates):
+        for lookback, (existing_metric, ndxs_to_drop, cnd) in enumerate(candidates):
             if abs(cnd['delta_hours']) > self.max_hours: 
                 # Too long has passed, we can't match this segment
                 break
@@ -413,9 +426,12 @@ class Segmentizer(object):
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
                     metric *= self.lookback_factor ** lookback
+                    if metric > existing_metric:
+                        # Don't make existing segment worse
+                        continue
                     if match['metric'] is None or metric < match['metric']:
                         match['metric'] = metric
-                        match['discard_previous'] = lookback
+                        match['ndxs_to_drop'] = ndxs_to_drop
                         match.update(cnd)
 
         return match
@@ -426,7 +442,8 @@ class Segmentizer(object):
         raw_segs = list(self._segments.values())
         best_match = None
 
-        segs = [seg for seg in raw_segs if seg.last_time_posit_msg]
+        segs = [seg for seg in raw_segs if seg.last_msg]
+        # TODO: convert to assertion
         if len(segs) < len(raw_segs):
             logger.warning('Some segments have no positional messages: skipping')
 
@@ -443,24 +460,36 @@ class Segmentizer(object):
             if self.is_informational(msg):
                 # Use the metrics as is
                 metric_match_pairs = [(m['metric'], m) for m in matches]
-            else:
-                valid_segs = [s for s, m in zip(segs, raw_matches) if m['metric'] is not None]
-                # Find the longest segment and compute scale factors
-                longest = max(len(s.msgs) for s in valid_segs)
-                # lower the weight of short_segments, both absolute sense and relative sense
-                threshhold = float(self.short_seg_threshold)
-
-                scales_1 = [1 / (1 + (self.short_seg_weight - 1) * min(len(s.msgs) / threshhold, 1))
-                                for s in valid_segs]
-                scales_2 = [1 / (1 + (self.seg_length_weight - 1) * len(s.msgs) / float(longest)) 
-                                for s in valid_segs]
-                scales = [s1 * s2 for (s1, s2) in zip(scales_1, scales_2)]
-
-                metric_match_pairs = [(m['metric'] * s, m) for (m, s) in zip(matches, scales)]
-
-            if metric_match_pairs:
-                # find the smallest metric value
                 best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
+            else:
+                # valid_segs = [s for s, m in zip(segs, raw_matches) if m['metric'] is not None]
+                # # Find the longest segment and compute scale factors
+                # # lower the weight of short_segments
+                # threshold = self.short_seg_threshold
+                # inv_scales = []
+                # for s in valid_segs:
+                #     n_msgs = len(s)
+                #     if s.has_prev_state:
+                #         # Counts from previous states are unreliable, so credit with
+                #         # half the threshold value.
+                #         n_msgs += threshold / 2
+                #     alpha = min(n_msgs / threshold, 1)
+                #     inv_scales.append(1 + (self.short_seg_weight - 1) * alpha)
+
+                # metric_match_pairs = [(m['metric'] / s, m) for (m, s) in zip(matches, inv_scales)]
+                metric_match_pairs = [(m['metric'], m) for m in matches]
+
+                if metric_match_pairs:
+                    # find the smallest metric value
+                    metric_match_pairs.sort(key=lambda x: x[0])
+                    best_metric, best_match = metric_match_pairs[0]
+                    close_matches = [best_match]
+                    for metric, match in metric_match_pairs[1:]:
+                        if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
+                            close_matches.append(match)
+                    if len(close_matches) > 1:
+                        logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
+                        best_match = close_matches
 
         if self.collect_match_stats:
             msg['segment_matches'] = matches
@@ -473,6 +502,7 @@ class Segmentizer(object):
     def clean(self, segment):
         new_msgs = []
         for msg in segment.msgs:
+            msg.pop('metric', None)
             drop = msg.pop('drop', False)
             if drop:
                 yield self._create_segment(msg, cls=DiscardedSegment)
@@ -485,6 +515,9 @@ class Segmentizer(object):
         for idx, msg in enumerate(self.instream):
             mmsi = msg.get('mmsi')
             timestamp = msg.get('timestamp')
+            if timestamp is None:
+                raise ValueError("Message missing timestamp") 
+
             if self.collect_match_stats:
                 msg['segment_matches'] = []
 
@@ -496,58 +529,34 @@ class Segmentizer(object):
             # Reject any message that has invalid position, course or speed
             if not self._validate_message(x, y, course, speed):
                 yield self._create_segment(msg, cls=BadSegment)
-                safe_msg = {'course' : None, 'speed' : None}
-                safe_msg.update(msg)
-                logger.debug(("Rejected bad message  mmsi: {mmsi!r} lat: {lat!r}  lon: {lon!r} "
-                              "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**safe_msg))
+                logger.debug(("Rejected bad message from mmsi: {mmsi!r} lat: {y!r}  lon: {x!r} "
+                              "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**locals()))
                 continue
 
-            for segment in list(self._segments.values()):
-                last_msg = segment.last_time_posit_msg or segment.last_msg
-                if timestamp and last_msg:
-                    td = self.timedelta(msg, last_msg)
-                    if td > self.max_hours:
-                        if False:
-                            logger.debug("Segment %s exceeds max time: %s", segment.id, td)
-                            logger.debug("    Current:  %s", msg['timestamp'])
-                            logger.debug("    Previous: %s", segment.last_msg['timestamp'])
-                            logger.debug("    Time D:   %s", td)
-                            logger.debug("    Max H:    %s", self.max_hours)
-                        for x in self.clean(self._segments.pop(segment.id)):
-                            yield x
-
-            if self.mmsi is None:
-                if self.is_informational(msg):
-                    yield self._create_segment(msg)
-                    continue
-                try:
-                    # We have to make sure the first message isn't out of bounds
-                    self._geod.inv(0, 0, x, y)  # Argument order matters
-                except ValueError:
-                    logger.debug(
-                        "    Could not compute a distance from the first point - "
-                        "producing a bad segment")
-                    yield self._create_segment(msg, cls=BadSegment)
-
-                    logger.debug("Still looking for a good first message ...")
-                    continue
-                self._mmsi = mmsi
-                self._prev_timestamp = msg['timestamp']
-                self._add_segment(msg)
-                continue
-
-            elif mmsi != self.mmsi:
+            # Reject any message with non-matching MMSI
+            if mmsi != self.mmsi:
+                yield self._create_segment(msg, cls=BadSegment)
                 logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
+                continue
 
-            elif len(self._segments) is 0:
-                if self.is_informational(msg):
-                    yield self._create_segment(msg)
-                    logger.debug("Skipping info message that would start a segment: %s", mmsi)
-                else:
-                    self._add_segment(msg)
+            # Give informational messages there own singleton segments if there are no segments yet
+            # TODO: eventually always give them there own segment when we assign IDS later
+            if len(self._segments) is 0 and self.is_informational(msg):
+                yield self._create_segment(msg)
+                logger.debug("Skipping info message that would start a segment: %s", mmsi)
+                continue
 
-            elif timestamp is None:
-                raise ValueError("Message missing timestamp")   
+            if len(self._segments) > 0:
+                # FInalize and remove any segments that have not had a positional message in `max_hours`
+                for segment in list(self._segments.values()):
+                    if segment.last_time_posit_msg:
+                        td = self.timedelta(msg, segment.last_time_posit_msg)
+                        if td > self.max_hours:
+                            for x in self.clean(self._segments.pop(segment.id)):
+                                yield x
+
+            if len(self._segments) is 0:
+                self._add_segment(msg)
 
             elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
@@ -562,19 +571,30 @@ class Segmentizer(object):
 
                 if best_match is None:
                     if self.is_informational(msg):
+                        yield self._create_segment(msg)
                         logger.debug("Skipping info message that would start a segment: %s", mmsi)
+                        continue
                     else:
+                        for seg in self._remove_excess_segments():
+                            yield seg
                         self._add_segment(msg)
+                elif isinstance(best_match, list):
+                    # This message could match multiple segments. So emit as new segment.
+                    yield self._create_segment(msg)
+                    # Then finalize and remove ambiguous segments so we can start over
+                    for match in best_match:
+                        id = match['seg_id']
+                        for x in self.clean(self._segments.pop(id)):
+                            yield x
                 else:
                     id = best_match['seg_id']
-                    for i in range(best_match.get('discard_previous', 0)):
-                        self._segments[id]._msgs[-(i + 1)]['drop'] = True
+                    for i in best_match.get('ndxs_to_drop', []):
+                        self._segments[id]._msgs[i]['drop'] = True
+                    msg['metric'] = best_match['metric']
                     self._segments[id].add_msg(msg)
                     self._last_segment = self._segments[id]
 
-
-            if x and y and timestamp:
-                self._prev_timestamp = msg['timestamp']
+            self._prev_timestamp = msg['timestamp']
 
         for series, segment in self._segments.items():
             for x in self.clean(segment):

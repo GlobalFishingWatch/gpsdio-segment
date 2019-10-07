@@ -244,7 +244,8 @@ class Segmentizer(object):
         while len(self._segments) >= MAX_OPEN_SEGMENTS:
             # Remove oldest segment
             segs = list(self._segments.items())
-            segs.sort(key=lambda x: x[1].last_time_posit_msg['timestamp'])
+            # Would rather use last_time_posit_message, but currently not reliable across days
+            segs.sort(key=lambda x: x[1].last_msg['timestamp'])
             stalest_seg_id, _ = segs[0]
             logger.warning('removing stale segment {}'.format(stalest_seg_id))
             for x in self.clean(self._segments.pop(stalest_seg_id)):
@@ -541,7 +542,7 @@ class Segmentizer(object):
                 continue
 
             # Give informational messages there own singleton segments if there are no segments yet
-            # TODO: eventually always give them there own segment when we assign IDS later
+            # TODO: eventually always give them their own segment when we assign IDS later
             if len(self._segments) is 0 and self.is_informational(msg):
                 yield self._create_segment(msg)
                 logger.debug("Skipping info message that would start a segment: %s", mmsi)
@@ -550,8 +551,9 @@ class Segmentizer(object):
             if len(self._segments) > 0:
                 # FInalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
-                    if segment.last_time_posit_msg:
-                        td = self.timedelta(msg, segment.last_time_posit_msg)
+                    # Would rather use last_time_posit_message, but not currently reliable across days
+                    if segment.last_msg:
+                        td = self.timedelta(msg, segment.last_msg)
                         if td > self.max_hours:
                             for x in self.clean(self._segments.pop(segment.id)):
                                 yield x

@@ -379,7 +379,7 @@ class Segmentizer(object):
                  'ndxs_to_drop' : [],
                  'metric' : None}
 
-        assert segment.last_time_posit_msg
+        assert segment.last_msg
 
         # Get the stats for the last `lookback` positional messages
         candidates = []

@@ -534,7 +534,7 @@ class Segmentizer(object):
                 continue
 
             # Reject any message with non-matching MMSI
-            if mmsi != self.mmsi:
+            if self.mmsi is not None and mmsi != self.mmsi:
                 yield self._create_segment(msg, cls=BadSegment)
                 logger.warning("Found a non-matching MMSI %s, expected %s - skipping", mmsi, self.mmsi)
                 continue
@@ -556,6 +556,9 @@ class Segmentizer(object):
                                 yield x
 
             if len(self._segments) is 0:
+                if self.mmsi is None:
+                    self._mmsi = msg['mmsi']
+                    logger.debug("setting MMSI to %s", self.mmsi)
                 self._add_segment(msg)
 
             elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:

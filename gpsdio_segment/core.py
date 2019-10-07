@@ -459,39 +459,20 @@ class Segmentizer(object):
             # and avoid all the messing around with lists in the num_segs > 1 case
             [best_match] = matches
         elif len(matches) > 1:
+            metric_match_pairs = [(m['metric'], m) for m in matches]
             if self.is_informational(msg):
-                # Use the metrics as is
-                metric_match_pairs = [(m['metric'], m) for m in matches]
                 best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
-            else:
-                # valid_segs = [s for s, m in zip(segs, raw_matches) if m['metric'] is not None]
-                # # Find the longest segment and compute scale factors
-                # # lower the weight of short_segments
-                # threshold = self.short_seg_threshold
-                # inv_scales = []
-                # for s in valid_segs:
-                #     n_msgs = len(s)
-                #     if s.has_prev_state:
-                #         # Counts from previous states are unreliable, so credit with
-                #         # half the threshold value.
-                #         n_msgs += threshold / 2
-                #     alpha = min(n_msgs / threshold, 1)
-                #     inv_scales.append(1 + (self.short_seg_weight - 1) * alpha)
-
-                # metric_match_pairs = [(m['metric'] / s, m) for (m, s) in zip(matches, inv_scales)]
-                metric_match_pairs = [(m['metric'], m) for m in matches]
-
-                if metric_match_pairs:
-                    # find the smallest metric value
-                    metric_match_pairs.sort(key=lambda x: x[0])
-                    best_metric, best_match = metric_match_pairs[0]
-                    close_matches = [best_match]
-                    for metric, match in metric_match_pairs[1:]:
-                        if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
-                            close_matches.append(match)
-                    if len(close_matches) > 1:
-                        logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
-                        best_match = close_matches
+            elif metric_match_pairs:
+                metric_match_pairs.sort(key=lambda x: x[0])
+                best_metric, best_match = metric_match_pairs[0]
+                close_matches = [best_match]
+                # Check if best match is close enough to an existing match to be ambiguous
+                for metric, match in metric_match_pairs[1:]:
+                    if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
+                        close_matches.append(match)
+                if len(close_matches) > 1:
+                    logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
+                    best_match = close_matches
 
         if self.collect_match_stats:
             msg['segment_matches'] = matches

@@ -388,16 +388,17 @@ class Segmentizer(object):
         ndxs_to_drop = []
         metric = 1e99
         for x in segment.get_all_reversed_msgs():
-            n -= 1
             if self.is_informational(x):
                 continue
             if x.get('drop'):
                 continue
             candidates.append((metric, ndxs_to_drop[:], self.msg_diff_stats(x, msg)))
+            n -= 1
+            if len(candidates) >= self.lookback or n < 0:
+                break
             ndxs_to_drop.append(n)
             metric = x.get('metric', 1e99)
-            if len(candidates) >= self.lookback:
-                break
+
 
         if not len(candidates):
             logger.debug("no candidate segments")

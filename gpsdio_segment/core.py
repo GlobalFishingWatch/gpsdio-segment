@@ -536,7 +536,7 @@ class Segmentizer(object):
             # Reject any message with non-matching MMSI
             if mmsi != self.mmsi:
                 yield self._create_segment(msg, cls=BadSegment)
-                logger.debug("Found a non-matching MMSI %s - skipping", mmsi)
+                logger.warning("Found a non-matching MMSI %s, expected %s - skipping", mmsi, self.mmsi)
                 continue
 
             # Give informational messages there own singleton segments if there are no segments yet

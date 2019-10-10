@@ -402,7 +402,8 @@ class Segmentizer(object):
 
 
         if not len(candidates):
-            logger.debug("no candidate segments")
+            raise ValueError('no candidate segments')
+            logger.debug("no candidate messages")
             return match
 
         match.update(candidates[0][-1])
@@ -525,7 +526,7 @@ class Segmentizer(object):
             # Give informational messages there own singleton segments if there are no segments yet
             # TODO: eventually always give them their own segment when we assign IDS later
             if len(self._segments) is 0 and self.is_informational(msg):
-                yield self._create_segment(msg)
+                yield self._create_segment(msg, cls=BadSegment) # TODO better class name
                 logger.debug("Skipping info message that would start a segment: %s", mmsi)
                 continue
 
@@ -558,7 +559,7 @@ class Segmentizer(object):
 
                 if best_match is None:
                     if self.is_informational(msg):
-                        yield self._create_segment(msg)
+                        yield self._create_segment(msg, cls=BadSegment)
                         logger.debug("Skipping info message that would start a segment: %s", mmsi)
                         continue
                     else:
@@ -566,8 +567,8 @@ class Segmentizer(object):
                             yield seg
                         self._add_segment(msg)
                 elif isinstance(best_match, list):
-                    # This message could match multiple segments. So emit as new segment.
-                    yield self._create_segment(msg)
+                    # This message could match multiple segments. So add as new segment.
+                    self._add_segment(msg)
                     # Then finalize and remove ambiguous segments so we can start over
                     for match in best_match:
                         id = match['seg_id']
@@ -583,7 +584,7 @@ class Segmentizer(object):
 
             self._prev_timestamp = msg['timestamp']
 
-        for series, segment in self._segments.items():
-            for x in self.clean(segment):
+        for series, segment in list(self._segments.items()):
+            for x in self.clean(self._segments.pop(segment.id)):
                 yield x
 

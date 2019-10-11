@@ -338,7 +338,13 @@ class Segmentizer(object):
             discrepancy = None
             info = None
         else:
-            x2p, y2p = self._compute_expected_position(msg1, effective_hours)
+            if 'speed' not in msg1:
+                # When crossing the day barrier, we only have access to lat / lon
+                # not speed / course. 
+                # TODO: fix so that state includes speed / course (involved!)
+                x2p = y2p = None
+            else:
+                x2p, y2p = self._compute_expected_position(msg1, effective_hours)
             x1p, y1p = self._compute_expected_position(msg2, -effective_hours)
 
             def wrap(x):
@@ -348,12 +354,18 @@ class Segmentizer(object):
             y = 0.5 * (y1 + y2)
             epsilon = 1e-3
             deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
-            info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
-            discrepancy = 0.5 * (
-                math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
-                           1 / deg_lat_per_nm * (y1p - y1)) + 
-                math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
-                           1 / deg_lat_per_nm * (y2p - y2)))
+            if x2p is None:
+                info = wrap(x1p - x1), None, (y1p - y1), None
+                discrepancy = (
+                    math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
+                               1 / deg_lat_per_nm * (y1p - y1)))
+            else:
+                info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
+                discrepancy = 0.5 * (
+                    math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
+                               1 / deg_lat_per_nm * (y1p - y1)) + 
+                    math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
+                               1 / deg_lat_per_nm * (y2p - y2)))
             
             distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
 
@@ -396,6 +408,7 @@ class Segmentizer(object):
             candidates.append((metric, ndxs_to_drop[:], self.msg_diff_stats(x, msg)))
             n -= 1
             if len(candidates) >= self.lookback or n < 0:
+                # This allows looking back 1 message into the previous batch of messages
                 break
             ndxs_to_drop.append(n)
             metric = x.get('metric', 1e99)

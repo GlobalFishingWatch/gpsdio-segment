@@ -191,8 +191,8 @@ class Segmentizer(object):
                 s._segments[seg.id] = seg
         if s._segments:
             s._last_segment = max(
-                s._segments.values(), key=lambda x: x.last_msg.get('timestamp'))
-            s._prev_timestamp = s._last_segment.last_msg['timestamp']
+                s._segments.values(), key=lambda x: x.last_time_posit_msg.get('timestamp'))
+            s._prev_timestamp = s._last_segment.last_time_posit_msg['timestamp']
             if s._mmsi:
                 assert s._mmsi == s._last_segment.mmsi
             s._mmsi = s._last_segment.mmsi
@@ -245,7 +245,7 @@ class Segmentizer(object):
             # Remove oldest segment
             segs = list(self._segments.items())
             # Would rather use last_time_posit_message, but currently not reliable across days
-            segs.sort(key=lambda x: x[1].last_msg['timestamp'])
+            segs.sort(key=lambda x: x[1].last_time_posit_msg['timestamp'])
             stalest_seg_id, _ = segs[0]
             logger.warning('removing stale segment {}'.format(stalest_seg_id))
             for x in self.clean(self._segments.pop(stalest_seg_id)):
@@ -392,7 +392,7 @@ class Segmentizer(object):
                  'ndxs_to_drop' : [],
                  'metric' : None}
 
-        assert segment.last_msg
+        assert segment.last_time_posit_msg
 
         # Get the stats for the last `lookback` positional messages
         candidates = []
@@ -458,7 +458,7 @@ class Segmentizer(object):
         raw_segs = list(self._segments.values())
         best_match = None
 
-        segs = [seg for seg in raw_segs if seg.last_msg]
+        segs = [seg for seg in raw_segs if seg.last_time_posit_msg]
         # TODO: convert to assertion
         if len(segs) < len(raw_segs):
             logger.warning('Some segments have no positional messages: skipping')
@@ -547,8 +547,8 @@ class Segmentizer(object):
                 # FInalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
                     # Would rather use last_time_posit_message, but not currently reliable across days
-                    if segment.last_msg:
-                        td = self.timedelta(msg, segment.last_msg)
+                    if segment.last_time_posit_msg:
+                        td = self.timedelta(msg, segment.last_time_posit_msg)
                         if td > self.max_hours:
                             for x in self.clean(self._segments.pop(segment.id)):
                                 yield x

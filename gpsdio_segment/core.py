@@ -187,12 +187,16 @@ class Segmentizer(object):
         s = cls(instream, **kwargs)
         for seg in [Segment.from_state(state) for state in seg_states]:
             # ignore segments that contain only noise messages (bad lat,lon, timestamp etc.)
-            if not seg.noise:
-                s._segments[seg.id] = seg
+            if seg.noise:
+                continue
+            # ignore states that have no positional locations
+            if not seg.last_time_posit_msg:
+                continue
+            s._segments[seg.id] = seg
         if s._segments:
             s._last_segment = max(
                 s._segments.values(), key=lambda x: x.last_time_posit_msg.get('timestamp'))
-            s._prev_timestamp = s._last_segment.last_time_posit_msg['timestamp']
+            s._prev_timestamp = s._last_segment.last_msg['timestamp']
             if s._mmsi:
                 assert s._mmsi == s._last_segment.mmsi
             s._mmsi = s._last_segment.mmsi
@@ -544,12 +548,12 @@ class Segmentizer(object):
                 continue
 
             if len(self._segments) > 0:
-                # FInalize and remove any segments that have not had a positional message in `max_hours`
+                # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
-                    # Would rather use last_time_posit_message, but not currently reliable across days
-                    if segment.last_time_posit_msg:
-                        td = self.timedelta(msg, segment.last_time_posit_msg)
-                        if td > self.max_hours:
+                    if segment.last_time_posit_msg is None:
+                        logger.warning('segment with no time positions, dropping')
+                    if (segment.last_time_posit_msg is None or
+                        self.timedelta(msg, segment.last_time_posit_msg) > self.max_hours):
                             for x in self.clean(self._segments.pop(segment.id)):
                                 yield x
 

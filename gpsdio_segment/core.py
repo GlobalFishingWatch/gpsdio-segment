@@ -581,14 +581,15 @@ class Segmentizer(object):
                         for x in self._add_segment(msg):
                             yield x
                     elif isinstance(best_match, list):
-                        # This message could match multiple segments. So add as new segment.
-                        for x in self._add_segment(msg):
-                            yield x
-                        # Then finalize and remove ambiguous segments so we can start over
+                        # This message could match multiple segments. 
+                        # So finalize and remove ambiguous segments so we can start fresh
                         # TODO: once we are fully py 3, this and similar can be cleaned up using `yield from`
                         for match in best_match:
                             for x in self.clean(self._segments.pop(match['seg_id'])):
                                 yield x
+                        # Then add as new segment.
+                        for x in self._add_segment(msg):
+                            yield x
                     else:
                         id_ = best_match['seg_id']
                         for i in best_match.get('ndxs_to_drop', []):

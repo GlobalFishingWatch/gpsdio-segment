@@ -309,3 +309,13 @@ class DiscardedSegment(Segment):
 
     """
     _noise = True
+
+class InfoSegment(Segment):
+    """
+    Info messages that aren't matched to segments.
+
+    These may not actually be noise, so it may next sense to mark them in some
+    other way in the future.
+
+    """
+    _noise = True

@@ -54,7 +54,7 @@ import pyproj
 
 
 from gpsdio_segment.segment import Segment, BadSegment
-from gpsdio_segment.segment import DiscardedSegment, NoiseSegment
+from gpsdio_segment.segment import DiscardedSegment, NoiseSegment, InfoSegment
 from gpsdio_segment.state import SegmentState
 
 
@@ -190,7 +190,7 @@ class Segmentizer(object):
             if seg.noise:
                 continue
             # ignore states that have no positional locations
-            if not seg.last_time_posit_msg:
+            if seg.last_time_posit_msg is None:
                 continue
             s._segments[seg.id] = seg
         if s._segments:
@@ -242,6 +242,7 @@ class Segmentizer(object):
         mmsi = self.mmsi if self.mmsi is not None else msg['mmsi']
         t = cls(id_, mmsi)
         t.add_msg(msg)
+        self._prev_timestamp = msg['timestamp']
         return t
 
     def _remove_excess_segments(self):
@@ -256,8 +257,16 @@ class Segmentizer(object):
                 yield x
 
     def _add_segment(self, msg):
+        # Give informational messages there own singleton segments if they would
+        # otherwise start a segment
+        # TODO: eventually always give them their own segment when we assign IDS later
+        if self.is_informational(msg):
+            yield self._create_segment(msg, cls=InfoSegment)
+            logger.debug("Skipping info message that would start a segment: %s", mmsi)
+            return
+        for seg in self._remove_excess_segments():
+            yield seg
         t = self._create_segment(msg)
-
         self._segments[t.id] = t
         self._last_segment = t
 
@@ -396,7 +405,7 @@ class Segmentizer(object):
                  'ndxs_to_drop' : [],
                  'metric' : None}
 
-        assert segment.last_time_posit_msg
+        assert segment.last_time_posit_msg is not None
 
         # Get the stats for the last `lookback` positional messages
         candidates = []
@@ -462,7 +471,7 @@ class Segmentizer(object):
         raw_segs = list(self._segments.values())
         best_match = None
 
-        segs = [seg for seg in raw_segs if seg.last_time_posit_msg]
+        segs = [seg for seg in raw_segs if seg.last_time_posit_msg is not None]
         # TODO: convert to assertion
         if len(segs) < len(raw_segs):
             logger.warning('Some segments have no positional messages: skipping')
@@ -501,16 +510,17 @@ class Segmentizer(object):
         return self.process()
 
     def clean(self, segment):
-        new_msgs = []
+        new_segment = Segment(segment.id, segment.mmsi)
         for msg in segment.msgs:
             msg.pop('metric', None)
             drop = msg.pop('drop', False)
             if drop:
+                assert not self.is_informational(msg)
+            if drop:
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
-                new_msgs.append(msg)
-        segment.msgs[:] = new_msgs
-        yield segment
+                new_segment.add_msg(msg)
+        yield new_segment
 
     def process(self):
         for idx, msg in enumerate(self.instream):
@@ -527,6 +537,9 @@ class Segmentizer(object):
             course = msg.get('course')
             speed = msg.get('speed')
 
+            if self._prev_timestamp is not None and timestamp < self._prev_timestamp:
+                raise ValueError("Input data is unsorted")
+
             # Reject any message that has invalid position, course or speed
             if not self._validate_message(x, y, course, speed):
                 yield self._create_segment(msg, cls=BadSegment)
@@ -537,69 +550,55 @@ class Segmentizer(object):
             # Reject any message with non-matching MMSI
             if self.mmsi is not None and mmsi != self.mmsi:
                 yield self._create_segment(msg, cls=BadSegment)
-                logger.warning("Found a non-matching MMSI %s, expected %s - skipping", mmsi, self.mmsi)
-                continue
-
-            # Give informational messages there own singleton segments if there are no segments yet
-            # TODO: eventually always give them their own segment when we assign IDS later
-            if len(self._segments) is 0 and self.is_informational(msg):
-                yield self._create_segment(msg, cls=BadSegment) # TODO better class name
-                logger.debug("Skipping info message that would start a segment: %s", mmsi)
+                logger.warning("Skipping non-matching MMSI %s, expected %s", mmsi, self.mmsi)
                 continue
 
             if len(self._segments) > 0:
                 # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
                     if segment.last_time_posit_msg is None:
-                        logger.warning('segment with no time positions, dropping')
+                        logger.warning('segment with no time_posit messages: %' % segment.id)
                     if (segment.last_time_posit_msg is None or
                         self.timedelta(msg, segment.last_time_posit_msg) > self.max_hours):
                             for x in self.clean(self._segments.pop(segment.id)):
                                 yield x
 
-            if len(self._segments) is 0:
+            if len(self._segments) == 0:
+                # If an mmsi hasn't been assigned yet, use this msg to assign one.
                 if self.mmsi is None:
                     self._mmsi = msg['mmsi']
                     logger.debug("setting MMSI to %s", self.mmsi)
-                self._add_segment(msg)
-
-            elif self._prev_timestamp is not None and timestamp < self._prev_timestamp:
-                raise ValueError("Input data is unsorted")
-
+                for x in self._add_segment(msg):
+                    yield x
             else:
                 try:
                     best_match = self._compute_best(msg)
                 except ValueError as e:
                     logger.debug("Computing best segment failed: %s", mmsi)
                     yield self._create_segment(msg, cls=BadSegment)
-                    continue
-
-                if best_match is None:
-                    if self.is_informational(msg):
-                        yield self._create_segment(msg, cls=BadSegment)
-                        logger.debug("Skipping info message that would start a segment: %s", mmsi)
-                        continue
-                    else:
-                        for seg in self._remove_excess_segments():
-                            yield seg
-                        self._add_segment(msg)
-                elif isinstance(best_match, list):
-                    # This message could match multiple segments. So add as new segment.
-                    self._add_segment(msg)
-                    # Then finalize and remove ambiguous segments so we can start over
-                    for match in best_match:
-                        id = match['seg_id']
-                        for x in self.clean(self._segments.pop(id)):
-                            yield x
                 else:
-                    id = best_match['seg_id']
-                    for i in best_match.get('ndxs_to_drop', []):
-                        self._segments[id]._msgs[i]['drop'] = True
-                    msg['metric'] = best_match['metric']
-                    self._segments[id].add_msg(msg)
-                    self._last_segment = self._segments[id]
+                    if best_match is None:
+                        for x in self._add_segment(msg):
+                            yield x
+                    elif isinstance(best_match, list):
+                        # This message could match multiple segments. So add as new segment.
+                        for x in self._add_segment(msg):
+                            yield x
+                        # Then finalize and remove ambiguous segments so we can start over
+                        # TODO: once we are fully py 3, this and similar can be cleaned up using `yield from`
+                        for match in best_match:
+                            for x in self.clean(self._segments.pop(match['seg_id'])):
+                                yield x
+                    else:
+                        id_ = best_match['seg_id']
+                        for i in best_match.get('ndxs_to_drop', []):
+                            self._segments[id_]._msgs[i]['drop'] = True
+                        msg['metric'] = best_match['metric']
+                        self._segments[id_].add_msg(msg)
+                        # TODO: this and other last segment stuff can be removed once we stop
+                        # trying to assign info in here
+                        self._last_segment = self._segments[id_]
 
-            self._prev_timestamp = msg['timestamp']
 
         for series, segment in list(self._segments.items()):
             for x in self.clean(self._segments.pop(segment.id)):

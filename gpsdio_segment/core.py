@@ -262,7 +262,7 @@ class Segmentizer(object):
         # TODO: eventually always give them their own segment when we assign IDS later
         if self.is_informational(msg):
             yield self._create_segment(msg, cls=InfoSegment)
-            logger.debug("Skipping info message that would start a segment: %s", mmsi)
+            logger.debug("Skipping info message that would start a segment: %s", msg['mmsi'])
             return
         for seg in self._remove_excess_segments():
             yield seg

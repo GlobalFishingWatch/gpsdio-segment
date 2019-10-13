@@ -153,7 +153,7 @@ def test_non_pos_first_followed_by_out_of_bounds():
     ]
 
     segs = list(Segmentizer(messages))
-    assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 2, 'BadSegment': 1}
+    assert Counter([seg.__class__.__name__ for seg in segs]) == {'InfoSegment': 1, 'BadSegment': 1, 'Segment': 1}
 
 
 def test_bad_message_in_stream():
@@ -218,9 +218,7 @@ def test_duplicate_pos_msg():
 def test_duplicate_ts_multiple_segs():
     # example from mmsi 316004240 2018-05-18 to 2018-05-19
     # 2 segments present because of a noise position in idx=1
-    # so we have 2 segments [0,2,3,4 and [1] when 4 comes along.
-    # The lookback choses 2 over 3 to match to so 3 gets rejected
-    # into it's own segment
+    # so we have 2 segments [0,2,3,4] and [1] when 4 comes along.
     messages = [
         {'idx': 0, 'mmsi': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12), 'course' : 0, 'speed': 1},
         {'idx': 1, 'mmsi': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8), 'course' : 0, 'speed': 1},
@@ -230,6 +228,4 @@ def test_duplicate_ts_multiple_segs():
     ]
 
     segments = list(Segmentizer(messages))
-    assert [{3}, {0, 2, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]
-
-
+    assert [{0, 2, 3, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]

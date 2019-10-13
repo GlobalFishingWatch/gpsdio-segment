@@ -547,9 +547,8 @@ class Segmentizer(object):
                               "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**locals()))
                 continue
 
-            # Reject any message with non-matching MMSI
+            # Ignore any message with non-matching MMSI
             if self.mmsi is not None and mmsi != self.mmsi:
-                yield self._create_segment(msg, cls=BadSegment)
                 logger.warning("Skipping non-matching MMSI %s, expected %s", mmsi, self.mmsi)
                 continue
 

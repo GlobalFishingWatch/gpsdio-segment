@@ -17,13 +17,11 @@ from gpsdio_segment.core import NoiseSegment
 def test_noise_segment():
 
     with gpsdio.open('tests/data/338013000.json') as src:
-        # Run the whole thing - makes 21 segments, twp of them real, the rest are singleton NoiseSegments
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 11
-        assert {len(seg) for seg in segs} == {1, 10, 1234}
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 2, 
-        'DiscardedSegment' : 9}
+        assert len(segs) == 34
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 19, 
+        'DiscardedSegment' : 15}
 
 
     with gpsdio.open('tests/data/338013000.json') as src:
@@ -44,7 +42,7 @@ def test_noise_segment():
 
         # some noise segments on the first day that does not get passed back in on the second day
         assert seg_types == {
-                              18: {'DiscardedSegment': 1, 'Segment': 1},
-                              19: {'Segment': 2},
-                              20: {'Segment': 3}
+                              18: {'DiscardedSegment': 11, 'Segment': 1},
+                              19: {'Segment': 1},
+                              20: {'Segment': 2}
                              }

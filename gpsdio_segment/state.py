@@ -22,6 +22,7 @@ class SegmentState:
         self.msgs = []
         self.msg_count = 0
         self.noise = False
+        self.closed = False
 
     def to_dict(self):
         return {
@@ -29,7 +30,8 @@ class SegmentState:
             'mmsi': self.mmsi,
             'msgs': self.msgs,
             'msg_count': self.msg_count,
-            'noise': self.noise
+            'noise': self.noise,
+            'closed': self.closed
         }
 
     @classmethod
@@ -40,4 +42,5 @@ class SegmentState:
         s.msgs = d['msgs']
         s.msg_count = d['msg_count']
         s.noise = d.get('noise', False)
+        s.closed = d.get('closed', False)
         return s

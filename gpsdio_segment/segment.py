@@ -14,7 +14,8 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
-    _noise=False
+    _noise = False
+    _closed = False
 
 
     def __init__(self, id, mmsi):
@@ -63,6 +64,7 @@ class Segment(object):
 
         seg = cls(state.id, state.mmsi)
         seg._noise = state.noise
+        seg._closed = state.closed
         seg._prev_state = state
         seg._prev_segment = Segment(state.id, state.mmsi)
         for msg in state.msgs:
@@ -101,6 +103,7 @@ class Segment(object):
         state.id = self.id
         state.mmsi = self.mmsi
         state.noise = self.noise
+        state.closed = self.closed
         state.msgs = []
 
         prev_msg = None
@@ -133,6 +136,10 @@ class Segment(object):
     @property
     def noise(self):
         return self._noise
+
+    @property
+    def closed(self):
+        return self._closed    
 
     @property
     def coords(self):
@@ -286,6 +293,7 @@ class BadSegment(Segment):
     instance check.
     """
     _noise = True
+    _closed = True
 
 class NoiseSegment(Segment):
     """
@@ -297,6 +305,7 @@ class NoiseSegment(Segment):
     segments that contain only a single message
     """
     _noise = True
+    _closed = True
 
 class DiscardedSegment(Segment):
     """
@@ -309,6 +318,7 @@ class DiscardedSegment(Segment):
 
     """
     _noise = True
+    _closed = True
 
 class InfoSegment(Segment):
     """
@@ -318,4 +328,11 @@ class InfoSegment(Segment):
     other way in the future.
 
     """
-    _noise = True
+    _closed = True
+
+class ClosedSegment(Segment):
+    """
+    Segment that has timed out so we don't want to feed it back into segmentizer
+    """
+    _closed = True
+

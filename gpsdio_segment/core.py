@@ -53,7 +53,7 @@ from gpsdio.schema import datetime2str
 import pyproj
 
 
-from gpsdio_segment.segment import Segment, BadSegment
+from gpsdio_segment.segment import Segment, BadSegment, ClosedSegment
 from gpsdio_segment.segment import DiscardedSegment, NoiseSegment, InfoSegment
 from gpsdio_segment.state import SegmentState
 
@@ -509,8 +509,8 @@ class Segmentizer(object):
     def __iter__(self):
         return self.process()
 
-    def clean(self, segment):
-        new_segment = Segment(segment.id, segment.mmsi)
+    def clean(self, segment, cls=Segment):
+        new_segment = cls(segment.id, segment.mmsi)
         for msg in segment.msgs:
             msg.pop('metric', None)
             drop = msg.pop('drop', False)
@@ -559,7 +559,7 @@ class Segmentizer(object):
                         logger.warning('segment with no time_posit messages: %' % segment.id)
                     if (segment.last_time_posit_msg is None or
                         self.timedelta(msg, segment.last_time_posit_msg) > self.max_hours):
-                            for x in self.clean(self._segments.pop(segment.id)):
+                            for x in self.clean(self._segments.pop(segment.id), cls=ClosedSegment):
                                 yield x
 
             if len(self._segments) == 0:
@@ -582,9 +582,9 @@ class Segmentizer(object):
                     elif isinstance(best_match, list):
                         # This message could match multiple segments. 
                         # So finalize and remove ambiguous segments so we can start fresh
-                        # TODO: once we are fully py 3, this and similar can be cleaned up using `yield from`
+                        # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
                         for match in best_match:
-                            for x in self.clean(self._segments.pop(match['seg_id'])):
+                            for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
                                 yield x
                         # Then add as new segment.
                         for x in self._add_segment(msg):

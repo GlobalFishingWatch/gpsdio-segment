@@ -135,7 +135,8 @@ def test_first_message_out_of_bounds_gt_24h():
     ]
 
     segs = list(Segmentizer(messages))
-    assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 2, 'BadSegment': 1}
+    assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 1, 
+                'ClosedSegment': 1, 'BadSegment': 1}
 
 
 def test_non_pos_first_followed_by_out_of_bounds():

@@ -264,6 +264,9 @@ class Segmentizer(object):
         for seg in self._remove_excess_segments():
             yield seg
         t = self._create_segment(msg)
+        if self.mmsi is None:
+            logger.debug("setting MMSI to %s", self.mmsi)
+            self._mmsi = msg['mmsi']
         self._segments[t.id] = t
         self._last_segment = t
 
@@ -364,18 +367,12 @@ class Segmentizer(object):
             y = 0.5 * (y1 + y2)
             epsilon = 1e-3
             deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
-            if x2p is None:
-                info = wrap(x1p - x1), None, (y1p - y1), None
-                discrepancy = (
-                    math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
-                               1 / deg_lat_per_nm * (y1p - y1)))
-            else:
-                info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
-                discrepancy = 0.5 * (
-                    math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
-                               1 / deg_lat_per_nm * (y1p - y1)) + 
-                    math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
-                               1 / deg_lat_per_nm * (y2p - y2)))
+            info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
+            discrepancy = 0.5 * (
+                math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
+                           1 / deg_lat_per_nm * (y1p - y1)) + 
+                math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
+                           1 / deg_lat_per_nm * (y2p - y2)))
             
             distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
 
@@ -563,43 +560,38 @@ class Segmentizer(object):
                                 yield x
 
             if len(self._segments) == 0:
-                # If an mmsi hasn't been assigned yet, use this msg to assign one.
-                if self.mmsi is None:
-                    self._mmsi = msg['mmsi']
-                    logger.debug("setting MMSI to %s", self.mmsi)
-                logger.debug('adding segment because no existing segments')
-                for x in self._add_segment(msg):
-                    yield x
+                best_match = None
             else:
                 try:
                     best_match = self._compute_best(msg)
                 except ValueError as e:
                     logger.debug("Computing best segment failed: %s", mmsi)
                     yield self._create_segment(msg, cls=BadSegment)
-                else:
-                    if best_match is None:
-                        logger.debug('adding segment because no match')
-                        for x in self._add_segment(msg):
-                            yield x
-                    elif isinstance(best_match, list):
-                        # This message could match multiple segments. 
-                        # So finalize and remove ambiguous segments so we can start fresh
-                        # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
-                        for match in best_match:
-                            for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
-                                yield x
-                        # Then add as new segment.
-                        for x in self._add_segment(msg):
-                            yield x
-                    else:
-                        id_ = best_match['seg_id']
-                        for i in best_match.get('ndxs_to_drop', []):
-                            self._segments[id_]._msgs[i]['drop'] = True
-                        msg['metric'] = best_match['metric']
-                        self._segments[id_].add_msg(msg)
-                        # TODO: this and other last segment stuff can be removed once we stop
-                        # trying to assign info in here
-                        self._last_segment = self._segments[id_]
+                    continue
+
+            if best_match is None:
+                logger.debug('adding segment because no match')
+                for x in self._add_segment(msg):
+                    yield x
+            elif isinstance(best_match, list):
+                # This message could match multiple segments. 
+                # So finalize and remove ambiguous segments so we can start fresh
+                # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
+                for match in best_match:
+                    for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
+                        yield x
+                # Then add as new segment.
+                for x in self._add_segment(msg):
+                    yield x
+            else:
+                id_ = best_match['seg_id']
+                for i in best_match.get('ndxs_to_drop', []):
+                    self._segments[id_]._msgs[i]['drop'] = True
+                msg['metric'] = best_match['metric']
+                self._segments[id_].add_msg(msg)
+                # TODO: this and other last segment stuff can be removed once we stop
+                # trying to assign info in here
+                self._last_segment = self._segments[id_]
 
 
         for series, segment in list(self._segments.items()):

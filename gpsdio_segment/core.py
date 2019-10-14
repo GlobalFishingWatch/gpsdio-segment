@@ -567,6 +567,7 @@ class Segmentizer(object):
                 if self.mmsi is None:
                     self._mmsi = msg['mmsi']
                     logger.debug("setting MMSI to %s", self.mmsi)
+                logger.debug('adding segment because no existing segments')
                 for x in self._add_segment(msg):
                     yield x
             else:
@@ -577,6 +578,7 @@ class Segmentizer(object):
                     yield self._create_segment(msg, cls=BadSegment)
                 else:
                     if best_match is None:
+                        logger.debug('adding segment because no match')
                         for x in self._add_segment(msg):
                             yield x
                     elif isinstance(best_match, list):

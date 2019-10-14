@@ -20,9 +20,6 @@ def test_Segment_state_save_load(msg_generator):
     id = 1
     mmsi = 123456789
     seg1 = Segment(id, mmsi)
-    state = seg1.state
-    assert state.id == id
-    assert state.mmsi == mmsi
 
     seg1.add_msg(msg_generator.next_msg())
     seg1.add_msg(msg_generator.next_posit_msg())
@@ -81,7 +78,7 @@ def test_Segmentizer_state_save_load(tmpdir):
         segmentizer = Segmentizer(itertools.islice(src, n))
         first_half_seg_states = [seg.state for seg in segmentizer]
         assert n == sum([st.msg_count for st in first_half_seg_states])
-        n2 = sum([st.msg_count for st in first_half_seg_states if not st.noise])
+        n2 = sum([st.msg_count for st in first_half_seg_states if not st.closed])
 
         segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
         assert sum([seg._prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
@@ -95,7 +92,7 @@ def test_Segmentizer_state_message_count_bug(msg_generator):
     id = 1
     mmsi = 123456789
     seg = Segment(id=1, mmsi=123456789)
-    seg.add_msg(msg_generator.next_msg())
+    seg.add_msg(msg_generator.next_time_posit_msg())
     state = seg.state
     assert state.msg_count == 1
 

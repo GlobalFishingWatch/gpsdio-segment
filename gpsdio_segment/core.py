@@ -507,7 +507,10 @@ class Segmentizer(object):
         return self.process()
 
     def clean(self, segment, cls=Segment):
-        new_segment = cls(segment.id, segment.mmsi)
+        if segment.has_prev_state:
+            new_segment = cls.from_state(segment._prev_segment.state)
+        else:
+            new_segment = cls(segment.id, segment.mmsi)
         for msg in segment.msgs:
             msg.pop('metric', None)
             drop = msg.pop('drop', False)

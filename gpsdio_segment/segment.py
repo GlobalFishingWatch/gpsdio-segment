@@ -62,6 +62,9 @@ class Segment(object):
         if type(state) is dict:
             state = SegmentState.from_dict(state)
 
+        # logger.debug('Creating a segment from an existing state with ID: %s',
+        #                 state.id)
+
         seg = cls(state.id, state.mmsi)
         seg._noise = state.noise
         seg._closed = state.closed
@@ -107,8 +110,11 @@ class Segment(object):
         state.msgs = []
 
         prev_msg = None
-        if not self.closed:
-            assert self.last_time_posit_msg is not None
+        if not self.closed and self.last_time_posit_msg is None:
+            logger.error('open segment with no time-position messages encountered\n{}'
+                            .format((self.id, self.mmsi, self.noise, self.closed, len(self.msgs),
+                                self._prev_segment)))
+            raise ValueError('open segment with no time-position messages encountered')
         keep_messages = [self.first_msg,
                          self.last_time_posit_msg,
                          self.best_shipname_msg,
@@ -117,10 +123,10 @@ class Segment(object):
                         ]
         message_ids = set()
         for msg in keep_messages:
-            i = id(msg)
-            if msg is not None and i not in message_ids:
+            id_ = id(msg)
+            if msg is not None and id_ not in message_ids:
                 state.msgs.append(msg)
-                message_ids.add(i)
+                message_ids.add(id_)
 
         state.msg_count = len(self)
         if self._prev_state:
@@ -311,15 +317,9 @@ class NoiseSegment(Segment):
 
 class DiscardedSegment(Segment):
     """
-    Points that are discarded during postprocssing of segments are emitted as 
+    Points that are discarded during post procssing of segments are emitted as 
     Discarded segments.
-
-
-    These may not actually be noise, so it may next sense to mark them in some
-    other way in the future.
-
     """
-    _noise = True
     _closed = True
 
 class InfoSegment(Segment):
@@ -334,7 +334,8 @@ class InfoSegment(Segment):
 
 class ClosedSegment(Segment):
     """
-    Segment that has timed out so we don't want to feed it back into segmentizer
+    Segment that has timed out or closed because of ambiguity
+    so we don't want to feed it back into Segmentizer
     """
     _closed = True
 

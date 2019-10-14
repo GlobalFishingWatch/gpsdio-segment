@@ -107,6 +107,8 @@ class Segment(object):
         state.msgs = []
 
         prev_msg = None
+        if not self.closed:
+            assert self.last_time_posit_msg is not None
         keep_messages = [self.first_msg,
                          self.last_time_posit_msg,
                          self.best_shipname_msg,

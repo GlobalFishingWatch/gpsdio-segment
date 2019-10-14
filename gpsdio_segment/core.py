@@ -186,11 +186,8 @@ class Segmentizer(object):
 
         s = cls(instream, **kwargs)
         for seg in [Segment.from_state(state) for state in seg_states]:
-            # ignore segments that contain only noise messages (bad lat,lon, timestamp etc.)
-            if seg.noise:
-                continue
-            # ignore states that have no positional locations
-            if seg.last_time_posit_msg is None:
+            # ignore segments that are closed (not accepting more messages)
+            if seg.closed:
                 continue
             s._segments[seg.id] = seg
         if s._segments:

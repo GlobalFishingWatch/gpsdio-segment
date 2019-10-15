@@ -128,6 +128,8 @@ class Segment(object):
                 state.msgs.append(msg)
                 message_ids.add(id_)
 
+        state.msgs.sort(key=lambda x: x['timestamp'])
+
         state.msg_count = len(self)
         if self._prev_state:
             state.msg_count += self._prev_state.msg_count

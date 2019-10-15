@@ -265,7 +265,7 @@ class Segmentizer(object):
             yield seg
         t = self._create_segment(msg)
         if self.mmsi is None:
-            logger.debug("Setting MMSI to %s", self.mmsi)
+            logger.debug("Setting MMSI to %s", msg['mmsi'])
             self._mmsi = msg['mmsi']
         self._segments[t.id] = t
         self._last_segment = t
@@ -546,7 +546,7 @@ class Segmentizer(object):
 
             # Ignore any message with non-matching MMSI
             if self.mmsi is not None and mmsi != self.mmsi:
-                logger.warning("Skipping non-matching MMSI %s, expected %s", mmsi, self.mmsi)
+                logger.warning("Skipping non-matching MMSI %r, expected %r", mmsi, self.mmsi)
                 continue
 
             if len(self._segments) > 0:

@@ -317,7 +317,7 @@ class NoiseSegment(Segment):
 
 class DiscardedSegment(Segment):
     """
-    Points that are discarded during post procssing of segments are emitted as 
+    Points that are discarded during post processing of segments are emitted as 
     Discarded segments.
     """
     _closed = True

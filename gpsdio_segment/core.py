@@ -249,8 +249,8 @@ class Segmentizer(object):
             # Would rather use last_time_posit_message, but currently not reliable across days
             segs.sort(key=lambda x: x[1].last_time_posit_msg['timestamp'])
             stalest_seg_id, _ = segs[0]
-            logger.warning('removing stale segment {}'.format(stalest_seg_id))
-            for x in self.clean(self._segments.pop(stalest_seg_id)):
+            logger.debug('Removing stale segment {}'.format(stalest_seg_id))
+            for x in self.clean(self._segments.pop(stalest_seg_id), ClosedSegment):
                 yield x
 
     def _add_segment(self, msg):

@@ -265,7 +265,7 @@ class Segmentizer(object):
             yield seg
         t = self._create_segment(msg)
         if self.mmsi is None:
-            logger.debug("setting MMSI to %s", self.mmsi)
+            logger.debug("Setting MMSI to %s", self.mmsi)
             self._mmsi = msg['mmsi']
         self._segments[t.id] = t
         self._last_segment = t

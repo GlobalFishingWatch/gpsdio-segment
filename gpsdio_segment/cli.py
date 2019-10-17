@@ -15,8 +15,6 @@ from gpsdio_segment.core import DEFAULT_MAX_KNOTS
 from gpsdio_segment.core import DEFAULT_MAX_HOURS
 from gpsdio_segment.core import DEFAULT_BUFFER_HOURS
 from gpsdio_segment.core import DEFAULT_LOOKBACK
-from gpsdio_segment.core import DEFAULT_SHORT_SEG_THRESHOLD
-from gpsdio_segment.core import DEFAULT_SHORT_SEG_WEIGHT
 
 
 @click.command()
@@ -38,19 +36,11 @@ from gpsdio_segment.core import DEFAULT_SHORT_SEG_WEIGHT
 )
 @click.option(
     '--buffer-hours', type=click.FLOAT, default=DEFAULT_BUFFER_HOURS,
-    help="Number of hours to pad dt with when computing match metrics.  (default: {})".format(DEFAULT_MAX_KNOTS)
+    help="Number of hours to pad dt with when computing match metrics.  (default: {})".format(DEFAULT_BUFFER_HOURS)
 )
 @click.option(
     '--lookback', type=click.FLOAT, default=DEFAULT_LOOKBACK,
-    help="Number of points and end of segment to look at when matching. (default: {})".format(DEFAULT_SHORT_SEG_THRESHOLD)
-)
-@click.option(
-    '--short-seg-threshold', type=click.FLOAT, default=DEFAULT_SHORT_SEG_THRESHOLD,
-    help="Segments shorter than this are less likely to be matched. (default: {})".format(DEFAULT_SHORT_SEG_THRESHOLD)
-)
-@click.option(
-    '--short-seg-weight', type=click.FLOAT, default=DEFAULT_SHORT_SEG_WEIGHT,
-    help="Max amount to down weight very short segments. (default: {})".format(DEFAULT_SHORT_SEG_WEIGHT)
+    help="Number of points and end of segment to look at when matching. (default: {})".format(DEFAULT_LOOKBACK)
 )
 @click.option(
     '--segment-field', default='segment',
@@ -59,7 +49,6 @@ from gpsdio_segment.core import DEFAULT_SHORT_SEG_WEIGHT
 @click.pass_context
 def segment(ctx, infile, outfile, mmsi, max_hours, max_speed, lookback,
             buffer_hours,
-            short_seg_threshold, short_seg_weight,
             segment_field):
 
     """

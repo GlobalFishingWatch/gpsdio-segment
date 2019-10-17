@@ -71,8 +71,6 @@ DEFAULT_LOOKBACK = 3
 DEFAULT_LOOKBACK_FACTOR = 1.1
 DEFAULT_MAX_KNOTS = 20  
 INFINITE_SPEED = 1000000
-DEFAULT_SHORT_SEG_THRESHOLD = 10
-DEFAULT_SHORT_SEG_WEIGHT = 10
 DEFAULT_AMBIGUITY_FACTOR = 2
 
 MAX_OPEN_SEGMENTS = 10
@@ -108,8 +106,6 @@ class Segmentizer(object):
                  max_speed=DEFAULT_MAX_KNOTS, 
                  lookback=DEFAULT_LOOKBACK,
                  lookback_factor=DEFAULT_LOOKBACK_FACTOR,
-                 short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
-                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT, 
                  collect_match_stats=False):
 
         """
@@ -144,10 +140,6 @@ class Segmentizer(object):
             Maximum speed allowed between points in nautical miles.
         lookback : int, optional
             Number of points to look backwards when matching segments.
-        short_seg_threshold : int, optional
-            Segments shorter than this are penalized when computing metrics
-        short_seg_weight : float, optional
-            Maximum weight to apply when comparing short segments.
         """
 
         self.max_hours = max_hours
@@ -157,8 +149,6 @@ class Segmentizer(object):
         self.buffer_hours = buffer_hours
         self.lookback = lookback
         self.lookback_factor = lookback_factor
-        self.short_seg_threshold = short_seg_threshold
-        self.short_seg_weight = short_seg_weight
         self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
@@ -185,7 +175,8 @@ class Segmentizer(object):
         """
 
         s = cls(instream, **kwargs)
-        for seg in [Segment.from_state(state) for state in seg_states]:
+        for state in seg_states:
+            seg = Segment.from_state(state)
             # ignore segments that are closed (not accepting more messages)
             if seg.closed:
                 continue
@@ -505,7 +496,7 @@ class Segmentizer(object):
 
     def clean(self, segment, cls=Segment):
         if segment.has_prev_state:
-            new_segment = cls.from_state(segment._prev_segment.state)
+            new_segment = cls.from_state(segment._prev_state)
         else:
             new_segment = cls(segment.id, segment.mmsi)
         for msg in segment.msgs:
@@ -517,6 +508,7 @@ class Segmentizer(object):
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
                 new_segment.add_msg(msg)
+        # print(new_segment)
         yield new_segment
 
     def process(self):

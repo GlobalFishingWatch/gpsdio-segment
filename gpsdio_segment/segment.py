@@ -34,7 +34,6 @@ class Segment(object):
 
         self._prev_state = None
         self._prev_segment = None
-        self._last_time_posit_msg = None
         self._best_shipname_msg = None
         self._best_callsign_msg = None
 
@@ -66,8 +65,7 @@ class Segment(object):
         #                 state.id)
 
         seg = cls(state.id, state.mmsi)
-        seg._noise = state.noise
-        seg._closed = state.closed
+        # Note that _noise and _closed come from the state
         seg._prev_state = state
         seg._prev_segment = Segment(state.id, state.mmsi)
         for msg in state.msgs:
@@ -209,17 +207,26 @@ class Segment(object):
     def get_all_reversed_msgs(self):
         source = self
         while source is not None:
-            for m in source._msgs[::-1]:
-                yield m
+            for msg in source._msgs[::-1]:
+                if not msg.get('drop', False):
+                    yield msg
             source = source._prev_segment
+
+    @staticmethod
+    def is_time_posit_msg(msg):
+        return (msg.get('lat') is not None and 
+                msg.get('lon') is not None and
+                msg.get('timestamp') is not None)
+    
+    def get_all_reversed_time_posit_msgs(self):
+        for msg in self.get_all_reversed_msgs():
+            if self.is_time_posit_msg(msg):
+                yield msg
 
     @property
     def last_msg(self):
-        try:
-            return self.msgs[-1]
-        except IndexError:
-            # this segment has no messages, see if there are any in the saved state
-            return self._prev_segment.last_msg if self._prev_segment else None
+        for msg in self.get_all_reversed_msgs():
+            return msg
 
     @property
     def last_time_posit_msg(self):
@@ -227,11 +234,8 @@ class Segment(object):
         Return the last message added to the segment with `lat`, `lon`, and
         `timestamp` fields that are not `None`.
         """
-
-        if self._last_time_posit_msg:
-            return self._last_time_posit_msg
-        else:
-            return self._prev_segment.last_time_posit_msg if self._prev_segment else None
+        for msg in self.get_all_reversed_time_posit_msgs():
+            return msg
 
     @property
     def first_msg (self):

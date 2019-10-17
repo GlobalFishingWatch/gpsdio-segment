@@ -16,7 +16,6 @@ from gpsdio_segment.core import DEFAULT_MAX_HOURS
 from gpsdio_segment.core import DEFAULT_BUFFER_HOURS
 from gpsdio_segment.core import DEFAULT_LOOKBACK
 from gpsdio_segment.core import DEFAULT_SHORT_SEG_THRESHOLD
-from gpsdio_segment.core import DEFAULT_SHORT_SEG_WEIGHT
 
 @click.command()
 @click.version_option(version=gpsdio_segment.__version__)
@@ -48,17 +47,13 @@ from gpsdio_segment.core import DEFAULT_SHORT_SEG_WEIGHT
     help="Segments with lengths below this threshold, are less likely to match (default: {})".format(DEFAULT_SHORT_SEG_THRESHOLD)
 )
 @click.option(
-    '--short-seg-weight', type=click.FLOAT, default=DEFAULT_SHORT_SEG_WEIGHT,
-    help="Amount to down weight short segments (default: {})".format(DEFAULT_SHORT_SEG_WEIGHT)
-)
-@click.option(
     '--segment-field', default='segment',
     help="Add the segment ID to this field when writing messages. (default: segment)"
 )
 @click.pass_context
 def segment(ctx, infile, outfile, mmsi, 
             max_hours, buffer_hours, max_speed, lookback,
-            short_seg_threshold, short_seg_weight, 
+            short_seg_threshold, 
             segment_field):
 
     """
@@ -81,7 +76,6 @@ def segment(ctx, infile, outfile, mmsi,
                 max_speed=max_speed,
                 lookback=lookback,
                 short_seg_threshold=short_seg_threshold,
-                short_seg_weight=short_seg_weight,
                 )):
 
             logger.debug("Writing segment %s with %s messages and %s points",

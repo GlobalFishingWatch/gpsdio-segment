@@ -73,7 +73,7 @@ DEFAULT_MAX_KNOTS = 20
 INFINITE_SPEED = 1000000
 DEFAULT_AMBIGUITY_FACTOR = 2
 DEFAULT_SHORT_SEG_THRESHOLD = 10
-DEFAULT_SHORT_SEG_WEIGHT = 10
+DEFAULT_SHORT_SEG_EXP = 0.5
 
 MAX_OPEN_SEGMENTS = 10
 
@@ -109,7 +109,7 @@ class Segmentizer(object):
                  lookback=DEFAULT_LOOKBACK,
                  lookback_factor=DEFAULT_LOOKBACK_FACTOR,
                  short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
-                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT,
+                 short_seg_exp=DEFAULT_SHORT_SEG_EXP,
                  collect_match_stats=False):
 
         """
@@ -146,8 +146,8 @@ class Segmentizer(object):
             Number of points to look backwards when matching segments.
         short_seg_threshold : int, optional
             Segments shorter than this are penalized when computing metrics
-        short_seg_weight : float, optional
-            Maximum weight to apply when comparing short segments.
+        short_seg_exp : float, optional
+            Controls the scaling of short seg. 
         """
 
         self.max_hours = max_hours
@@ -158,7 +158,7 @@ class Segmentizer(object):
         self.lookback = lookback
         self.lookback_factor = lookback_factor
         self.short_seg_threshold = short_seg_threshold
-        self.short_seg_weight = short_seg_weight
+        self.short_seg_exp = short_seg_exp
         self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
@@ -186,10 +186,13 @@ class Segmentizer(object):
 
         s = cls(instream, **kwargs)
         for state in seg_states:
+            if isinstance(state, dict):
+                if state['closed']:
+                    continue
+            else:
+                if state.closed:
+                    continue
             seg = Segment.from_state(state)
-            # ignore segments that are closed (not accepting more messages)
-            if seg.closed:
-                continue
             s._segments[seg.id] = seg
         if s._segments:
             s._last_segment = max(
@@ -258,7 +261,7 @@ class Segmentizer(object):
         # Give informational messages there own singleton segments if they would
         # otherwise start a segment
         # TODO: eventually always give them their own segment when we assign IDS later
-        if self.is_informational(msg):
+        if not Segment.is_time_posit_msg(msg):
             yield self._create_segment(msg, cls=InfoSegment)
             logger.debug("Skipping info message that would start a segment: %s", msg['mmsi'])
             return
@@ -391,10 +394,6 @@ class Segmentizer(object):
             'info' : info
         }
 
-    @staticmethod
-    def is_informational(x):
-        return x.get('lat') is None or x.get('lon') is None
-
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
                  'ndxs_to_drop' : [],
@@ -405,21 +404,19 @@ class Segmentizer(object):
         # Get the stats for the last `lookback` positional messages
         candidates = []
 
-        n = len(segment.msgs)
-        ndxs_to_drop = []
+        n = len(segment)
+        msgs_to_drop = []
         metric = 1e99
-        for x in segment.get_all_reversed_msgs():
+        for cnd_msg in segment.get_all_reversed_msgs():
             n -= 1
-            if self.is_informational(x):
+            if not Segment.is_time_posit_msg(cnd_msg) or cnd_msg.get('drop'):
                 continue
-            if x.get('drop'):
-                continue
-            candidates.append((metric, ndxs_to_drop[:], self.msg_diff_stats(x, msg)))
+            candidates.append((metric, msgs_to_drop[:], self.msg_diff_stats(cnd_msg, msg)))
             if len(candidates) >= self.lookback or n < 0:
                 # This allows looking back 1 message into the previous batch of messages
                 break
-            ndxs_to_drop.append(n)
-            metric = x.get('metric', 1e99)
+            msgs_to_drop.append(cnd_msg)
+            metric = cnd_msg.get('metric', 1e99)
 
 
         if not len(candidates):
@@ -429,7 +426,7 @@ class Segmentizer(object):
 
         match.update(candidates[0][-1])
 
-        for lookback, (existing_metric, ndxs_to_drop, cnd) in enumerate(candidates):
+        for lookback, (existing_metric, msgs_to_drop, cnd) in enumerate(candidates):
             if abs(cnd['delta_hours']) > self.max_hours: 
                 # Too long has passed, we can't match this segment
                 break
@@ -455,7 +452,7 @@ class Segmentizer(object):
                         continue
                     if match['metric'] is None or metric < match['metric']:
                         match['metric'] = metric
-                        match['ndxs_to_drop'] = ndxs_to_drop
+                        match['msgs_to_drop'] = msgs_to_drop
                         match.update(cnd)
 
         return match
@@ -479,28 +476,26 @@ class Segmentizer(object):
             [best_match] = matches
         elif len(matches) > 1:
             metric_match_pairs = [(m['metric'], m) for m in matches]
-            if self.is_informational(msg):
+            if not Segment.is_time_posit_msg(msg):
                 best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
-            elif metric_match_pairs:
-                threshhold = float(self.short_seg_threshold)
+            else:
+                # Down-weight (increase metric) for short segments
                 valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
-                scales = [(1 + (self.short_seg_weight - 1) * min(s.msg_count / threshhold, 1))
-                                for s in valid_segs]
-
-                metric_match_pairs = [(m['metric'] / s, m) for (m, s) in zip(matches, scales)]
-
-
-
+                alphas = [min(s.msg_count / self.short_seg_threshold, 1) for s in valid_segs]
+                metric_match_pairs = [(m['metric'] * math.exp(a ** -self.short_seg_exp), m) 
+                                        for (m, a) in zip(matches, alphas)]
                 metric_match_pairs.sort(key=lambda x: x[0])
+                # Check if best match is close enough to an existing match to be ambiguous.
                 best_metric, best_match = metric_match_pairs[0]
+                metric_match_pairs.sort(key=lambda x: x[0])
                 close_matches = [best_match]
-                # Check if best match is close enough to an existing match to be ambiguous
                 for metric, match in metric_match_pairs[1:]:
                     if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
                         close_matches.append(match)
                 if len(close_matches) > 1:
                     logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
                     best_match = close_matches
+
 
         if self.collect_match_stats:
             msg['segment_matches'] = matches
@@ -510,7 +505,7 @@ class Segmentizer(object):
     def __iter__(self):
         return self.process()
 
-    def clean(self, segment, cls=Segment):
+    def clean(self, segment, cls):
         if segment.has_prev_state:
             new_segment = cls.from_state(segment._prev_state)
         else:
@@ -519,12 +514,11 @@ class Segmentizer(object):
             msg.pop('metric', None)
             drop = msg.pop('drop', False)
             if drop:
-                assert not self.is_informational(msg)
+                assert Segment.is_time_posit_msg(msg)
             if drop:
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
                 new_segment.add_msg(msg)
-        # print(new_segment)
         yield new_segment
 
     def process(self):
@@ -561,7 +555,7 @@ class Segmentizer(object):
                 # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
                     if segment.last_time_posit_msg is None:
-                        logger.warning('segment with no time_posit messages: %' % segment.id)
+                        logger.warning('segment with no time_posit messages: %s' % segment.id)
                     if (segment.last_time_posit_msg is None or
                         self.timedelta(msg, segment.last_time_posit_msg) > self.max_hours):
                             for x in self.clean(self._segments.pop(segment.id), cls=ClosedSegment):
@@ -593,8 +587,8 @@ class Segmentizer(object):
                     yield x
             else:
                 id_ = best_match['seg_id']
-                for i in best_match.get('ndxs_to_drop', []):
-                    self._segments[id_]._msgs[i]['drop'] = True
+                for msg_to_drop in best_match.get('msgs_to_drop', []):
+                    msg_to_drop['drop'] = True
                 msg['metric'] = best_match['metric']
                 self._segments[id_].add_msg(msg)
                 # TODO: this and other last segment stuff can be removed once we stop
@@ -603,6 +597,6 @@ class Segmentizer(object):
 
 
         for series, segment in list(self._segments.items()):
-            for x in self.clean(self._segments.pop(segment.id)):
+            for x in self.clean(self._segments.pop(segment.id), Segment):
                 yield x
 

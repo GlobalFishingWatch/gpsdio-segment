@@ -5,7 +5,7 @@ import logging
 from gpsdio_segment.state import SegmentState 
 
 logger = logging.getLogger(__file__)
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class Segment(object):

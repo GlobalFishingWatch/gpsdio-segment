@@ -23,7 +23,7 @@ class MessageGenerator(object):
 
     def next_msg(self):
         self.increment()
-        return {'mmsi': self.mmsi, 'idx': self.index}
+        return {'mmsi': self.mmsi, 'idx': self.index, 'timestamp': self.timestamp}
 
     def next_posit_msg(self):
         self.increment()

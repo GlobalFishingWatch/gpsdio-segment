@@ -1,5 +1,5 @@
 import itertools
-
+from datetime import datetime
 from gpsdio_segment.core import SegmentState
 from gpsdio_segment.core import Segment
 from gpsdio_segment.core import Segmentizer
@@ -11,7 +11,8 @@ def test_SegmentState():
     assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
     s.id = 'ABC'
     s.mmsi = '123456789'
-    s.msgs = [{'mmsi': 123456789}, {'mmsi': 123456789}]
+    s.msgs = [{'mmsi': 123456789, 'timestamps': datetime.now()}, 
+              {'mmsi': 123456789, 'timestamp': datetime.now()}]
     s.msg_count = 1
     assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
 

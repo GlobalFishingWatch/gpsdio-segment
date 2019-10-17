@@ -12,11 +12,6 @@ import pytest
 import gpsdio_segment.core
 
 
-@pytest.mark.skip('need to fill in')
-def test_msg_diff_stats():
-    pass
-
-
 def test_segmentizer_attrs():
     # Attributes that are not called during processing
     segmenter = gpsdio_segment.core.Segmentizer([])

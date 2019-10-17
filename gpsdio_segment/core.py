@@ -177,6 +177,9 @@ class Segmentizer(object):
         s = cls(instream, **kwargs)
         for state in seg_states:
             seg = Segment.from_state(state)
+            logger.debug('state for id %s with %s msgs', state.id, state.msg_count)
+            logger.debug('seg from state with id %s with %s, %s msgs', seg.id,
+                                len(seg), seg._prev_state.msg_count)
             # ignore segments that are closed (not accepting more messages)
             if seg.closed:
                 continue

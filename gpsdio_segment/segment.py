@@ -130,9 +130,8 @@ class Segment(object):
 
         state.msgs.sort(key=lambda x: x['timestamp'])
 
-        state.msg_count = len(self)
-        if self._prev_state:
-            state.msg_count += self._prev_state.msg_count
+        state.msg_count = self.msg_count
+
         return state
 
     @property
@@ -176,6 +175,13 @@ class Segment(object):
     def msgs(self):
         return self._msgs
 
+    @property
+    def msg_count(self):
+        n = len(self._msgs)
+        if self._prev_state:
+            n += self._prev_state.msg_count
+        return n
+    
     @property
     def best_shipname_msg(self):
         """

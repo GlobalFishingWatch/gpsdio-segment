@@ -72,6 +72,8 @@ DEFAULT_LOOKBACK_FACTOR = 1.1
 DEFAULT_MAX_KNOTS = 20  
 INFINITE_SPEED = 1000000
 DEFAULT_AMBIGUITY_FACTOR = 2
+DEFAULT_SHORT_SEG_THRESHOLD = 10
+DEFAULT_SHORT_SEG_WEIGHT = 10
 
 MAX_OPEN_SEGMENTS = 10
 
@@ -106,6 +108,8 @@ class Segmentizer(object):
                  max_speed=DEFAULT_MAX_KNOTS, 
                  lookback=DEFAULT_LOOKBACK,
                  lookback_factor=DEFAULT_LOOKBACK_FACTOR,
+                 short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
+                 short_seg_weight=DEFAULT_SHORT_SEG_WEIGHT,
                  collect_match_stats=False):
 
         """
@@ -140,6 +144,10 @@ class Segmentizer(object):
             Maximum speed allowed between points in nautical miles.
         lookback : int, optional
             Number of points to look backwards when matching segments.
+        short_seg_threshold : int, optional
+            Segments shorter than this are penalized when computing metrics
+        short_seg_weight : float, optional
+            Maximum weight to apply when comparing short segments.
         """
 
         self.max_hours = max_hours
@@ -149,6 +157,8 @@ class Segmentizer(object):
         self.buffer_hours = buffer_hours
         self.lookback = lookback
         self.lookback_factor = lookback_factor
+        self.short_seg_threshold = short_seg_threshold
+        self.short_seg_weight = short_seg_weight
         self.collect_match_stats = collect_match_stats
 
         # Exposed via properties
@@ -453,13 +463,10 @@ class Segmentizer(object):
     def _compute_best(self, msg):
         # figure out which segment is the best match for the given message
 
-        raw_segs = list(self._segments.values())
+        segs = list(self._segments.values())
         best_match = None
 
-        segs = [seg for seg in raw_segs if seg.last_time_posit_msg is not None]
-        # TODO: convert to assertion
-        if len(segs) < len(raw_segs):
-            logger.warning('Some segments have no positional messages: skipping')
+        assert all([(seg.last_time_posit_msg is not None) for seg in segs])
 
         # get match metrics for all candidate segments
         raw_matches = [self._segment_match(seg, msg) for seg in segs]
@@ -475,6 +482,15 @@ class Segmentizer(object):
             if self.is_informational(msg):
                 best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
             elif metric_match_pairs:
+                threshhold = float(self.short_seg_threshold)
+                valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
+                scales = [(1 + (self.short_seg_weight - 1) * min(s.msg_count / threshhold, 1))
+                                for s in valid_segs]
+
+                metric_match_pairs = [(m['metric'] / s, m) for (m, s) in zip(matches, scales)]
+
+
+
                 metric_match_pairs.sort(key=lambda x: x[0])
                 best_metric, best_match = metric_match_pairs[0]
                 close_matches = [best_match]

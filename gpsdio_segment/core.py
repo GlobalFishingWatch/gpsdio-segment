@@ -84,15 +84,14 @@ MAX_OPEN_SEGMENTS = 10
 # type 27 messages so we exclude that as well. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
 REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25,102.35)]
-AIS_CLASS = {
-    1: 'A',
-    2: 'A',
-    3: 'A',
-    5: 'A',
-    18: 'B',
-    19: 'B',
-    24: 'B'
-}
+SAFE_SPEED = min([x for (x, y) in REPORTED_SPEED_EXCLUSION_RANGES])
+
+
+
+POSITION_MESSAGE = object()
+INFO_MESSAGE = object()
+BAD_MESSAGE = object()
+
 
 class Segmentizer(object):
 
@@ -169,7 +168,6 @@ class Segmentizer(object):
         self._segments = {}
         self._mmsi = mmsi
         self._prev_timestamp = None
-        self._last_segment = None
 
     def __repr__(self):
         return "<{cname}() max_speed={mspeed} max_hours={mhours} at {id_}>".format(
@@ -183,7 +181,6 @@ class Segmentizer(object):
         `SegmentStates()`, or a stream of dictionaries that can be converted
         via `SegmentState.fromdict()`.
         """
-
         s = cls(instream, **kwargs)
         for state in seg_states:
             if isinstance(state, dict):
@@ -194,13 +191,6 @@ class Segmentizer(object):
                     continue
             seg = Segment.from_state(state)
             s._segments[seg.id] = seg
-        if s._segments:
-            s._last_segment = max(
-                s._segments.values(), key=lambda x: x.last_time_posit_msg.get('timestamp'))
-            s._prev_timestamp = s._last_segment.last_msg['timestamp']
-            if s._mmsi:
-                assert s._mmsi == s._last_segment.mmsi
-            s._mmsi = s._last_segment.mmsi
         return s
 
     @property
@@ -227,24 +217,27 @@ class Segmentizer(object):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _validate_message(self, x, y, course, speed):
-        return ((x is None and y is None) or # informational message
-                (-180.0 <= x <= 180.0 and 
-                 -90.0 <= y <= 90.0 and
-                 course is not None and 
-                 speed is not None and
-                 ((speed == 0 and course == 360.0) or
-                 0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
-                 not any([(speed >= v[0] and speed <= v[1]) for v in REPORTED_SPEED_EXCLUSION_RANGES])
-                 )) 
+    def _message_type(self, x, y, course, speed):
+        if x is None and y is None and course is None and speed is None:
+            return INFO_MESSAGE
+        if  (x is not None and y is not None and
+             speed is not None and course is not None and 
+             -180.0 <= x <= 180.0 and 
+             -90.0 <= y <= 90.0 and
+             course is not None and 
+             speed is not None and
+             ((speed == 0 and course == 360.0) or
+             0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
+             (speed < SAFE_SPEED or
+             not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))):
+            return POSITION_MESSAGE
+        return BAD_MESSAGE
 
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
-        mmsi = self.mmsi if self.mmsi is not None else msg['mmsi']
-        t = cls(id_, mmsi)
-        t.add_msg(msg)
-        self._prev_timestamp = msg['timestamp']
-        return t
+        seg = cls(id_, self.mmsi)
+        seg.add_msg(msg)
+        return seg
 
     def _remove_excess_segments(self):
         while len(self._segments) >= MAX_OPEN_SEGMENTS:
@@ -258,48 +251,16 @@ class Segmentizer(object):
                 yield x
 
     def _add_segment(self, msg):
-        # Give informational messages there own singleton segments if they would
-        # otherwise start a segment
-        # TODO: eventually always give them their own segment when we assign IDS later
-        if not Segment.is_time_posit_msg(msg):
-            yield self._create_segment(msg, cls=InfoSegment)
-            logger.debug("Skipping info message that would start a segment: %s", msg['mmsi'])
-            return
-        for seg in self._remove_excess_segments():
-            yield seg
-        t = self._create_segment(msg)
-        if self.mmsi is None:
-            logger.debug("Setting MMSI to %s", msg['mmsi'])
-            self._mmsi = msg['mmsi']
-        self._segments[t.id] = t
-        self._last_segment = t
+        for excess_seg in self._remove_excess_segments():
+            yield excess_seg
+        seg = self._create_segment(msg)
+        self._segments[seg.id] = seg
 
-    def timedelta(self, msg1, msg2):
-        ts1 = msg1['timestamp']
-        ts2 = msg2['timestamp']
-        if ts1 > ts2:
-            return (ts1 - ts2).total_seconds() / 3600
-        else:
-            return (ts2 - ts1).total_seconds() / 3600
 
     def delta_hours(self, msg1, msg2):
         ts1 = msg1['timestamp']
         ts2 = msg2['timestamp']
-        return (ts2 - ts1).total_seconds() / 3600
-
-    def reported_speed(self, msg):
-        s = msg['speed']
-        for r in REPORTED_SPEED_EXCLUSION_RANGES:
-            if r[0] < s < r[1]:
-                logger.warning('This message should have been excluded by _validate_message: {}'.
-                    format(msg))
-                s = 0
-        return s
-
-
-    @staticmethod
-    def message_type(msg):
-        return AIS_CLASS.get(msg.get('type'))
+        return (ts1 - ts2).total_seconds() / 3600
 
     @staticmethod
     def _compute_expected_position(msg, hours):
@@ -325,21 +286,9 @@ class Segmentizer(object):
         Returns
         -------
         dict
-            distance : float
-                Distance in natucal miles between the points.
-            delta_hours : float
-                Amount of time between the two points in hours (signed).
-            speed : float
-                Required speed in knots to travel between the two points within the
-                time allotted by `timedelta`.
-            discrepancy : float
-                Difference in nautical miles between where the vessel is expected to 
-                be basted on position course and speed versus where it is in a second
-                message. Averaged between looking forward from msg1 and looking 
-                backward from msg2.
         """
 
-        hours = self.delta_hours(msg1, msg2)
+        hours = self.delta_hours(msg2, msg1)
         alpha = abs(hours) / (self.penalty_hours + abs(hours))
         effective_hours = hours / math.sqrt(1 + alpha ** self.hours_exp * abs(hours))
 
@@ -396,7 +345,7 @@ class Segmentizer(object):
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
-                 'ndxs_to_drop' : [],
+                 'msgs_to_drop' : [],
                  'metric' : None}
 
         assert segment.last_time_posit_msg is not None
@@ -418,11 +367,7 @@ class Segmentizer(object):
             msgs_to_drop.append(cnd_msg)
             metric = cnd_msg.get('metric', 1e99)
 
-
-        if not len(candidates):
-            raise ValueError('no candidate segments')
-            logger.debug("no candidate messages")
-            return match
+        assert len(candidates) > 0
 
         match.update(candidates[0][-1])
 
@@ -524,76 +469,70 @@ class Segmentizer(object):
     def process(self):
         for idx, msg in enumerate(self.instream):
             mmsi = msg.get('mmsi')
+
+            if self.mmsi is None:
+                self._mmsi = mmsi
+            elif mmsi != self.mmsi:
+                logger.warning("Skipping non-matching MMSI %r, expected %r", mmsi, self.mmsi)
+                continue
+
             timestamp = msg.get('timestamp')
             if timestamp is None:
                 raise ValueError("Message missing timestamp") 
-
-            if self.collect_match_stats:
-                msg['segment_matches'] = []
+            if self._prev_timestamp is not None and timestamp < self._prev_timestamp:
+                raise ValueError("Input data is unsorted")
+            self._prev_timestamp = msg['timestamp']
 
             y = msg.get('lat')
             x = msg.get('lon')
             course = msg.get('course')
             speed = msg.get('speed')
 
-            if self._prev_timestamp is not None and timestamp < self._prev_timestamp:
-                raise ValueError("Input data is unsorted")
+            msg_type = self._message_type(x, y, course, speed)
 
-            # Reject any message that has invalid position, course or speed
-            if not self._validate_message(x, y, course, speed):
+            if msg_type is BAD_MESSAGE:
                 yield self._create_segment(msg, cls=BadSegment)
                 logger.debug(("Rejected bad message from mmsi: {mmsi!r} lat: {y!r}  lon: {x!r} "
                               "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**locals()))
                 continue
 
-            # Ignore any message with non-matching MMSI
-            if self.mmsi is not None and mmsi != self.mmsi:
-                logger.warning("Skipping non-matching MMSI %r, expected %r", mmsi, self.mmsi)
+            if msg_type is INFO_MESSAGE:
+                yield self._create_segment(msg, cls=InfoSegment)
+                logger.debug("Skipping info message that would start a segment: %s", msg['mmsi'])
                 continue
 
-            if len(self._segments) > 0:
+            assert msg_type is POSITION_MESSAGE
+
+            if len(self._segments) == 0:
+                for x in self._add_segment(msg):
+                    yield x
+            else:
                 # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
-                    if segment.last_time_posit_msg is None:
-                        logger.warning('segment with no time_posit messages: %s' % segment.id)
-                    if (segment.last_time_posit_msg is None or
-                        self.timedelta(msg, segment.last_time_posit_msg) > self.max_hours):
+                    if (self.delta_hours(msg, segment.last_msg) > self.max_hours):
                             for x in self.clean(self._segments.pop(segment.id), cls=ClosedSegment):
                                 yield x
 
-            if len(self._segments) == 0:
-                best_match = None
-            else:
-                try:
-                    best_match = self._compute_best(msg)
-                except ValueError as e:
-                    logger.debug("Computing best segment failed: %s", mmsi)
-                    yield self._create_segment(msg, cls=BadSegment)
-                    continue
-
-            if best_match is None:
-                logger.debug('adding segment because no match')
-                for x in self._add_segment(msg):
-                    yield x
-            elif isinstance(best_match, list):
-                # This message could match multiple segments. 
-                # So finalize and remove ambiguous segments so we can start fresh
-                # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
-                for match in best_match:
-                    for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
+                best_match = self._compute_best(msg)
+                if best_match is None:
+                    for x in self._add_segment(msg):
                         yield x
-                # Then add as new segment.
-                for x in self._add_segment(msg):
-                    yield x
-            else:
-                id_ = best_match['seg_id']
-                for msg_to_drop in best_match.get('msgs_to_drop', []):
-                    msg_to_drop['drop'] = True
-                msg['metric'] = best_match['metric']
-                self._segments[id_].add_msg(msg)
-                # TODO: this and other last segment stuff can be removed once we stop
-                # trying to assign info in here
-                self._last_segment = self._segments[id_]
+                elif isinstance(best_match, list):
+                    # This message could match multiple segments. 
+                    # So finalize and remove ambiguous segments so we can start fresh
+                    # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
+                    for match in best_match:
+                        for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
+                            yield x
+                    # Then add as new segment.
+                    for x in self._add_segment(msg):
+                        yield x
+                else:
+                    id_ = best_match['seg_id']
+                    for msg_to_drop in best_match['msgs_to_drop']:
+                        msg_to_drop['drop'] = True
+                    msg['metric'] = best_match['metric']
+                    self._segments[id_].add_msg(msg)
 
 
         for series, segment in list(self._segments.items()):

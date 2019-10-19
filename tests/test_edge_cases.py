@@ -52,27 +52,26 @@ def test_same_time_absurd_distance():
 
 
 def test_with_non_posit():
-    # Non-positional messages should be added to the segment that was last touched
+    # Non-positional messages are emitted as there own segments
     # This should produce two segments, each with 3 points - two of which are
     # positional and 1 that is a non-posit
 
     # Continuous
     msg1 = {'idx': 0, 'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
-    msg2 = {'idx': 1, 'mmsi': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1), 'course' : 0, 'speed': 1}
+    msg2 = {'idx': 1, 'mmsi': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
     msg3 = {'idx': 2, 'mmsi': 1, 'lat': 0.00001, 'lon': 0.00001,
             'timestamp': msg1['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
 
     # Also continuous but not to the previous trio
     msg4 = {'idx': 3, 'mmsi': 1, 'lat': 65, 'lon': 65,
             'timestamp': msg3['timestamp'] + timedelta(days=100), 'course' : 0, 'speed': 1}
-    msg5 = {'idx': 4, 'mmsi': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1), 'course' : 0, 'speed': 1}
+    msg5 = {'idx': 4, 'mmsi': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
     msg6 = {'idx': 5, 'mmsi': 1, 'lat': 65.00001, 'lon': 65.00001,
             'timestamp': msg4['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
 
     segments = list(Segmentizer([msg1, msg2, msg3, msg4, msg5, msg6]))
-    assert len(segments) == 2
-    for seg in segments:
-        assert len(seg) == 3
+    assert len(segments) == 4
+    assert [len(seg) for seg in segments] == [1, 2, 1, 2]
 
 
 def test_with_non_posit_first():
@@ -191,20 +190,9 @@ def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
     seg_msg_count1 = [len(seg.msgs) for seg in list(Segmentizer.from_seg_states(seg_states=seg_states, instream=messages2))]
     seg_msg_count2 = [len(seg.msgs) for seg in Segmentizer.from_seg_states(seg_states=seg_states, instream=messages2)]
 
-    expected = [0, 1]
+    expected = [1, 0]
     assert expected == seg_msg_count1
     assert expected == seg_msg_count2
-
-
-def test_max_hours_exceeded_with_non_pos_message():
-    messages = [
-        {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 0, 0, 0), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 1, 12, 0, 0), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 0, 0), 'course' : 0, 'speed': 1}
-    ]
-
-    seg_msg_count = [len(seg) for seg in Segmentizer(messages, max_hours=24)]
-    assert seg_msg_count == [2, 1]
 
 
 def test_duplicate_pos_msg():

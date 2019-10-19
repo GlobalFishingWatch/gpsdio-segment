@@ -243,8 +243,7 @@ class Segmentizer(object):
         while len(self._segments) >= MAX_OPEN_SEGMENTS:
             # Remove oldest segment
             segs = list(self._segments.items())
-            # Would rather use last_time_posit_message, but currently not reliable across days
-            segs.sort(key=lambda x: x[1].last_time_posit_msg['timestamp'])
+            segs.sort(key=lambda x: x[1].last_msg['timestamp'])
             stalest_seg_id, _ = segs[0]
             logger.debug('Removing stale segment {}'.format(stalest_seg_id))
             for x in self.clean(self._segments.pop(stalest_seg_id), ClosedSegment):
@@ -348,8 +347,6 @@ class Segmentizer(object):
                  'msgs_to_drop' : [],
                  'metric' : None}
 
-        assert segment.last_time_posit_msg is not None
-
         # Get the stats for the last `lookback` positional messages
         candidates = []
 
@@ -358,7 +355,7 @@ class Segmentizer(object):
         metric = 1e99
         for cnd_msg in segment.get_all_reversed_msgs():
             n -= 1
-            if not Segment.is_time_posit_msg(cnd_msg) or cnd_msg.get('drop'):
+            if cnd_msg.get('drop'):
                 continue
             candidates.append((metric, msgs_to_drop[:], self.msg_diff_stats(cnd_msg, msg)))
             if len(candidates) >= self.lookback or n < 0:
@@ -408,8 +405,6 @@ class Segmentizer(object):
         segs = list(self._segments.values())
         best_match = None
 
-        assert all([(seg.last_time_posit_msg is not None) for seg in segs])
-
         # get match metrics for all candidate segments
         raw_matches = [self._segment_match(seg, msg) for seg in segs]
         # If metric is none, then the segment is not a match candidate
@@ -420,26 +415,22 @@ class Segmentizer(object):
             # and avoid all the messing around with lists in the num_segs > 1 case
             [best_match] = matches
         elif len(matches) > 1:
-            metric_match_pairs = [(m['metric'], m) for m in matches]
-            if not Segment.is_time_posit_msg(msg):
-                best_match = min(metric_match_pairs, key=lambda x: x[0])[1]
-            else:
-                # Down-weight (increase metric) for short segments
-                valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
-                alphas = [min(s.msg_count / self.short_seg_threshold, 1) for s in valid_segs]
-                metric_match_pairs = [(m['metric'] * math.exp(a ** -self.short_seg_exp), m) 
-                                        for (m, a) in zip(matches, alphas)]
-                metric_match_pairs.sort(key=lambda x: x[0])
-                # Check if best match is close enough to an existing match to be ambiguous.
-                best_metric, best_match = metric_match_pairs[0]
-                metric_match_pairs.sort(key=lambda x: x[0])
-                close_matches = [best_match]
-                for metric, match in metric_match_pairs[1:]:
-                    if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
-                        close_matches.append(match)
-                if len(close_matches) > 1:
-                    logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
-                    best_match = close_matches
+            # Down-weight (increase metric) for short segments
+            valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
+            alphas = [min(s.msg_count / self.short_seg_threshold, 1) for s in valid_segs]
+            metric_match_pairs = [(m['metric'] * math.exp(a ** -self.short_seg_exp), m) 
+                                    for (m, a) in zip(matches, alphas)]
+            metric_match_pairs.sort(key=lambda x: x[0])
+            # Check if best match is close enough to an existing match to be ambiguous.
+            best_metric, best_match = metric_match_pairs[0]
+            metric_match_pairs.sort(key=lambda x: x[0])
+            close_matches = [best_match]
+            for metric, match in metric_match_pairs[1:]:
+                if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
+                    close_matches.append(match)
+            if len(close_matches) > 1:
+                logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
+                best_match = close_matches
 
 
         if self.collect_match_stats:
@@ -457,10 +448,7 @@ class Segmentizer(object):
             new_segment = cls(segment.id, segment.mmsi)
         for msg in segment.msgs:
             msg.pop('metric', None)
-            drop = msg.pop('drop', False)
-            if drop:
-                assert Segment.is_time_posit_msg(msg)
-            if drop:
+            if msg.pop('drop', False):
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
                 new_segment.add_msg(msg)

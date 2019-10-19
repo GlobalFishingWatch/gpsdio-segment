@@ -33,13 +33,8 @@ class Segment(object):
 
         self._prev_state = None
         self._prev_segment = None
-        self._best_shipname_msg = None
-        self._best_callsign_msg = None
 
         self._msgs = []
-        self._coords = []
-
-        self._iter_idx = 0
 
         # logger.debug("Created an instance of %s() with ID: %s",
         #              self.__class__.__name__, self._id)
@@ -107,15 +102,7 @@ class Segment(object):
         state.msgs = []
 
         prev_msg = None
-        if not self.closed and self.last_time_posit_msg is None:
-            logger.error('open segment with no time-position messages encountered\n{}'
-                            .format((self.id, self.mmsi, self.noise, self.closed, len(self.msgs),
-                                self._prev_segment)))
-            raise ValueError('open segment with no time-position messages encountered')
         keep_messages = [self.first_msg,
-                         self.last_time_posit_msg,
-                         self.best_shipname_msg,
-                         self.best_callsign_msg,
                          self.last_msg
                         ]
         message_ids = set()
@@ -148,27 +135,6 @@ class Segment(object):
         return self._closed    
 
     @property
-    def coords(self):
-        """
-        A list of tuples containing `(x, y)` coordinates.  Derived from all
-        positional messages.
-        """
-
-        return self._coords
-
-    @property
-    def last_point(self):
-        """
-        The last `(x, y)` pair or `None` if the segment does not contain any
-        positional messages.
-        """
-
-        try:
-            return self.coords[-1]
-        except IndexError:
-            return None
-
-    @property
     def msgs(self):
         return self._msgs
 
@@ -178,30 +144,6 @@ class Segment(object):
         if self._prev_state:
             n += self._prev_state.msg_count
         return n
-    
-    @property
-    def best_shipname_msg(self):
-        """
-        Return the last message added to the segment with `shipname` field. Prefer
-        messages that also have `lat` and `lon`.
-        """
-
-        if self._best_shipname_msg:
-            return self._best_shipname_msg
-        else:
-            return self._prev_segment.best_shipname_msg if self._prev_segment else None
-
-    @property
-    def best_callsign_msg(self):
-        """
-        Return the last message added to the segment with `callsign` field. Prefer
-        messages that also have `lat` and `lon`.
-        """
-
-        if self._best_callsign_msg:
-            return self._best_callsign_msg
-        else:
-            return self._prev_segment.best_callsign_msg if self._prev_segment else None
 
     def get_all_reversed_msgs(self):
         source = self
@@ -211,48 +153,15 @@ class Segment(object):
                     yield msg
             source = source._prev_segment
 
-    @staticmethod
-    def is_time_posit_msg(msg):
-        return (msg.get('lat') is not None and 
-                msg.get('lon') is not None and
-                msg.get('timestamp') is not None)
-    
-    def get_all_reversed_time_posit_msgs(self):
-        for msg in self.get_all_reversed_msgs():
-            if self.is_time_posit_msg(msg):
-                yield msg
-
     @property
     def last_msg(self):
         for msg in self.get_all_reversed_msgs():
             return msg
 
     @property
-    def last_time_posit_msg(self):
-        """
-        Return the last message added to the segment with `lat`, `lon`, and
-        `timestamp` fields that are not `None`.
-        """
-        for msg in self.get_all_reversed_time_posit_msgs():
-            return msg
-
-    @property
     def first_msg (self):
         return self._prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
 
-    @property
-    def bounds(self):
-        """
-        Spatial bounds of the segment based on the positional messages.
-
-        Returns
-        -------
-        tuple
-            xmin, ymin, xmax, ymax
-        """
-
-        c = list(chain(*self.coords))
-        return min(c[0::2]), min(c[1::2]), max(c[2::2]), max(c[3::2])
 
     @property
     def temporal_extent(self):
@@ -264,44 +173,21 @@ class Segment(object):
         tuple
             tsmin, tsmax
         """
-
-        return self.first_msg.get('timestamp', None), self.last_time_posit_msg.get('timestamp', None)
+        return self.first_msg.get('timestamp', None), self.last_msg.get('timestamp', None)
 
     @property
     def total_seconds(self):
         """
-        Total number of seconds from the first message to the last messsage in the segment
+        Total number of seconds from the first message to the last message in the segment
         """
-
         t1, t2 = self.temporal_extent
         return (t2 - t1).total_seconds()
 
     def add_msg(self, msg):
-        mmsi = msg.get('mmsi')
-
-        if msg.get('mmsi') != self.mmsi:
-            raise ValueError(
-                'MMSI mismatch: {internal} != {new}'.format(
-                    internal=self.mmsi, new=msg.get('mmsi')))
         self._msgs.append(msg)
 
-        lat = msg.get('lat')
-        lon = msg.get('lon')
 
-        if lat is not None and lon is not None:
-            self._coords.append((lon, lat))
-            if msg.get('timestamp') is not None:
-                self._last_time_posit_msg = msg
 
-        if msg.get('shipname') is not None:
-            best_shipname_msg = self.best_shipname_msg
-            if best_shipname_msg is None or best_shipname_msg.get('lat') is None:
-                self._best_shipname_msg = msg
-
-        if msg.get('callsign') is not None:
-            best_callsign_msg = self.best_callsign_msg
-            if best_callsign_msg is None or best_callsign_msg.get('lat') is None:
-                self._best_callsign_msg = msg
 
 
 class ClosedSegment(Segment):

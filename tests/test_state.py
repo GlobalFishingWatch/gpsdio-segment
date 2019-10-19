@@ -39,29 +39,25 @@ def test_Segment_state_save_load(msg_generator):
     assert seg2._prev_state
 
     assert seg2.last_msg == seg1.last_msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_posit_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_time_posit_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == msg
 
     msg = msg_generator.next_msg()
     seg2.add_msg(msg)
 
     assert len(seg2) == 4
     state = seg2.state
-    assert len(state.msgs) == 3
+    assert len(state.msgs) == 2
     assert state.msg_count == 9
 
 

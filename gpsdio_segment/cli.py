@@ -79,7 +79,7 @@ def segment(ctx, infile, outfile, mmsi,
                 )):
 
             logger.debug("Writing segment %s with %s messages and %s points",
-                         seg.id, len(seg), len(seg.coords))
+                         seg.id, len(seg))
             for msg in seg:
                 msg[segment_field] = seg.id
                 dst.write(msg)

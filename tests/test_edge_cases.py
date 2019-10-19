@@ -10,7 +10,6 @@ from collections import Counter
 import pytest
 
 from gpsdio_segment.core import Segmentizer
-from gpsdio_segment.core import SegmentState
 
 
 def test_first_is_non_posit():

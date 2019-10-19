@@ -1,11 +1,15 @@
 from __future__ import division
 
 from itertools import chain
+from collections import namedtuple
 import logging
-from gpsdio_segment.state import SegmentState 
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
+
+
+SegmentState = namedtuple('SegmentState', 
+    ['id', 'mmsi', 'last_msg', 'msg_count', 'noise', 'closed'])
 
 
 class Segment(object):
@@ -14,8 +18,10 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
-    _noise = False # This isn't a 'real' segment, so it isn't written to a table
-    _closed = False # No more segments should be written to this segment
+    __slots__ = ['id', 'mmsi', 'msgs', 'prev_state', 'prev_segment', 'msgs']
+
+    noise = False # This isn't a 'real' segment, so it isn't written to a table
+    closed = False # No more segments should be written to this segment
 
     def __init__(self, id, mmsi):
 
@@ -28,16 +34,11 @@ class Segment(object):
         mmsi : int
             MMSI contained within the segment.
         """
-        self._id = id
-        self._mmsi = mmsi
-
-        self._prev_state = None
-        self._prev_segment = None
-
-        self._msgs = []
-
-        # logger.debug("Created an instance of %s() with ID: %s",
-        #              self.__class__.__name__, self._id)
+        self.id = id
+        self.mmsi = mmsi
+        self.prev_state = None
+        self.prev_segment = None
+        self.msgs = []
 
     @classmethod
     def from_state(cls, state):
@@ -51,19 +52,13 @@ class Segment(object):
         -------
         Segment
         """
-
-        if type(state) is dict:
-            state = SegmentState.from_dict(state)
-
-        # logger.debug('Creating a segment from an existing state with ID: %s',
-        #                 state.id)
-
+        if isinstance(state, dict):
+            state = SegmentState(**state)
         seg = cls(state.id, state.mmsi)
         # Note that _noise and _closed come from the state
-        seg._prev_state = state
-        seg._prev_segment = Segment(state.id, state.mmsi)
-        for msg in state.msgs:
-            seg._prev_segment.add_msg(msg)
+        seg.prev_state = state
+        seg.prev_segment = Segment(state.id, state.mmsi)
+        seg.prev_segment.add_msg(state.last_msg)
         return seg
 
     def __repr__(self):
@@ -79,7 +74,7 @@ class Segment(object):
 
     @property
     def has_prev_state(self):
-        return self._prev_segment is not None
+        return self.prev_segment is not None
 
     @property
     def state(self):
@@ -93,98 +88,43 @@ class Segment(object):
         -------
         SegmentState
         """
+        return SegmentState(id = self.id, 
+                            mmsi = self.mmsi, 
+                            noise = self.noise, 
+                            closed = self.closed, 
+                            last_msg = self.last_msg, 
+                            msg_count = self.msg_count)
 
-        state = SegmentState()
-        state.id = self.id
-        state.mmsi = self.mmsi
-        state.noise = self.noise
-        state.closed = self.closed
-        state.msgs = []
-
-        prev_msg = None
-        keep_messages = [self.first_msg,
-                         self.last_msg
-                        ]
-        message_ids = set()
-        for msg in keep_messages:
-            id_ = id(msg)
-            if msg is not None and id_ not in message_ids:
-                state.msgs.append(msg)
-                message_ids.add(id_)
-
-        state.msgs.sort(key=lambda x: x['timestamp'])
-
-        state.msg_count = self.msg_count
-
-        return state
-
-    @property
-    def id(self):
-        return self._id
-
-    @property
-    def mmsi(self):
-        return self._mmsi
-
-    @property
-    def noise(self):
-        return self._noise
-
-    @property
-    def closed(self):
-        return self._closed    
-
-    @property
-    def msgs(self):
-        return self._msgs
 
     @property
     def msg_count(self):
-        n = len(self._msgs)
-        if self._prev_state:
-            n += self._prev_state.msg_count
+        n = len(self.msgs)
+        if self.prev_state:
+            n += self.prev_state.msg_count
         return n
 
     def get_all_reversed_msgs(self):
         source = self
         while source is not None:
-            for msg in source._msgs[::-1]:
+            for msg in source.msgs[::-1]:
                 if not msg.get('drop', False):
                     yield msg
-            source = source._prev_segment
+            source = source.prev_segment
 
     @property
     def last_msg(self):
-        for msg in self.get_all_reversed_msgs():
-            return msg
+        if self.msgs:
+            return self.msgs[-1]
+        if self.prev_segment:
+            return self.prev_segment.last_msg
+        return None
 
     @property
     def first_msg (self):
-        return self._prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
-
-
-    @property
-    def temporal_extent(self):
-        """
-        earliest and latest timestamp for messages in this segment
-
-        Returns
-        -------
-        tuple
-            tsmin, tsmax
-        """
-        return self.first_msg.get('timestamp', None), self.last_msg.get('timestamp', None)
-
-    @property
-    def total_seconds(self):
-        """
-        Total number of seconds from the first message to the last message in the segment
-        """
-        t1, t2 = self.temporal_extent
-        return (t2 - t1).total_seconds()
+        return self.prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
 
     def add_msg(self, msg):
-        self._msgs.append(msg)
+        self.msgs.append(msg)
 
 
 
@@ -195,14 +135,13 @@ class ClosedSegment(Segment):
     Segment that has timed out or closed because of ambiguity
     so we don't want to feed it back into Segmentizer
     """
-    _closed = True
+    closed = True
 
-class NoiseSegment(Segment):
+class NoiseSegment(ClosedSegment):
     """
     Segment that doesn't represent a real 'segment' for some reason.
     """
-    _noise = True
-    _closed = True
+    noise = True
 
 class BadSegment(NoiseSegment):
     """

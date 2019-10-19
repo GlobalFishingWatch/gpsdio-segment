@@ -1,20 +1,16 @@
 import itertools
 from datetime import datetime
-from gpsdio_segment.core import SegmentState
-from gpsdio_segment.core import Segment
+from gpsdio_segment.segment import Segment
+from gpsdio_segment.segment import SegmentState
 from gpsdio_segment.core import Segmentizer
 import gpsdio
 
 
 def test_SegmentState():
-    s = SegmentState()
-    assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
-    s.id = 'ABC'
-    s.mmsi = '123456789'
-    s.msgs = [{'mmsi': 123456789, 'timestamps': datetime.now()}, 
-              {'mmsi': 123456789, 'timestamp': datetime.now()}]
-    s.msg_count = 1
-    assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
+    s = SegmentState(id='ABC', mmsi='123456789', 
+        last_msg={'mmsi': 123456789, 'timestamps': datetime.now()},
+        msg_count=1, noise=False, closed=False)
+    assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 
 def test_Segment_state_save_load(msg_generator):
@@ -28,7 +24,6 @@ def test_Segment_state_save_load(msg_generator):
     seg1.add_msg(msg_generator.next_time_posit_msg())
     state = seg1.state
     assert state.msg_count == 4
-    assert len(state.msgs) == 2
     seg1.add_msg(msg_generator.next_msg())
     state = seg1.state
 
@@ -36,7 +31,7 @@ def test_Segment_state_save_load(msg_generator):
     assert seg2.id == id
     assert seg2.mmsi == mmsi
     assert len(seg2) == 0
-    assert seg2._prev_state
+    assert seg2.prev_state
 
     assert seg2.last_msg == seg1.last_msg
 
@@ -57,7 +52,6 @@ def test_Segment_state_save_load(msg_generator):
 
     assert len(seg2) == 4
     state = seg2.state
-    assert len(state.msgs) == 2
     assert state.msg_count == 9
 
 
@@ -78,12 +72,12 @@ def test_Segmentizer_state_save_load(tmpdir):
         n2 = sum([st.msg_count for st in first_half_seg_states if not st.closed])
 
         segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
-        assert sum([seg._prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
+        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
 
         second_half_seg_states = [seg.state for seg in segs]
 
         segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
-        assert sum([seg._prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
+        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
 
 def test_Segmentizer_state_message_count_bug(msg_generator):
     id = 1

@@ -55,7 +55,6 @@ import pyproj
 
 from gpsdio_segment.segment import Segment, BadSegment, ClosedSegment
 from gpsdio_segment.segment import DiscardedSegment, InfoSegment
-from gpsdio_segment.state import SegmentState
 
 
 logger = logging.getLogger(__file__)
@@ -443,7 +442,7 @@ class Segmentizer(object):
 
     def clean(self, segment, cls):
         if segment.has_prev_state:
-            new_segment = cls.from_state(segment._prev_state)
+            new_segment = cls.from_state(segment.prev_state)
         else:
             new_segment = cls(segment.id, segment.mmsi)
         for msg in segment.msgs:

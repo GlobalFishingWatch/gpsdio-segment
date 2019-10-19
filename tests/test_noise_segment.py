@@ -11,7 +11,7 @@ import pytest
 
 import gpsdio
 from gpsdio_segment.core import Segmentizer
-from gpsdio_segment.core import NoiseSegment
+from gpsdio_segment.segment import NoiseSegment
 
 
 def test_noise_segment():

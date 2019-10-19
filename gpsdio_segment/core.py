@@ -54,7 +54,7 @@ import pyproj
 
 
 from gpsdio_segment.segment import Segment, BadSegment, ClosedSegment
-from gpsdio_segment.segment import DiscardedSegment, NoiseSegment, InfoSegment
+from gpsdio_segment.segment import DiscardedSegment, InfoSegment
 from gpsdio_segment.state import SegmentState
 
 

@@ -14,9 +14,8 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
-    _noise = False
-    _closed = False
-
+    _noise = False # This isn't a 'real' segment, so it isn't written to a table
+    _closed = False # No more segments should be written to this segment
 
     def __init__(self, id, mmsi):
 
@@ -305,49 +304,38 @@ class Segment(object):
                 self._best_callsign_msg = msg
 
 
-class BadSegment(Segment):
-    """
-    Sometimes points cannot be segmented for some reason, like if their
-    location falls outside the world bounds, so rather than throw the point
-    away we stick it into a `BadSegment()` so the user can filter with an
-    instance check.
-    """
-    _noise = True
-    _closed = True
-
-class NoiseSegment(Segment):
-    """
-    When a message cannot be added to any segment because of a high implied speed, but it
-    is within the configured noise distance from at least one existing segment, the message is
-    emitted in a singleton segment and generally should be considered noise and discarded.
-
-    These messages are emitted in a NoiseSegment to make them easy to distinguish from other
-    segments that contain only a single message
-    """
-    _noise = True
-    _closed = True
-
-class DiscardedSegment(Segment):
-    """
-    Points that are discarded during post processing of segments are emitted as 
-    Discarded segments.
-    """
-    _closed = True
-
-class InfoSegment(Segment):
-    """
-    Info messages that aren't matched to segments.
-
-    These may not actually be noise, so it may next sense to mark them in some
-    other way in the future.
-
-    """
-    _closed = True
-
 class ClosedSegment(Segment):
     """
     Segment that has timed out or closed because of ambiguity
     so we don't want to feed it back into Segmentizer
     """
     _closed = True
+
+class NoiseSegment(Segment):
+    """
+    Segment that doesn't represent a real 'segment' for some reason.
+    """
+    _noise = True
+    _closed = True
+
+class BadSegment(NoiseSegment):
+    """
+    Sometimes points cannot be segmented for some reason, like if their
+    location falls outside the world bounds, so rather than throw the point
+    away we stick it into a `BadSegment()` so the user can filter with an
+    instance check.
+    """
+
+class DiscardedSegment(NoiseSegment):
+    """
+    Points that are discarded during post processing of segments are emitted as 
+    Discarded segments.
+    """
+
+class InfoSegment(NoiseSegment):
+    """
+    Info messages that aren't matched to segments.
+    """
+
+
 

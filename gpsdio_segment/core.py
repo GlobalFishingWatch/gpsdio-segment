@@ -98,7 +98,7 @@ class Segmentizer(object):
     Group positional messages into related segments based on speed and distance.
     """
 
-    def __init__(self, instream, mmsi=None, 
+    def __init__(self, instream, ssvid=None, 
                  max_hours=DEFAULT_MAX_HOURS,
                  penalty_hours=DEFAULT_PENALTY_HOURS, 
                  buffer_hours=DEFAULT_BUFFER_HOURS,
@@ -126,10 +126,10 @@ class Segmentizer(object):
         ----------
         instream : iter
             Stream of GPSd messages.
-        mmsi : int, optional
-            MMSI to pull out of the stream and process.  If not given the first
-            valid MMSI is used.  All messages with a different MMSI are thrown
-            away.
+        ssvid : int, optional
+            MMSI or other Source Specific ID to pull out of the stream and process.  
+            If not given, the first valid ssvid is used.  All messages with a 
+            different ssvid are thrown away.
         max_hours : float, optional
             Maximum number of hours to allow between points in a segment.
         penalty_hours : float, optional
@@ -165,7 +165,7 @@ class Segmentizer(object):
         # Internal objects
         self._geod = pyproj.Geod(ellps='WGS84')
         self._segments = {}
-        self._mmsi = mmsi
+        self._ssvid = ssvid
         self._prev_timestamp = None
 
     def __repr__(self):
@@ -197,8 +197,8 @@ class Segmentizer(object):
         return self._instream
 
     @property
-    def mmsi(self):
-        return self._mmsi
+    def ssvid(self):
+        return self._ssvid
 
     def _segment_unique_id(self, msg):
         """
@@ -211,7 +211,7 @@ class Segmentizer(object):
 
         ts = msg['timestamp']
         while True:
-            seg_id = '{}-{}'.format(msg['mmsi'], datetime2str(ts))
+            seg_id = '{}-{}'.format(msg['ssvid'], datetime2str(ts))
             if seg_id not in self._segments:
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
@@ -234,7 +234,7 @@ class Segmentizer(object):
 
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
-        seg = cls(id_, self.mmsi)
+        seg = cls(id_, self.ssvid)
         seg.add_msg(msg)
         return seg
 
@@ -428,7 +428,7 @@ class Segmentizer(object):
                 if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
                     close_matches.append(match)
             if len(close_matches) > 1:
-                logger.debug('Ambiguous messages for id {}'.format(msg['mmsi']))
+                logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))
                 best_match = close_matches
 
 
@@ -444,7 +444,7 @@ class Segmentizer(object):
         if segment.has_prev_state:
             new_segment = cls.from_state(segment.prev_state)
         else:
-            new_segment = cls(segment.id, segment.mmsi)
+            new_segment = cls(segment.id, segment.ssvid)
         for msg in segment.msgs:
             msg.pop('metric', None)
             if msg.pop('drop', False):
@@ -455,12 +455,12 @@ class Segmentizer(object):
 
     def process(self):
         for idx, msg in enumerate(self.instream):
-            mmsi = msg.get('mmsi')
+            ssvid = msg.get('ssvid')
 
-            if self.mmsi is None:
-                self._mmsi = mmsi
-            elif mmsi != self.mmsi:
-                logger.warning("Skipping non-matching MMSI %r, expected %r", mmsi, self.mmsi)
+            if self.ssvid is None:
+                self._ssvid = ssvid
+            elif ssvid != self.ssvid:
+                logger.warning("Skipping non-matching SSVID %r, expected %r", ssvid, self.ssvid)
                 continue
 
             timestamp = msg.get('timestamp')
@@ -479,13 +479,13 @@ class Segmentizer(object):
 
             if msg_type is BAD_MESSAGE:
                 yield self._create_segment(msg, cls=BadSegment)
-                logger.debug(("Rejected bad message from mmsi: {mmsi!r} lat: {y!r}  lon: {x!r} "
+                logger.debug(("Rejected bad message from ssvid: {ssvid!r} lat: {y!r}  lon: {x!r} "
                               "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**locals()))
                 continue
 
             if msg_type is INFO_MESSAGE:
                 yield self._create_segment(msg, cls=InfoSegment)
-                logger.debug("Skipping info message that would start a segment: %s", msg['mmsi'])
+                logger.debug("Skipping info message that would start a segment: %s", msg['ssvid'])
                 continue
 
             assert msg_type is POSITION_MESSAGE

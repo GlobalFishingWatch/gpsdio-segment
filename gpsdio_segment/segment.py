@@ -9,7 +9,7 @@ logger.setLevel(logging.INFO)
 
 
 SegmentState = namedtuple('SegmentState', 
-    ['id', 'mmsi', 'last_msg', 'msg_count', 'noise', 'closed'])
+    ['id', 'ssvid', 'last_msg', 'msg_count', 'noise', 'closed'])
 
 
 class Segment(object):
@@ -18,12 +18,12 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
-    __slots__ = ['id', 'mmsi', 'msgs', 'prev_state', 'prev_segment', 'msgs']
+    __slots__ = ['id', 'ssvid', 'msgs', 'prev_state', 'prev_segment', 'msgs']
 
     noise = False # This isn't a 'real' segment, so it isn't written to a table
     closed = False # No more segments should be written to this segment
 
-    def __init__(self, id, mmsi):
+    def __init__(self, id, ssvid):
 
         """
         Parameters
@@ -31,11 +31,11 @@ class Segment(object):
         id : str or int
             Unique identifier for this segment.  If not globally unique must
             be unique within a given `Segmentizer()` run.
-        mmsi : int
-            MMSI contained within the segment.
+        ssvid : int
+            Source Specific ID (MMSI) contained within the segment.
         """
         self.id = id
-        self.mmsi = mmsi
+        self.ssvid = ssvid
         self.prev_state = None
         self.prev_segment = None
         self.msgs = []
@@ -54,17 +54,17 @@ class Segment(object):
         """
         if isinstance(state, dict):
             state = SegmentState(**state)
-        seg = cls(state.id, state.mmsi)
+        seg = cls(state.id, state.ssvid)
         # Note that _noise and _closed come from the state
         seg.prev_state = state
-        seg.prev_segment = Segment(state.id, state.mmsi)
+        seg.prev_segment = Segment(state.id, state.ssvid)
         seg.prev_segment.add_msg(state.last_msg)
         return seg
 
     def __repr__(self):
-        return "<{cname}(id={id}, mmsi={mmsi}) with {msg_cnt} msgs at {hsh}>".format(
+        return "<{cname}(id={id}, ssvid={ssvid}) with {msg_cnt} msgs at {hsh}>".format(
             cname=self.__class__.__name__, id=self.id, msg_cnt=len(self),
-            mmsi=self.mmsi, hsh=hash(self))
+            ssvid=self.ssvid, hsh=hash(self))
 
     def __iter__(self):
         return iter(self.msgs)
@@ -89,7 +89,7 @@ class Segment(object):
         SegmentState
         """
         return SegmentState(id = self.id, 
-                            mmsi = self.mmsi, 
+                            ssvid = self.ssvid, 
                             noise = self.noise, 
                             closed = self.closed, 
                             last_msg = self.last_msg, 

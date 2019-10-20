@@ -22,8 +22,8 @@ from gpsdio_segment.core import DEFAULT_SHORT_SEG_THRESHOLD
 @click.argument('infile', required=True)
 @click.argument('outfile', required=True)
 @click.option(
-    '--mmsi', type=click.INT,
-    help="Only segment this MMSI.  If not given the first MMSI found will be used."
+    '--ssvid', type=click.INT,
+    help="Only segment this SSVID.  If not given the first SSVID found will be used."
 )
 @click.option(
     '--max-hours', type=click.FLOAT, default=DEFAULT_MAX_HOURS,
@@ -51,7 +51,7 @@ from gpsdio_segment.core import DEFAULT_SHORT_SEG_THRESHOLD
     help="Add the segment ID to this field when writing messages. (default: segment)"
 )
 @click.pass_context
-def segment(ctx, infile, outfile, mmsi, 
+def segment(ctx, infile, outfile, ssvid, 
             max_hours, buffer_hours, max_speed, lookback,
             short_seg_threshold, 
             segment_field):
@@ -70,7 +70,7 @@ def segment(ctx, infile, outfile, mmsi,
 
         logger.debug("Beginning to segment")
         for t_idx, seg in enumerate(Segmentizer(
-                src, mmsi=mmsi, 
+                src, ssvid=ssvid, 
                 max_hours=max_hours,
                 buffer_hours=buffer_hours,
                 max_speed=max_speed,

@@ -17,7 +17,7 @@ from gpsdio_segment.core import Segmentizer
 # durations are in hours
 # specify 2 of the 3 possible values
 def generate_messages_from_deltas(deltas):
-    msg = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
+    msg = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now()}
     yield msg
     for d in deltas:
         distance = d.get('distance') or d['speed'] * d['duration']
@@ -25,16 +25,16 @@ def generate_messages_from_deltas(deltas):
         lon = msg['lon'] + (distance / 60.0)
         ts = msg['timestamp'] + timedelta(hours=duration)
         speed = d['speed'] if ('speed' in d) else d['distance'] / d['duration']
-        msg = dict(mmsi=msg['mmsi'], lat=msg['lat'], lon=lon, timestamp=ts,
+        msg = dict(ssvid=msg['ssvid'], lat=msg['lat'], lon=lon, timestamp=ts,
                     speed=d['speed'], course=0)
         yield msg
 
 
-def test_two_different_mmsi():
-    # If a second different MMSI is encountered it should be ignored
+def test_two_different_ssvid():
+    # If a second different ssvid is encountered it should be ignored
     # Should produce a single segment containing a single point
-    p1 = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
-    p2 = {'mmsi': 2, 'lat': 0.0000001, 'lon': 0.0000001, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
+    p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
+    p2 = {'ssvid': 2, 'lat': 0.0000001, 'lon': 0.0000001, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
     segmenter = Segmentizer([p1, p2])
     segments = list(segmenter)
 
@@ -46,8 +46,8 @@ def test_two_different_mmsi():
 
 def test_good_speed_good_time():
     # Make sure two points within the max_hours and max_speed are in the same segment
-    p1 = {'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
-    p2 = {'mmsi': 1, 'lat': 1, 'lon': 1, 'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 0}
+    p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
+    p2 = {'ssvid': 1, 'lat': 1, 'lon': 1, 'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 0}
     segmenter = Segmentizer([p1, p2])
     segments = list(segmenter)
 

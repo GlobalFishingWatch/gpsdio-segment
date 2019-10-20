@@ -22,16 +22,16 @@ def test_segment_attrs():
     seg = gpsdio_segment.core.Segment(1, 123456789)
 
     # Segment is empty
-    assert seg.mmsi == 123456789
+    assert seg.ssvid == 123456789
     assert seg.id == 1
     assert len(seg) == 0
     assert seg.last_msg is None
 
     # Add some data
-    msg1 = {'mmsi': 123456789, 'field': 100}
-    msg2 = {'mmsi': 123456789, 'field': 100000}
-    msg_with_point1 = {'mmsi': 123456789, 'lat': 1, 'lon': 1}
-    msg_with_point2 = {'mmsi': 123456789, 'lat': 10, 'lon': 10}
+    msg1 = {'ssvid': 123456789, 'field': 100}
+    msg2 = {'ssvid': 123456789, 'field': 100000}
+    msg_with_point1 = {'ssvid': 123456789, 'lat': 1, 'lon': 1}
+    msg_with_point2 = {'ssvid': 123456789, 'lat': 10, 'lon': 10}
 
     seg.add_msg(msg1)
     seg.add_msg(msg2)
@@ -60,11 +60,11 @@ def test_segment_attrs():
 
 def test_last_msg_combinations():
 
-    non_posit = {'mmsi': 1}
-    posit = {'mmsi': 1, 'lat': 2, 'lon': 3}
-    time_posit = {'mmsi': 1, 'lat': 2, 'lon': 3, 'timestamp': datetime.datetime.now()}
+    non_posit = {'ssvid': 1}
+    posit = {'ssvid': 1, 'lat': 2, 'lon': 3}
+    time_posit = {'ssvid': 1, 'lat': 2, 'lon': 3, 'timestamp': datetime.datetime.now()}
 
-    seg = gpsdio_segment.core.Segment(0, mmsi=1)
+    seg = gpsdio_segment.core.Segment(0, ssvid=1)
     assert seg.last_msg is None
 
     seg.add_msg(non_posit)
@@ -77,7 +77,7 @@ def test_last_msg_combinations():
     assert seg.last_msg == time_posit
 
     # Make sure posit and posit time are being returned instead of just the last message
-    seg = gpsdio_segment.core.Segment(1, mmsi=1)
+    seg = gpsdio_segment.core.Segment(1, ssvid=1)
 
     seg.add_msg(posit)
     seg.add_msg(non_posit)

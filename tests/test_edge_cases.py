@@ -17,14 +17,14 @@ def test_first_is_non_posit():
 
 
 def test_unsorted():
-    before = {'mmsi': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
-    after = {'mmsi': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
+    before = {'ssvid': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
+    after = {'ssvid': 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
     with pytest.raises(ValueError):
         list(Segmentizer([after, before]))
 
 
 def test_same_point_same_time():
-    msg = {'mmsi': 100, 'lat': 10, 'lon': 10, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg = {'ssvid': 100, 'lat': 10, 'lon': 10, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
     segments = list(Segmentizer([msg, msg]))
     assert len(segments) == 1
     for seg in segments:
@@ -32,8 +32,8 @@ def test_same_point_same_time():
 
 
 def test_same_point_absurd_timedelta():
-    msg1 = {'mmsi': 10000, 'lat': -90, 'lon': -90, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
-    msg2 = {'mmsi': 10000, 'lat': -90, 'lon': -90,
+    msg1 = {'ssvid': 10000, 'lat': -90, 'lon': -90, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 10000, 'lat': -90, 'lon': -90,
             'timestamp': msg1['timestamp'] + timedelta(days=1000), 'course' : 0, 'speed': 1}
     segments = list(Segmentizer([msg1, msg2]))
     assert len(segments) == 2
@@ -42,8 +42,8 @@ def test_same_point_absurd_timedelta():
 
 def test_same_time_absurd_distance():
     t = datetime.now()
-    msg1 = {'mmsi': 10000, 'lat': 0, 'lon': 0, 'timestamp': t, 'course' : 0, 'speed': 1}
-    msg2 = {'mmsi': 10000, 'lat': 10, 'lon': 10, 'timestamp': t, 'course' : 0, 'speed': 1}
+    msg1 = {'ssvid': 10000, 'lat': 0, 'lon': 0, 'timestamp': t, 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 10000, 'lat': 10, 'lon': 10, 'timestamp': t, 'course' : 0, 'speed': 1}
     segments = list(Segmentizer([msg1, msg2]))
     assert len(segments) == 2
     for seg in segments:
@@ -56,16 +56,16 @@ def test_with_non_posit():
     # positional and 1 that is a non-posit
 
     # Continuous
-    msg1 = {'idx': 0, 'mmsi': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
-    msg2 = {'idx': 1, 'mmsi': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
-    msg3 = {'idx': 2, 'mmsi': 1, 'lat': 0.00001, 'lon': 0.00001,
+    msg1 = {'idx': 0, 'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg2 = {'idx': 1, 'ssvid': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
+    msg3 = {'idx': 2, 'ssvid': 1, 'lat': 0.00001, 'lon': 0.00001,
             'timestamp': msg1['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
 
     # Also continuous but not to the previous trio
-    msg4 = {'idx': 3, 'mmsi': 1, 'lat': 65, 'lon': 65,
+    msg4 = {'idx': 3, 'ssvid': 1, 'lat': 65, 'lon': 65,
             'timestamp': msg3['timestamp'] + timedelta(days=100), 'course' : 0, 'speed': 1}
-    msg5 = {'idx': 4, 'mmsi': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
-    msg6 = {'idx': 5, 'mmsi': 1, 'lat': 65.00001, 'lon': 65.00001,
+    msg5 = {'idx': 4, 'ssvid': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
+    msg6 = {'idx': 5, 'ssvid': 1, 'lat': 65.00001, 'lon': 65.00001,
             'timestamp': msg4['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
 
     segments = list(Segmentizer([msg1, msg2, msg3, msg4, msg5, msg6]))
@@ -78,10 +78,10 @@ def test_with_non_posit_first():
     non-pos message added first should be emitted as single message noise segment
     """
     messages = [
-        {'mmsi': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
 
     segs = list(Segmentizer(messages))
@@ -97,10 +97,10 @@ def test_first_message_out_of_bounds():
     """
 
     messages = [
-        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
 
     output = list(Segmentizer(messages))
@@ -124,12 +124,12 @@ def test_first_message_out_of_bounds_gt_24h():
     """
 
     messages = [
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 2), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 3), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 4), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 2), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 3), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 4), 'course' : 0, 'speed': 1}
     ]
 
     segs = list(Segmentizer(messages))
@@ -144,11 +144,11 @@ def test_non_pos_first_followed_by_out_of_bounds():
     it gets emitted as noise. Then a real segment is created.
     """
     messages = [
-        {'mmsi': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
-        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 3), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 4), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
+        {'ssvid': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 3), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 4), 'course' : 0, 'speed': 1}
     ]
 
     segs = list(Segmentizer(messages))
@@ -158,10 +158,10 @@ def test_non_pos_first_followed_by_out_of_bounds():
 def test_bad_message_in_stream():
 
     messages = [
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
 
     # Should get one bad segment and one good segment
@@ -177,10 +177,10 @@ def test_bad_message_in_stream():
 def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
 
     messages1 = [
-        {'mmsi': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
     messages2 = [
-        {'mmsi': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 9, 1, 1, 1)}
+        {'ssvid': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 9, 1, 1, 1)}
     ]
 
     seg_states = [seg.state for seg in Segmentizer.from_seg_states(seg_states=[], instream=messages1)]
@@ -195,8 +195,8 @@ def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
 
 
 def test_duplicate_pos_msg():
-    msg1 = {'mmsi': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 0}
-    msg2 = {'mmsi': 1, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
+    msg1 = {'ssvid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 0}
+    msg2 = {'ssvid': 1, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
 
     segments = list(Segmentizer([msg1, msg1, msg1, msg1, msg2]))
     assert len(segments) == 1
@@ -204,15 +204,15 @@ def test_duplicate_pos_msg():
         assert len(seg) == 5
 
 def test_duplicate_ts_multiple_segs():
-    # example from mmsi 316004240 2018-05-18 to 2018-05-19
+    # example from ssvid 316004240 2018-05-18 to 2018-05-19
     # 2 segments present because of a noise position in idx=1
     # so we have 2 segments [0,2,3,4] and [1] when 4 comes along.
     messages = [
-        {'idx': 0, 'mmsi': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12), 'course' : 0, 'speed': 1},
-        {'idx': 1, 'mmsi': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8), 'course' : 0, 'speed': 1},
-        {'idx': 2, 'mmsi': 1, 'lat': 44.63896, 'lon': -63.55386, 'timestamp': datetime(2018, 5, 18, 14, 43, 16), 'course' : 0, 'speed': -1},
-        {'idx': 3, 'mmsi': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
-        {'idx': 4, 'mmsi': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
+        {'idx': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12), 'course' : 0, 'speed': 1},
+        {'idx': 1, 'ssvid': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8), 'course' : 0, 'speed': 1},
+        {'idx': 2, 'ssvid': 1, 'lat': 44.63896, 'lon': -63.55386, 'timestamp': datetime(2018, 5, 18, 14, 43, 16), 'course' : 0, 'speed': -1},
+        {'idx': 3, 'ssvid': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
+        {'idx': 4, 'ssvid': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
     ]
 
     segments = list(Segmentizer(messages))

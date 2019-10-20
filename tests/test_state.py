@@ -7,16 +7,16 @@ import gpsdio
 
 
 def test_SegmentState():
-    s = SegmentState(id='ABC', mmsi='123456789', 
-        last_msg={'mmsi': 123456789, 'timestamps': datetime.now()},
+    s = SegmentState(id='ABC', ssvid='123456789', 
+        last_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
         msg_count=1, noise=False, closed=False)
     assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 
 def test_Segment_state_save_load(msg_generator):
     id = 1
-    mmsi = 123456789
-    seg1 = Segment(id, mmsi)
+    ssvid = 123456789
+    seg1 = Segment(id, ssvid)
 
     seg1.add_msg(msg_generator.next_msg())
     seg1.add_msg(msg_generator.next_posit_msg())
@@ -29,7 +29,7 @@ def test_Segment_state_save_load(msg_generator):
 
     seg2 = Segment.from_state(state)
     assert seg2.id == id
-    assert seg2.mmsi == mmsi
+    assert seg2.ssvid == ssvid
     assert len(seg2) == 0
     assert seg2.prev_state
 
@@ -81,8 +81,8 @@ def test_Segmentizer_state_save_load(tmpdir):
 
 def test_Segmentizer_state_message_count_bug(msg_generator):
     id = 1
-    mmsi = 123456789
-    seg = Segment(id=1, mmsi=123456789)
+    ssvid = 123456789
+    seg = Segment(id=1, ssvid=123456789)
     seg.add_msg(msg_generator.next_time_posit_msg())
     state = seg.state
     assert state.msg_count == 1

@@ -113,15 +113,9 @@ class Segment(object):
 
     @property
     def last_msg(self):
-        if self.msgs:
-            return self.msgs[-1]
-        if self.prev_segment:
-            return self.prev_segment.last_msg
+        for msg in self.get_all_reversed_msgs():
+            return msg
         return None
-
-    @property
-    def first_msg (self):
-        return self.prev_segment.first_msg if self.has_prev_state else self.msgs[0] if self.msgs else None
 
     def add_msg(self, msg):
         self.msgs.append(msg)

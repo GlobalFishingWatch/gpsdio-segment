@@ -190,6 +190,10 @@ class Segmentizer(object):
                     continue
             seg = Segment.from_state(state)
             s._segments[seg.id] = seg
+            if seg.last_msg:
+                ts = seg.last_msg['timestamp']
+                if s._prev_timestamp is None or ts > s._prev_timestamp:
+                    s._prev_timestamp = ts
         return s
 
     @property

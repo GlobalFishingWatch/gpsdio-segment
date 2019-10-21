@@ -224,7 +224,9 @@ class Segmentizer(object):
             ts += datetime.timedelta(milliseconds=1)
 
     def _message_type(self, x, y, course, speed):
-        if x is None and y is None and course is None and speed is None:
+        def is_null(v):
+            return math.isnan(v) or (v is None)
+        if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
             return INFO_MESSAGE
         if  (x is not None and y is not None and
              speed is not None and course is not None and 
@@ -456,6 +458,9 @@ class Segmentizer(object):
         for msg in segment.msgs:
             msg.pop('metric', None)
             if msg.pop('drop', False):
+                logger.debug(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
+                    **msg))
+                continue
                 yield self._create_segment(msg, cls=DiscardedSegment)
             else:
                 new_segment.add_msg(msg)
@@ -493,7 +498,7 @@ class Segmentizer(object):
 
             if msg_type is INFO_MESSAGE:
                 yield self._create_segment(msg, cls=InfoSegment)
-                logger.debug("Skipping info message that would start a segment: %s", msg['ssvid'])
+                logger.debug("Skipping info message form ssvid: %s", msg['ssvid'])
                 continue
 
             assert msg_type is POSITION_MESSAGE

@@ -225,7 +225,7 @@ class Segmentizer(object):
 
     def _message_type(self, x, y, course, speed):
         def is_null(v):
-            return math.isnan(v) or (v is None)
+            return (v is None) or math.isnan(v)
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
             return INFO_MESSAGE
         if  (x is not None and y is not None and
@@ -460,8 +460,8 @@ class Segmentizer(object):
             if msg.pop('drop', False):
                 logger.debug(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
                     **msg))
-                continue
                 yield self._create_segment(msg, cls=DiscardedSegment)
+                continue
             else:
                 new_segment.add_msg(msg)
         yield new_segment

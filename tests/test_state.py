@@ -1,4 +1,5 @@
 import itertools
+from collections import Counter
 from datetime import datetime
 from gpsdio_segment.segment import Segment
 from gpsdio_segment.segment import SegmentState
@@ -67,7 +68,8 @@ def test_Segmentizer_state_save_load(tmpdir):
     with gpsdio.open('tests/data/416000000.json') as src:
         n = 800
         segmentizer = Segmentizer(itertools.islice(src, n))
-        first_half_seg_states = [seg.state for seg in segmentizer]
+        segs = list(segmentizer)
+        first_half_seg_states = [seg.state for seg in segs]
         assert n == sum([st.msg_count for st in first_half_seg_states])
         n2 = sum([st.msg_count for st in first_half_seg_states if not st.closed])
 

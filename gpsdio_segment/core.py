@@ -67,15 +67,15 @@ DEFAULT_PENALTY_HOURS = 24
 DEFAULT_HOURS_EXP = 2.0
 DEFAULT_BUFFER_HOURS = 15 / 60.0
 DEFAULT_LOOKBACK = 3
-DEFAULT_LOOKBACK_FACTOR = 2.0
-DEFAULT_MAX_KNOTS = 20  
+DEFAULT_LOOKBACK_FACTOR = 1.25
+DEFAULT_MAX_KNOTS = 10  
 INFINITE_SPEED = 1000000
 DEFAULT_AMBIGUITY_FACTOR = 2
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
 
 MAX_OPEN_SEGMENTS = 10
-MIN_POSITIVE_SPEED = 0.1
+LOOKBACK_SPEED = 0.5
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -396,7 +396,7 @@ class Segmentizer(object):
                         metric = discrepancy / max_allowed_discrepancy
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
-                    lookback_offset = MIN_POSITIVE_SPEED * buffered_hours * lookback
+                    lookback_offset = LOOKBACK_SPEED * lookback
                     metric = metric * self.lookback_factor ** lookback + lookback_offset
                     if metric > existing_metric:
                         # Don't make existing segment worse

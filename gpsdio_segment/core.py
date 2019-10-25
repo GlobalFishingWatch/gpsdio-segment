@@ -75,6 +75,9 @@ DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
 
 MAX_OPEN_SEGMENTS = 10
+
+# TODO: move these into parameters
+VERY_SLOW = 0.55
 LOOKBACK_SPEED = 0.5
 
 # The values 52 and 102.3 are both almost always noise, and don't
@@ -234,8 +237,8 @@ class Segmentizer(object):
              -90.0 <= y <= 90.0 and
              course is not None and 
              speed is not None and
-             ((speed == 0 and course == 360.0) or
-             0.0 <= course < 360.0) and # 360 is invalid unless speed is zero.
+             ((speed <= VERY_SLOW and course > 359.95) or
+             0.0 <= course <= 359.95) and # 360 is invalid unless speed is very low.
              (speed < SAFE_SPEED or
              not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))):
             return POSITION_MESSAGE
@@ -274,9 +277,14 @@ class Segmentizer(object):
         epsilon = 1e-3
         x = msg['lon']
         y = msg['lat']
+        speed = msg['speed']
+        course = msg['course']
+        if course > 359.95:
+            assert speed <= VERY_SLOW
+            speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
-        dist = msg['speed'] * hours 
-        course = math.radians(90.0 - msg['course'])
+        dist = speed * hours 
+        course = math.radians(90.0 - course)
         deg_lat_per_nm = 1.0 / 60
         deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
         dx = math.cos(course) * dist * deg_lon_per_nm
@@ -311,13 +319,7 @@ class Segmentizer(object):
             discrepancy = None
             info = None
         else:
-            if 'speed' not in msg1:
-                # When crossing the day barrier, we only have access to lat / lon
-                # not speed / course. 
-                # TODO: fix so that state includes speed / course (involved!)
-                x2p = y2p = None
-            else:
-                x2p, y2p = self._compute_expected_position(msg1, effective_hours)
+            x2p, y2p = self._compute_expected_position(msg1, effective_hours)
             x1p, y1p = self._compute_expected_position(msg2, -effective_hours)
 
             def wrap(x):

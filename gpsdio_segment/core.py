@@ -62,7 +62,7 @@ logger.setLevel(logging.INFO)
 
 
 # See Segmentizer() for more info
-DEFAULT_MAX_HOURS = 2 * 24 
+DEFAULT_MAX_HOURS = 18 
 DEFAULT_PENALTY_HOURS = 12
 DEFAULT_HOURS_EXP = 2.0
 DEFAULT_BUFFER_HOURS = 15 / 60.0
@@ -325,16 +325,16 @@ class Segmentizer(object):
             def wrap(x):
                 return (x + 180) % 360 - 180
 
-            deg_lat_per_nm = 1.0 / 60
+            nm_per_deg_lat = 60.0
             y = 0.5 * (y1 + y2)
             epsilon = 1e-3
-            deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
+            nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
             info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
             discrepancy = 0.5 * (
-                math.hypot(1 / deg_lon_per_nm * wrap(x1p - x1) , 
-                           1 / deg_lat_per_nm * (y1p - y1)) + 
-                math.hypot(1 / deg_lon_per_nm * wrap(x2p - x2) , 
-                           1 / deg_lat_per_nm * (y2p - y2)))
+                math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
+                           nm_per_deg_lat * (y1p - y1)) + 
+                math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
+                           nm_per_deg_lat * (y2p - y2)))
             
             distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
 

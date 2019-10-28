@@ -9,7 +9,7 @@ logger.setLevel(logging.INFO)
 
 
 SegmentState = namedtuple('SegmentState', 
-    ['id', 'ssvid', 'last_msg', 'msg_count', 'noise', 'closed'])
+    ['id', 'ssvid', 'first_msg', 'last_msg', 'msg_count', 'noise', 'closed'])
 
 
 class Segment(object):
@@ -58,6 +58,7 @@ class Segment(object):
         # Note that _noise and _closed come from the state
         seg.prev_state = state
         seg.prev_segment = Segment(state.id, state.ssvid)
+        seg.prev_segment.add_msg(state.first_msg)
         seg.prev_segment.add_msg(state.last_msg)
         return seg
 
@@ -92,6 +93,7 @@ class Segment(object):
                             ssvid = self.ssvid, 
                             noise = self.noise, 
                             closed = self.closed, 
+                            first_msg = self.first_msg,
                             last_msg = self.last_msg, 
                             msg_count = self.msg_count)
 
@@ -111,6 +113,14 @@ class Segment(object):
                     yield msg
             source = source.prev_segment
 
+    @property
+    def first_msg(self):
+        if self.prev_state and self.prev_state.first_msg is not None:
+            return self.prev_state.first_msg
+        if self.msgs:
+            return self.msgs[0]
+        return None
+    
     @property
     def last_msg(self):
         for msg in self.get_all_reversed_msgs():

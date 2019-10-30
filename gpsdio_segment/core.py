@@ -60,6 +60,7 @@ from gpsdio_segment.segment import DiscardedSegment, InfoSegment
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
+inf = float("inf")
 
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 2.5 * 24 
@@ -350,13 +351,13 @@ class Segmentizer(object):
             if 0 < tangential21 <= msg1['speed'] * hours:
                 normal21 = abs(math.sin(delta21)) * dist
             else:
-                normal21 = math.inf
+                normal21 = inf
             delta12 = math.radians(90 - msg2['course']) - rads21 
             tangential12 = math.cos(delta12) * msg2['speed'] * hours
             if 0 < tangential12 <= msg2['speed'] * hours:
                 normal12 = abs(math.sin(delta12)) * dist
             else:
-                normal12 = math.inf
+                normal12 = inf
             discrepancy3 = 0.5 * (normal12 + normal21) * SHAPE_FACTOR
 
             discrepancy = min(discrepancy1, discrepancy2, discrepancy3)

@@ -69,7 +69,7 @@ DEFAULT_BUFFER_HOURS = 5 / 60
 DEFAULT_LOOKBACK = 5
 DEFAULT_LOOKBACK_FACTOR = 1.2
 DEFAULT_MAX_KNOTS = 25
-DEFAULT_AMBIGUITY_FACTOR = 1.2
+DEFAULT_AMBIGUITY_FACTOR = 2.0
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
 
@@ -81,7 +81,7 @@ MAX_OPEN_SEGMENTS = 10
 VERY_SLOW = 0.35
 # LOOKBACK_SPEED = 0.5
 SHAPE_FACTOR = 2
-NEW_HOURS_EXP = 0.7
+NEW_HOURS_EXP = 0.9
 # BUFFER_NM = 1
 ALPHA_0 = DEFAULT_MAX_KNOTS / 10
 
@@ -340,20 +340,20 @@ class Segmentizer(object):
             # Vessel just stayed put
             dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
                               nm_per_deg_lon * wrap(x2 - x1))
-            discrepancy2 = dist* SHAPE_FACTOR
+            discrepancy2 = dist * SHAPE_FACTOR
 
             # Distance perp to line
             rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
                                 nm_per_deg_lon * wrap(x2 - x1))
             delta21 = math.radians(90 - msg1['course']) - rads21
-            tangential21 = math.cos(delta21) * msg1['speed'] * dist
-            if 0 <= tangential21 <= msg1['speed'] * hours:
+            tangential21 = math.cos(delta21) * msg1['speed'] * hours
+            if 0 < tangential21 <= msg1['speed'] * hours:
                 normal21 = abs(math.sin(delta21)) * dist
             else:
                 normal21 = math.inf
             delta12 = math.radians(90 - msg2['course']) - rads21 
-            tangential12 = math.cos(delta12) * msg2['speed'] * dist
-            if 0 <= tangential12 <= msg2['speed'] * hours:
+            tangential12 = math.cos(delta12) * msg2['speed'] * hours
+            if 0 < tangential12 <= msg2['speed'] * hours:
                 normal12 = abs(math.sin(delta12)) * dist
             else:
                 normal12 = math.inf
@@ -394,7 +394,6 @@ class Segmentizer(object):
                 # Too long has passed, we can't match this segment
                 break
             else:
-                # discrepancy = (max(0, discrepancy - BUFFER_NM))
                 effective_hours = (hours + self.buffer_hours)
                 if effective_hours > 1:
                     effective_hours **= NEW_HOURS_EXP

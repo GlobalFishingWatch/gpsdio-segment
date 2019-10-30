@@ -62,23 +62,28 @@ logger.setLevel(logging.INFO)
 
 
 # See Segmentizer() for more info
-DEFAULT_MAX_HOURS = 48 
-DEFAULT_PENALTY_HOURS = 12
+DEFAULT_MAX_HOURS = 2.5 * 24 
+DEFAULT_PENALTY_HOURS = 1
 DEFAULT_HOURS_EXP = 2.0
-DEFAULT_BUFFER_HOURS = 15 / 60.0
-DEFAULT_LOOKBACK = 3
-DEFAULT_LOOKBACK_FACTOR = 1.5
-DEFAULT_MAX_KNOTS = 10
-INFINITE_SPEED = 1000000
-DEFAULT_AMBIGUITY_FACTOR = 2
+DEFAULT_BUFFER_HOURS = 5 / 60
+DEFAULT_LOOKBACK = 5
+DEFAULT_LOOKBACK_FACTOR = 1.2
+DEFAULT_MAX_KNOTS = 25
+DEFAULT_AMBIGUITY_FACTOR = 1.2
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
+
+
 
 MAX_OPEN_SEGMENTS = 10
 
 # TODO: move these into parameters
 VERY_SLOW = 0.35
-LOOKBACK_SPEED = 0.5
+# LOOKBACK_SPEED = 0.5
+SHAPE_FACTOR = 2
+NEW_HOURS_EXP = 0.7
+# BUFFER_NM = 1
+ALPHA_0 = DEFAULT_MAX_KNOTS / 10
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -169,7 +174,6 @@ class Segmentizer(object):
         self._instream = instream
 
         # Internal objects
-        self._geod = pyproj.Geod(ellps='WGS84')
         self._segments = {}
         self._ssvid = ssvid
         self._prev_timestamp = None
@@ -280,7 +284,7 @@ class Segmentizer(object):
         speed = msg['speed']
         course = msg['course']
         if course > 359.95:
-            assert speed <= VERY_SLOW
+            assert speed <= VERY_SLOW, (course, speed)
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
         dist = speed * hours 
@@ -304,8 +308,7 @@ class Segmentizer(object):
         """
 
         hours = self.delta_hours(msg2, msg1)
-        alpha = abs(hours) / (self.penalty_hours + abs(hours))
-        effective_hours = hours / math.sqrt(1 + alpha ** self.hours_exp * abs(hours))
+        assert hours >= 0
 
         x1 = msg1['lon']
         y1 = msg1['lat']
@@ -317,10 +320,9 @@ class Segmentizer(object):
             distance = None
             speed = None
             discrepancy = None
-            info = None
         else:
-            x2p, y2p = self._compute_expected_position(msg1, effective_hours)
-            x1p, y1p = self._compute_expected_position(msg2, -effective_hours)
+            x2p, y2p = self._compute_expected_position(msg1, hours)
+            x1p, y1p = self._compute_expected_position(msg2, -hours)
 
             def wrap(x):
                 return (x + 180) % 360 - 180
@@ -329,28 +331,38 @@ class Segmentizer(object):
             y = 0.5 * (y1 + y2)
             epsilon = 1e-3
             nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
-            info = wrap(x1p - x1), wrap(x2p - x2), (y1p - y1), (y2p - y2)
-            discrepancy = 0.5 * (
+            discrepancy1 = 0.5 * (
                 math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
                            nm_per_deg_lat * (y1p - y1)) + 
                 math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
                            nm_per_deg_lat * (y2p - y2)))
-            
-            distance = self._geod.inv(x1, y1, x2, y2)[2] / 1850     # 1850 meters = 1 nautical mile
 
-            try:
-                speed = (distance / abs(hours))
-            except ZeroDivisionError:
-                speed = INFINITE_SPEED
+            # Vessel just stayed put
+            dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
+                              nm_per_deg_lon * wrap(x2 - x1))
+            discrepancy2 = dist* SHAPE_FACTOR
 
-        return {
-            'distance': distance,
-            'delta_hours' : hours,
-            'effective_hours' : effective_hours,
-            'speed': speed,
-            'discrepancy' : discrepancy,
-            'info' : info
-        }
+            # Distance perp to line
+            rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
+                                nm_per_deg_lon * wrap(x2 - x1))
+            delta21 = math.radians(90 - msg1['course']) - rads21
+            tangential21 = math.cos(delta21) * msg1['speed'] * dist
+            if 0 <= tangential21 <= msg1['speed'] * hours:
+                normal21 = abs(math.sin(delta21)) * dist
+            else:
+                normal21 = math.inf
+            delta12 = math.radians(90 - msg2['course']) - rads21 
+            tangential12 = math.cos(delta12) * msg2['speed'] * dist
+            if 0 <= tangential12 <= msg2['speed'] * hours:
+                normal12 = abs(math.sin(delta12)) * dist
+            else:
+                normal12 = math.inf
+            discrepancy3 = 0.5 * (normal12 + normal21) * SHAPE_FACTOR
+
+            discrepancy = min(discrepancy1, discrepancy2, discrepancy3)
+
+        return discrepancy, hours
+
 
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
@@ -362,7 +374,7 @@ class Segmentizer(object):
 
         n = len(segment)
         msgs_to_drop = []
-        metric = 1e99
+        metric = 0
         for cnd_msg in segment.get_all_reversed_msgs():
             n -= 1
             if cnd_msg.get('drop'):
@@ -372,41 +384,34 @@ class Segmentizer(object):
                 # This allows looking back 1 message into the previous batch of messages
                 break
             msgs_to_drop.append(cnd_msg)
-            metric = cnd_msg.get('metric', 1e99)
+            metric = cnd_msg.get('metric', 0)
 
         assert len(candidates) > 0
 
-        match.update(candidates[0][-1])
-
-        for lookback, (existing_metric, msgs_to_drop, cnd) in enumerate(candidates):
-            if abs(cnd['delta_hours']) > self.max_hours: 
+        for lookback, (existing_metric, msgs_to_drop, (discrepancy, hours)) in enumerate(candidates):
+            assert hours >= 0
+            if hours > self.max_hours: 
                 # Too long has passed, we can't match this segment
                 break
-            elif cnd['distance'] is None:
-                # Informational message, match closest position message in time.
-                match['metric'] = abs(cnd['delta_hours'])
-                break
             else:
-                discrepancy = cnd['discrepancy']
-                hours = abs(cnd['effective_hours'])
-                buffered_hours = self.buffer_hours + hours
-                max_allowed_discrepancy = buffered_hours * self.max_speed
+                # discrepancy = (max(0, discrepancy - BUFFER_NM))
+                effective_hours = (hours + self.buffer_hours)
+                if effective_hours > 1:
+                    effective_hours **= NEW_HOURS_EXP
+                max_allowed_discrepancy = effective_hours * self.max_speed
                 if discrepancy <= max_allowed_discrepancy:
-                    if discrepancy == 0:
-                        metric = 0
-                    else:
-                        metric = discrepancy / max_allowed_discrepancy
+                    alpha = ALPHA_0 * discrepancy / max_allowed_discrepancy 
+                    metric = math.exp(-alpha ** 2) / effective_hours ** 2
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
-                    lookback_offset = LOOKBACK_SPEED * lookback
-                    metric = metric * self.lookback_factor ** lookback + lookback_offset
-                    if metric > existing_metric:
+                    # lookback_offset = LOOKBACK_SPEED * lookback
+                    metric = metric * self.lookback_factor ** -lookback #+ lookback_offset
+                    if metric < existing_metric:
                         # Don't make existing segment worse
                         continue
-                    if match['metric'] is None or metric < match['metric']:
+                    if match['metric'] is None or metric > match['metric']:
                         match['metric'] = metric
                         match['msgs_to_drop'] = msgs_to_drop
-                        match.update(cnd)
 
         return match
 
@@ -426,18 +431,17 @@ class Segmentizer(object):
             # and avoid all the messing around with lists in the num_segs > 1 case
             [best_match] = matches
         elif len(matches) > 1:
-            # Down-weight (increase metric) for short segments
+            # Down-weight (decrease metric) for short segments
             valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
             alphas = [min(s.msg_count / self.short_seg_threshold, 1) for s in valid_segs]
-            metric_match_pairs = [(m['metric'] * math.exp(a ** -self.short_seg_exp), m) 
+            metric_match_pairs = [(m['metric'] * a ** self.short_seg_exp, m) 
                                     for (m, a) in zip(matches, alphas)]
-            metric_match_pairs.sort(key=lambda x: x[0])
+            metric_match_pairs.sort(key=lambda x: x[0], reverse=True)
             # Check if best match is close enough to an existing match to be ambiguous.
             best_metric, best_match = metric_match_pairs[0]
-            metric_match_pairs.sort(key=lambda x: x[0])
             close_matches = [best_match]
             for metric, match in metric_match_pairs[1:]:
-                if metric / DEFAULT_AMBIGUITY_FACTOR <= best_metric:
+                if metric * DEFAULT_AMBIGUITY_FACTOR >= best_metric:
                     close_matches.append(match)
             if len(close_matches) > 1:
                 logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))

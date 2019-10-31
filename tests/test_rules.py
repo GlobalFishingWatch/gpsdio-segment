@@ -52,8 +52,8 @@ def test_good_speed_good_time():
     segments = list(segmenter)
 
     # Should produce a single segment with two points
-    stats = segmenter.msg_diff_stats(p1, p2)
-    assert stats['speed'] <= segmenter.max_speed
+    discrepancy, hours = segmenter.msg_diff_stats(p1, p2)
+    assert discrepancy / hours <= segmenter.max_speed
     assert len(segments) == 1
     for seg in segments:
         assert len(seg) == 2

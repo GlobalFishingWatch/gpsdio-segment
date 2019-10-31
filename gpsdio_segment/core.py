@@ -81,8 +81,9 @@ MAX_OPEN_SEGMENTS = 10
 # TODO: move these into parameters
 VERY_SLOW = 0.35
 # LOOKBACK_SPEED = 0.5
-SHAPE_FACTOR = 2
-NEW_HOURS_EXP = 0.9
+SHAPE_FACTOR = 10
+
+NEW_HOURS_EXP = 0.5
 # BUFFER_NM = 1
 ALPHA_0 = DEFAULT_MAX_KNOTS / 10
 
@@ -396,8 +397,7 @@ class Segmentizer(object):
                 break
             else:
                 effective_hours = (hours + self.buffer_hours)
-                if effective_hours > 1:
-                    effective_hours **= NEW_HOURS_EXP
+                effective_hours /= (1 + (hours/ self.penalty_hours)**(1 - NEW_HOURS_EXP))
                 max_allowed_discrepancy = effective_hours * self.max_speed
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = ALPHA_0 * discrepancy / max_allowed_discrepancy 

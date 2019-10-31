@@ -216,4 +216,4 @@ def test_duplicate_ts_multiple_segs():
     ]
 
     segments = list(Segmentizer(messages))
-    assert [{0, 2, 3, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]
+    assert [{1}, {0, 2, 3, 4}]== [{msg['idx'] for msg in seg} for seg in segments]

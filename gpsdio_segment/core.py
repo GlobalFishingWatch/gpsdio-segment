@@ -42,19 +42,14 @@ last added to.
 
 
 from __future__ import division, print_function
-
-from itertools import chain
 import logging
 import datetime
 import math
 
-from gpsdio.schema import datetime2str
-
-import pyproj
-
 
 from gpsdio_segment.segment import Segment, BadSegment, ClosedSegment
 from gpsdio_segment.segment import DiscardedSegment, InfoSegment
+
 
 
 logger = logging.getLogger(__file__)
@@ -67,11 +62,11 @@ DEFAULT_MAX_HOURS = 2.5 * 24
 DEFAULT_PENALTY_HOURS = 1
 DEFAULT_HOURS_EXP = 2.0
 DEFAULT_BUFFER_HOURS = 5 / 60
-DEFAULT_LOOKBACK = 5
+DEFAULT_LOOKBACK = 10
 DEFAULT_LOOKBACK_FACTOR = 1.2
 DEFAULT_MAX_KNOTS = 25
-DEFAULT_AMBIGUITY_FACTOR = 2.0
-DEFAULT_SHORT_SEG_THRESHOLD = 10
+DEFAULT_AMBIGUITY_FACTOR = 20.0
+DEFAULT_SHORT_SEG_THRESHOLD = 5
 DEFAULT_SHORT_SEG_EXP = 0.5
 
 
@@ -81,11 +76,12 @@ MAX_OPEN_SEGMENTS = 10
 # TODO: move these into parameters
 VERY_SLOW = 0.35
 # LOOKBACK_SPEED = 0.5
-SHAPE_FACTOR = 10
+SHAPE_FACTOR = 4
 
 NEW_HOURS_EXP = 0.5
+BUFFER_NM = 5.0
 # BUFFER_NM = 1
-ALPHA_0 = DEFAULT_MAX_KNOTS / 10
+ALPHA_0 = DEFAULT_MAX_KNOTS / 5
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -227,12 +223,12 @@ class Segmentizer(object):
 
         ts = msg['timestamp']
         while True:
-            seg_id = '{}-{}'.format(msg['ssvid'], datetime2str(ts))
+            seg_id = '{}-{:%Y-%m-%dT%H:%M:%S.%fZ}'.format(msg['ssvid'], ts)
             if seg_id not in self._segments:
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _message_type(self, x, y, course, speed):
+    def _message_type(self, x, y, course, speed, ais_type):
         def is_null(v):
             return (v is None) or math.isnan(v)
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
@@ -348,13 +344,13 @@ class Segmentizer(object):
             rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
                                 nm_per_deg_lon * wrap(x2 - x1))
             delta21 = math.radians(90 - msg1['course']) - rads21
-            tangential21 = math.cos(delta21) * msg1['speed'] * hours
+            tangential21 = math.cos(delta21) * dist
             if 0 < tangential21 <= msg1['speed'] * hours:
                 normal21 = abs(math.sin(delta21)) * dist
             else:
                 normal21 = inf
             delta12 = math.radians(90 - msg2['course']) - rads21 
-            tangential12 = math.cos(delta12) * msg2['speed'] * hours
+            tangential12 = math.cos(delta12) * dist
             if 0 < tangential12 <= msg2['speed'] * hours:
                 normal12 = abs(math.sin(delta12)) * dist
             else:
@@ -396,8 +392,8 @@ class Segmentizer(object):
                 # Too long has passed, we can't match this segment
                 break
             else:
-                effective_hours = (hours + self.buffer_hours)
-                effective_hours /= (1 + (hours/ self.penalty_hours)**(1 - NEW_HOURS_EXP))
+                effective_hours = math.hypot(hours, self.buffer_hours) / (1 + (hours / self.penalty_hours) ** (1 - NEW_HOURS_EXP))
+                discrepancy = math.hypot(BUFFER_NM, discrepancy) - BUFFER_NM
                 max_allowed_discrepancy = effective_hours * self.max_speed
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = ALPHA_0 * discrepancy / max_allowed_discrepancy 
@@ -406,12 +402,13 @@ class Segmentizer(object):
                     # matches to points further in the past if they are noticeably better
                     # lookback_offset = LOOKBACK_SPEED * lookback
                     metric = metric * self.lookback_factor ** -lookback #+ lookback_offset
-                    if metric < existing_metric:
+                    if metric <= existing_metric:
                         # Don't make existing segment worse
                         continue
                     if match['metric'] is None or metric > match['metric']:
                         match['metric'] = metric
                         match['msgs_to_drop'] = msgs_to_drop
+
 
         return match
 
@@ -494,7 +491,7 @@ class Segmentizer(object):
             course = msg.get('course')
             speed = msg.get('speed')
 
-            msg_type = self._message_type(x, y, course, speed)
+            msg_type = self._message_type(x, y, course, speed, msg.get('type'))
 
             if msg_type is BAD_MESSAGE:
                 yield self._create_segment(msg, cls=BadSegment)
@@ -510,6 +507,7 @@ class Segmentizer(object):
             assert msg_type is POSITION_MESSAGE
 
             if len(self._segments) == 0:
+                logger.debug("adding new segment because no current segments")
                 for x in self._add_segment(msg):
                     yield x
             else:
@@ -521,6 +519,7 @@ class Segmentizer(object):
 
                 best_match = self._compute_best(msg)
                 if best_match is None:
+                    logger.debug("adding new segment because no match")
                     for x in self._add_segment(msg):
                         yield x
                 elif isinstance(best_match, list):
@@ -531,6 +530,7 @@ class Segmentizer(object):
                         for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
                             yield x
                     # Then add as new segment.
+                    logger.debug("adding new segment because of ambiguity with {} segments".format(len(best_match)))
                     for x in self._add_segment(msg):
                         yield x
                 else:

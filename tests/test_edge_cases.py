@@ -206,7 +206,7 @@ def test_duplicate_pos_msg():
 def test_duplicate_ts_multiple_segs():
     # example from ssvid 316004240 2018-05-18 to 2018-05-19
     # 2 segments present because of a noise position in idx=1
-    # so we have 2 segments [0,2,3,4] and [1] when 4 comes along.
+    # so we have 2 segments [0,2,3,4] and [1] .
     messages = [
         {'idx': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12), 'course' : 0, 'speed': 1},
         {'idx': 1, 'ssvid': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8), 'course' : 0, 'speed': 1},
@@ -214,6 +214,5 @@ def test_duplicate_ts_multiple_segs():
         {'idx': 3, 'ssvid': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
         {'idx': 4, 'ssvid': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
     ]
-
     segments = list(Segmentizer(messages))
-    assert [{1}, {0, 2, 3, 4}]== [{msg['idx'] for msg in seg} for seg in segments]
+    assert [{0, 2, 3, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]

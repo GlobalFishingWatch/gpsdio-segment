@@ -19,9 +19,9 @@ def test_noise_segment():
     with gpsdio.open('tests/data/338013000.json') as src:
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 73
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 4, 
-            'Segment': 8, 'InfoSegment': 60, 'DiscardedSegment': 1}
+        assert len(segs) == 76
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 12, 
+            'Segment': 2, 'InfoSegment': 60, 'DiscardedSegment': 2}
 
 
     with gpsdio.open('tests/data/338013000.json') as src:
@@ -42,7 +42,7 @@ def test_noise_segment():
 
         # some noise segments on the first day that does not get passed back in on the second day
         assert seg_types == {
-                              18: {'InfoSegment': 14, 'Segment': 2, 'DiscardedSegment': 1},
-                              19: {'Segment': 2},
-                              20: {'Segment': 3}
+                              18: {'InfoSegment': 14, 'Segment': 1, 'DiscardedSegment': 2},
+                              19: {'Segment': 1},
+                              20: {'Segment': 2}
                              }

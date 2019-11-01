@@ -19,9 +19,9 @@ def test_noise_segment():
     with gpsdio.open('tests/data/338013000.json') as src:
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 76
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 12, 
-            'Segment': 2, 'InfoSegment': 60, 'DiscardedSegment': 2}
+        assert len(segs) == 73
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 6, 
+            'Segment': 5, 'InfoSegment': 60, 'DiscardedSegment': 2}
 
 
     with gpsdio.open('tests/data/338013000.json') as src:

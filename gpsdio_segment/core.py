@@ -62,11 +62,11 @@ DEFAULT_MAX_HOURS = 2.5 * 24
 DEFAULT_PENALTY_HOURS = 1
 DEFAULT_HOURS_EXP = 2.0
 DEFAULT_BUFFER_HOURS = 5 / 60
-DEFAULT_LOOKBACK = 10
+DEFAULT_LOOKBACK = 5
 DEFAULT_LOOKBACK_FACTOR = 1.2
 DEFAULT_MAX_KNOTS = 25
-DEFAULT_AMBIGUITY_FACTOR = 20.0
-DEFAULT_SHORT_SEG_THRESHOLD = 5
+DEFAULT_AMBIGUITY_FACTOR = 10.0
+DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
 
 
@@ -82,6 +82,7 @@ NEW_HOURS_EXP = 0.5
 BUFFER_NM = 5.0
 # BUFFER_NM = 1
 ALPHA_0 = DEFAULT_MAX_KNOTS / 5
+TRANSPONDER_MISMATCH_DOWNWEIGHT = 0.1
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -204,6 +205,19 @@ class Segmentizer(object):
                     s._prev_timestamp = ts
         return s
 
+    @staticmethod
+    def transponder_types(msg):
+        msgtype = msg.get('type')
+        if msgtype in {'AIS.1', 'AIS.2', 'AIS.3'}:
+            return {'AIS:A'}
+        if msgtype in {'AIS.18', 'AIS.19'}:
+            return {'AIS:B'}
+        if msgtype in {'AIS.27'}:
+            return {'AIS:A', 'AIS:B'}
+        logging.debug('encountered unknown transponder type "%s"', msgtype)
+        return set()
+
+
     @property
     def instream(self):
         return self._instream
@@ -228,7 +242,7 @@ class Segmentizer(object):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _message_type(self, x, y, course, speed, ais_type):
+    def _message_type(self, x, y, course, speed):
         def is_null(v):
             return (v is None) or math.isnan(v)
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
@@ -373,10 +387,12 @@ class Segmentizer(object):
         n = len(segment)
         msgs_to_drop = []
         metric = 0
+        transponder_types = set()
         for cnd_msg in segment.get_all_reversed_msgs():
             n -= 1
             if cnd_msg.get('drop'):
                 continue
+            transponder_types |= self.transponder_types(cnd_msg)
             candidates.append((metric, msgs_to_drop[:], self.msg_diff_stats(cnd_msg, msg)))
             if len(candidates) >= self.lookback or n < 0:
                 # This allows looking back 1 message into the previous batch of messages
@@ -384,9 +400,13 @@ class Segmentizer(object):
             msgs_to_drop.append(cnd_msg)
             metric = cnd_msg.get('metric', 0)
 
+        # Consider transponders matched if the transponder shows up in any of lookback items
+        transponder_match = bool(transponder_types & self.transponder_types(msg))
+
         assert len(candidates) > 0
 
-        for lookback, (existing_metric, msgs_to_drop, (discrepancy, hours)) in enumerate(candidates):
+        for lookback, match_info in enumerate(candidates):
+            existing_metric, msgs_to_drop, (discrepancy, hours) = match_info
             assert hours >= 0
             if hours > self.max_hours: 
                 # Too long has passed, we can't match this segment
@@ -400,8 +420,10 @@ class Segmentizer(object):
                     metric = math.exp(-alpha ** 2) / effective_hours ** 2
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
-                    # lookback_offset = LOOKBACK_SPEED * lookback
-                    metric = metric * self.lookback_factor ** -lookback #+ lookback_offset
+                    metric = metric * self.lookback_factor ** -lookback 
+                    # Down weight cases where transceiver types don't match.
+                    if not transponder_match:
+                        metric *= TRANSPONDER_MISMATCH_DOWNWEIGHT
                     if metric <= existing_metric:
                         # Don't make existing segment worse
                         continue
@@ -491,7 +513,7 @@ class Segmentizer(object):
             course = msg.get('course')
             speed = msg.get('speed')
 
-            msg_type = self._message_type(x, y, course, speed, msg.get('type'))
+            msg_type = self._message_type(x, y, course, speed)
 
             if msg_type is BAD_MESSAGE:
                 yield self._create_segment(msg, cls=BadSegment)

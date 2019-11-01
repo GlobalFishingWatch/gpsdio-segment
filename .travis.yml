@@ -10,7 +10,7 @@ python:
 
 install:
   - pip install -e .\[dev\]
-  - pip install gpsdio
+  - pip install gpsdio, "newlinejson<1.0"
 
 script:
   - py.test tests --cov gpsdio_segment --cov-report term-missing

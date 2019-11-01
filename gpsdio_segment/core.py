@@ -60,7 +60,7 @@ inf = float("inf")
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 2.5 * 24 
 DEFAULT_PENALTY_HOURS = 1
-DEFAULT_HOURS_EXP = 2.0
+DEFAULT_HOURS_EXP = 0.5
 DEFAULT_BUFFER_HOURS = 5 / 60
 DEFAULT_LOOKBACK = 5
 DEFAULT_LOOKBACK_FACTOR = 1.2
@@ -68,21 +68,13 @@ DEFAULT_MAX_KNOTS = 25
 DEFAULT_AMBIGUITY_FACTOR = 10.0
 DEFAULT_SHORT_SEG_THRESHOLD = 10
 DEFAULT_SHORT_SEG_EXP = 0.5
+DEFAULT_SHAPE_FACTOR = 4.0
+DEFAULT_BUFFER_NM = 5.0
+DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
+DEFAULT_PENALTY_SPEED = 5.0
+DEFAULT_MAX_OPEN_SEGMENTS = 20
+DEFAULT_VERY_SLOW = 0.35
 
-
-
-MAX_OPEN_SEGMENTS = 10
-
-# TODO: move these into parameters
-VERY_SLOW = 0.35
-# LOOKBACK_SPEED = 0.5
-SHAPE_FACTOR = 4
-
-NEW_HOURS_EXP = 0.5
-BUFFER_NM = 5.0
-# BUFFER_NM = 1
-ALPHA_0 = DEFAULT_MAX_KNOTS / 5
-TRANSPONDER_MISMATCH_DOWNWEIGHT = 0.1
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -92,7 +84,6 @@ TRANSPONDER_MISMATCH_DOWNWEIGHT = 0.1
 # and not always exactly 102.3 or 51.2, we give a range.
 REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25,102.35)]
 SAFE_SPEED = min([x for (x, y) in REPORTED_SPEED_EXCLUSION_RANGES])
-
 
 
 POSITION_MESSAGE = object()
@@ -116,7 +107,13 @@ class Segmentizer(object):
                  lookback_factor=DEFAULT_LOOKBACK_FACTOR,
                  short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
                  short_seg_exp=DEFAULT_SHORT_SEG_EXP,
-                 collect_match_stats=False):
+                 shape_factor=DEFAULT_SHAPE_FACTOR,
+                 buffer_nm=DEFAULT_BUFFER_NM,
+                 transponder_mismatch_weight=DEFAULT_TRANSPONDER_MISMATCH_WEIGHT,
+                 penalty_speed=DEFAULT_PENALTY_SPEED,
+                 max_open_segments=DEFAULT_MAX_OPEN_SEGMENTS,
+                 very_slow=DEFAULT_VERY_SLOW
+                 ):
 
         """
         Looks at a stream of messages and pull out segments of points that are
@@ -156,6 +153,26 @@ class Segmentizer(object):
             Segments shorter than this are penalized when computing metrics
         short_seg_exp : float, optional
             Controls the scaling of short seg. 
+        shape_factor : float, optional
+            Controls how close we insist vessels to be along the path between their start
+            and the their extrapolated destination if not near there destination. Large
+            shape factor means very close.
+        buffer_nm : float, optional
+            Distances closer than this are considered "very close" and speed is not enforced
+            as rigorously.
+        transponder_mismatch_weight : float, optional
+            Weight to multiply messages by that have a different transponder type than the
+            segment we want to match to. Should be between 0 and 1.
+        penalty_speed : float, optional
+            Speeds (relative to where we expect the boat to be) greater than this are strongly
+            discouraged.
+        max_open_segments : int, optional
+            Maximum number of segments to keep open at one time. This is limited for performance
+            reasons.
+        very_slow : float, optional
+            Speeds at or below this are considered slow enough that we allow courses over 360
+            (meaning not-available)
+
         """
 
         self.max_hours = max_hours
@@ -167,7 +184,12 @@ class Segmentizer(object):
         self.lookback_factor = lookback_factor
         self.short_seg_threshold = short_seg_threshold
         self.short_seg_exp = short_seg_exp
-        self.collect_match_stats = collect_match_stats
+        self.shape_factor = shape_factor
+        self.buffer_nm = buffer_nm
+        self.transponder_mismatch_weight = transponder_mismatch_weight
+        self.penalty_speed = penalty_speed
+        self.max_open_segments = max_open_segments
+        self.very_slow = very_slow
 
         # Exposed via properties
         self._instream = instream
@@ -176,6 +198,7 @@ class Segmentizer(object):
         self._segments = {}
         self._ssvid = ssvid
         self._prev_timestamp = None
+        self._discrepancy_alpha_0 = self.max_speed / self.penalty_speed
 
     def __repr__(self):
         return "<{cname}() max_speed={mspeed} max_hours={mhours} at {id_}>".format(
@@ -253,7 +276,7 @@ class Segmentizer(object):
              -90.0 <= y <= 90.0 and
              course is not None and 
              speed is not None and
-             ((speed <= VERY_SLOW and course > 359.95) or
+             ((speed <= self.very_slow and course > 359.95) or
              0.0 <= course <= 359.95) and # 360 is invalid unless speed is very low.
              (speed < SAFE_SPEED or
              not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))):
@@ -267,7 +290,7 @@ class Segmentizer(object):
         return seg
 
     def _remove_excess_segments(self):
-        while len(self._segments) >= MAX_OPEN_SEGMENTS:
+        while len(self._segments) >= self.max_open_segments:
             # Remove oldest segment
             segs = list(self._segments.items())
             segs.sort(key=lambda x: x[1].last_msg['timestamp'])
@@ -288,15 +311,14 @@ class Segmentizer(object):
         ts2 = msg2['timestamp']
         return (ts1 - ts2).total_seconds() / 3600
 
-    @staticmethod
-    def _compute_expected_position(msg, hours):
+    def _compute_expected_position(self, msg, hours):
         epsilon = 1e-3
         x = msg['lon']
         y = msg['lat']
         speed = msg['speed']
         course = msg['course']
         if course > 359.95:
-            assert speed <= VERY_SLOW, (course, speed)
+            assert speed <= self.very_slow, (course, speed)
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
         dist = speed * hours 
@@ -352,7 +374,7 @@ class Segmentizer(object):
             # Vessel just stayed put
             dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
                               nm_per_deg_lon * wrap(x2 - x1))
-            discrepancy2 = dist * SHAPE_FACTOR
+            discrepancy2 = dist * self.shape_factor
 
             # Distance perp to line
             rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
@@ -369,7 +391,7 @@ class Segmentizer(object):
                 normal12 = abs(math.sin(delta12)) * dist
             else:
                 normal12 = inf
-            discrepancy3 = 0.5 * (normal12 + normal21) * SHAPE_FACTOR
+            discrepancy3 = 0.5 * (normal12 + normal21) * self.shape_factor
 
             discrepancy = min(discrepancy1, discrepancy2, discrepancy3)
 
@@ -412,18 +434,19 @@ class Segmentizer(object):
                 # Too long has passed, we can't match this segment
                 break
             else:
-                effective_hours = math.hypot(hours, self.buffer_hours) / (1 + (hours / self.penalty_hours) ** (1 - NEW_HOURS_EXP))
-                discrepancy = math.hypot(BUFFER_NM, discrepancy) - BUFFER_NM
+                effective_hours = (math.hypot(hours, self.buffer_hours) / 
+                                    (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)))
+                discrepancy = math.hypot(self.buffer_nm, discrepancy) - self.buffer_nm
                 max_allowed_discrepancy = effective_hours * self.max_speed
                 if discrepancy <= max_allowed_discrepancy:
-                    alpha = ALPHA_0 * discrepancy / max_allowed_discrepancy 
+                    alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy 
                     metric = math.exp(-alpha ** 2) / effective_hours ** 2
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
                     metric = metric * self.lookback_factor ** -lookback 
                     # Down weight cases where transceiver types don't match.
                     if not transponder_match:
-                        metric *= TRANSPONDER_MISMATCH_DOWNWEIGHT
+                        metric *= self.transponder_mismatch_weight
                     if metric <= existing_metric:
                         # Don't make existing segment worse
                         continue
@@ -465,10 +488,6 @@ class Segmentizer(object):
             if len(close_matches) > 1:
                 logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))
                 best_match = close_matches
-
-
-        if self.collect_match_stats:
-            msg['segment_matches'] = matches
 
         return best_match
 

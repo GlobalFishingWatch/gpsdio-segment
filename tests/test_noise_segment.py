@@ -9,14 +9,15 @@ from collections import Counter
 
 import pytest
 
-import gpsdio
 from gpsdio_segment.core import Segmentizer
 from gpsdio_segment.segment import NoiseSegment
 
+from support import read_json
 
 def test_noise_segment():
 
-    with gpsdio.open('tests/data/338013000.json') as src:
+    with open('tests/data/338013000.json') as f:
+        src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
         assert len(segs) == 73
@@ -24,7 +25,8 @@ def test_noise_segment():
             'Segment': 5, 'InfoSegment': 60, 'DiscardedSegment': 2}
 
 
-    with gpsdio.open('tests/data/338013000.json') as src:
+    with open('tests/data/338013000.json') as f:
+        src = read_json(f)
         # now run it one day at a time and store the segment states in between
         seg_states = {}
         seg_types = {}

@@ -4,8 +4,8 @@ from datetime import datetime
 from gpsdio_segment.segment import Segment
 from gpsdio_segment.segment import SegmentState
 from gpsdio_segment.core import Segmentizer
-import gpsdio
 
+from support import read_json
 
 def test_SegmentState():
     s = SegmentState(id='ABC', ssvid='123456789', 
@@ -60,13 +60,15 @@ def test_Segment_state_save_load(msg_generator):
 def test_Segmentizer_state_save_load(tmpdir):
     outfile = str(tmpdir.mkdir('test_Segmentizer_state_save_load').join('segmented.json'))
 
-    with gpsdio.open('tests/data/416000000.json') as src:
+    with open('tests/data/416000000.json') as f:
+        src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
         full_run_seg_states = [seg.state for seg in segs]
         full_run_msg_count = sum(len(seg) for seg in segs)
 
-    with gpsdio.open('tests/data/416000000.json') as src:
+    with open('tests/data/416000000.json') as f:
+        src = read_json(f)
         n = 800
         segmentizer = Segmentizer(itertools.islice(src, n))
         segs = list(segmentizer)

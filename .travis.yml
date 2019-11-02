@@ -10,7 +10,8 @@ python:
 
 install:
   - pip install -e .\[dev\]
-
+  - pip install dateutiil
+  
 script:
   - py.test tests --cov gpsdio_segment --cov-report term-missing
 

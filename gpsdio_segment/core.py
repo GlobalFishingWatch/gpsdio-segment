@@ -556,7 +556,8 @@ class Segmentizer(object):
             return
         receiver_type = msg.get('receiver_type')
         ts = msg['timestamp']
-        rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute)
+        rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
+                                        tzinfo=ts.tzinfo)
         k2 = (transponder_type, receiver_type)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)

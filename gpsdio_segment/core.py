@@ -19,22 +19,8 @@ it keeps the last point (latitude, longitude, timestamp). For each new
 point, it considers which of the open tracks to add it to, or to
 create a new track, and also if it should close any open tracks.
 
-Points are added to the track with the lowest score. The score is
-timedelta / max(1, seg_duration) where seg_duration is the length in
-time of the segment. There is special handling for when timedelta=0 or
-distance=0, see the code.
-
-Points are not added to tracks where the timedelta is greater
-than max_hours=24hours. In addition, it is neither added if the speed
-implied by the distance and and time delta between the end of the
-track and the new point is greater than a cutoff max speed dependant
-on the distance, which grows to infinity at zero distance.
-
-If none of the tracks fulfills these requirements, a new track is
-opened for the point. If any track is ignored due to the
-max_hours, that track is closed, as points are assumed to be
-sorted by time, and no new point will ever be added to this track
-again.
+The details of how this is performed is best explained by examining
+the logic in the function `_compute_best`.
 
 Points that do not have a timestamp or lat/lon are added to the track
 last added to.
@@ -57,6 +43,23 @@ logger.setLevel(logging.INFO)
 
 inf = float("inf")
 
+POSITION_TYPES = {
+    'AIS.1' : {'AIS-A'}, 
+    'AIS.2' : {'AIS-A'},
+    'AIS.3' : {'AIS-A'},
+    'AIS.18' : {'AIS-B'}, 
+    'AIS.19' : {'AIS-B'},
+    'AIS.27' : {'AIS-A', 'AIS-B'}
+    } 
+
+INFO_TYPES = {
+    'AIS.5' : 'AIS-A',
+    'AIS.18' : 'AIS-B', 
+    'AIS.19' : 'AIS-B'
+    }
+
+
+
 # See Segmentizer() for more info
 DEFAULT_MAX_HOURS = 2.5 * 24 
 DEFAULT_PENALTY_HOURS = 1
@@ -75,6 +78,7 @@ DEFAULT_PENALTY_SPEED = 5.0
 DEFAULT_MAX_OPEN_SEGMENTS = 20
 DEFAULT_VERY_SLOW = 0.35
 
+INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -98,6 +102,9 @@ class Segmentizer(object):
     """
 
     def __init__(self, instream, ssvid=None, 
+                 prev_msgids=None, 
+                 prev_locations=None,
+                 prev_info=None,
                  max_hours=DEFAULT_MAX_HOURS,
                  penalty_hours=DEFAULT_PENALTY_HOURS, 
                  buffer_hours=DEFAULT_BUFFER_HOURS,
@@ -135,6 +142,12 @@ class Segmentizer(object):
             MMSI or other Source Specific ID to pull out of the stream and process.  
             If not given, the first valid ssvid is used.  All messages with a 
             different ssvid are thrown away.
+        prev_msgids : set, optional
+            Messages with msgids in this set are skipped as duplicates
+        prev_locations : set, optional
+            Location messages that match values in this set are skipped as duplicates.
+        prev_info : set, optional
+            Set of info data from previous run that may be relevant to current run.
         max_hours : float, optional
             Maximum number of hours to allow between points in a segment.
         penalty_hours : float, optional
@@ -174,7 +187,11 @@ class Segmentizer(object):
             (meaning not-available)
 
         """
-
+        self.prev_msgids = prev_msgids if prev_msgids else set()
+        self.cur_msgids = {}
+        self.prev_locations = prev_locations if prev_locations else set()
+        self.cur_locations = {}
+        self.cur_info = prev_info.copy() if prev_info else {}
         self.max_hours = max_hours
         self.penalty_hours = penalty_hours
         self.hours_exp = hours_exp
@@ -230,15 +247,7 @@ class Segmentizer(object):
 
     @staticmethod
     def transponder_types(msg):
-        msgtype = msg.get('type')
-        if msgtype in {'AIS.1', 'AIS.2', 'AIS.3'}:
-            return {'AIS:A'}
-        if msgtype in {'AIS.18', 'AIS.19'}:
-            return {'AIS:B'}
-        if msgtype in {'AIS.27'}:
-            return {'AIS:A', 'AIS:B'}
-        logging.debug('encountered unknown transponder type "%s"', msgtype)
-        return set()
+        return POSITION_TYPES.get(msg.get('type'), set())
 
 
     @property
@@ -510,16 +519,80 @@ class Segmentizer(object):
                 new_segment.add_msg(msg)
         yield new_segment
 
+    @staticmethod
+    def extract_location(msg):
+        return (msg.get('lon'),
+                msg.get('lat'),
+                msg.get('course'),
+                msg.get('speed'),
+                msg.get('heading'))
+
+    @staticmethod
+    def normalize_location(lat, lon, course, speed, heading):
+        return (round(lat * 60000),
+                round(lon * 60000),
+                round(course * 10),
+                round(speed * 10),
+                None if (heading is None) else round(heading))
+
+    def _prune_info(self, latest_time):
+        stale = set()
+        last_valid_ts = latest_time - datetime.timedelta(minutes=INFO_PING_INTERVAL_MINS)
+        for ts in self.cur_info:
+            if ts < last_valid_ts:
+                stale.add(ts)
+        for ts in stale:
+            self.cur_info.pop(ts)
+
+    def store_info(self, msg):
+        self._prune_info(msg['timestamp'])
+        shipname = msg.get('shipname')
+        callsign = msg.get('callsign')
+        imo = msg.get('imo')
+        if shipname is None and callsign is None and imo is None:
+            return
+        transponder_type = INFO_TYPES.get(msg.get('type'))
+        if not transponder_type:
+            return
+        receiver_type = msg.get('receiver_type')
+        ts = msg['timestamp']
+        rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute)
+        k2 = (transponder_type, receiver_type)
+        for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
+            k1 = rounded_ts + datetime.timedelta(minutes=offset)
+            if k1 not in self.cur_info:
+                self.cur_info[k1] = {k2 : ({}, {}, {})}
+            elif k2 not in self.cur_info[k1]:
+                self.cur_info[k1][k2] = ({}, {}, {})
+            shipnames, callsigns, imos = self.cur_info[k1][k2]
+            if shipname is not None:
+                shipnames[shipname] = shipnames.get(shipname, 0) + 1
+            if callsign is not None:
+                callsigns[callsign] = callsigns.get(callsign, 0) + 1
+            if imos is not None:
+                imos[imo] = imos.get(imo, 0) + 1
+
+    def add_info(self, msg):
+        ts = msg['timestamp']
+        k1 = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute)
+        msg['shipnames'] = shipnames = {}
+        msg['callsigns'] = callsigns = {}
+        msg['imos'] = imos = {}
+        def updatesum(orig, new):
+            for k, v in new.items():
+                orig[k] = orig.get(k, 0) + v
+        if k1 in self.cur_info:
+            for transponder_type in POSITION_TYPES.get(msg.get('type'), ()):
+                receiver_type = msg.get('receiver_type')
+                k2 = (transponder_type, receiver_type)
+                if k2 in self.cur_info[k1]:
+                    names, signs, nums = self.cur_info[k1][k2]
+                    updatesum(shipnames, names)
+                    updatesum(callsigns, signs)
+                    updatesum(imos, nums)
+
     def process(self):
-        for idx, msg in enumerate(self.instream):
-            ssvid = msg.get('ssvid')
-
-            if self.ssvid is None:
-                self._ssvid = ssvid
-            elif ssvid != self.ssvid:
-                logger.warning("Skipping non-matching SSVID %r, expected %r", ssvid, self.ssvid)
-                continue
-
+        for msg in self.instream:
             timestamp = msg.get('timestamp')
             if timestamp is None:
                 raise ValueError("Message missing timestamp") 
@@ -527,10 +600,20 @@ class Segmentizer(object):
                 raise ValueError("Input data is unsorted")
             self._prev_timestamp = msg['timestamp']
 
-            y = msg.get('lat')
-            x = msg.get('lon')
-            course = msg.get('course')
-            speed = msg.get('speed')
+            msgid = msg.get('msgid')
+            if msgid in self.prev_msgids or msgid in self.cur_msgids:
+                continue
+            self.cur_msgids[msgid] = timestamp
+
+            ssvid = msg.get('ssvid')
+            if self.ssvid is None:
+                self._ssvid = ssvid
+            elif ssvid != self.ssvid:
+                logger.warning("Skipping non-matching SSVID %r, expected %r", ssvid, self.ssvid)
+                continue
+
+
+            x, y, course, speed, heading = self.extract_location(msg)
 
             msg_type = self._message_type(x, y, course, speed)
 
@@ -541,11 +624,20 @@ class Segmentizer(object):
                 continue
 
             if msg_type is INFO_MESSAGE:
+                self.store_info(msg)
                 yield self._create_segment(msg, cls=InfoSegment)
                 logger.debug("Skipping info message form ssvid: %s", msg['ssvid'])
                 continue
 
             assert msg_type is POSITION_MESSAGE
+
+            self.add_info(msg)
+
+            loc = self.normalize_location(x, y, course, speed, heading)
+            if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):
+                # Multiple identical locations with non-zero speed almost certainly bogus
+                continue
+            self.cur_locations[loc] = timestamp
 
             if len(self._segments) == 0:
                 logger.debug("adding new segment because no current segments")

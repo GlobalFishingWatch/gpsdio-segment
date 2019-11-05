@@ -68,7 +68,7 @@ def test_Segmentizer_state_save_load(tmpdir):
         full_run_msg_count = sum(len(seg) for seg in segs)
 
     with open('tests/data/416000000.json') as f:
-        src = read_json(f)
+        src = read_json(f, add_msgid=True)
         n = 800
         segmentizer = Segmentizer(itertools.islice(src, n))
         segs = list(segmentizer)

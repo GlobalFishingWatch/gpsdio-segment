@@ -43,8 +43,10 @@ def test_two_different_ssvid():
 
 def test_good_speed_good_time():
     # Make sure two points within the max_hours and max_speed are in the same segment
-    p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 5}
-    p2 = {'ssvid': 1, 'lat': 1, 'lon': 0, 'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 5}
+    p1 = {'msgid': 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 
+            'timestamp': datetime.now(), 'course': 0, 'speed': 5}
+    p2 = {'msgid': 2, 'ssvid': 1, 'lat': 1, 'lon': 0, 
+            'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 5}
     segmenter = Segmentizer([p1, p2])
     segments = list(segmenter)
 

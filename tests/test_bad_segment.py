@@ -18,18 +18,18 @@ from support import read_json
 def test_bad_segment():
 
     with open('tests/data/263576000.json') as f:
-        src = read_json(f)
+        src = read_json(f, add_msgid=True)
         # Run the whole thing - makes 2 segments, one of them is a BadSegment
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
         assert Counter([seg.__class__.__name__ for seg in segs]) == {
                 'InfoSegment': 19, 'Segment': 1, 'BadSegment': 1}
-        assert {len(seg) for seg in segs} == {1, 928}
+        assert {len(seg) for seg in segs} == {1, 582}
 
 def test_bad_segment_daily():
 
     with open('tests/data/263576000.json') as f:
-        src = read_json(f)
+        src = read_json(f, add_msgid=True)
         # now run it one day at a time and store the segment states in between
         seg_types = {}
         seg_states = {}

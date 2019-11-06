@@ -7,6 +7,7 @@ from datetime import datetime
 from datetime import timedelta
 
 from gpsdio_segment.core import Segmentizer
+from support import utcify
 
 # deltas = [{'distance': 0, 'speed': 0, 'duration': 0}]
 # distances are in nautical miles
@@ -32,7 +33,7 @@ def test_two_different_ssvid():
     # Should produce a single segment containing a single point
     p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
     p2 = {'ssvid': 2, 'lat': 0.0000001, 'lon': 0.0000001, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
-    segmenter = Segmentizer([p1, p2])
+    segmenter = Segmentizer([utcify(x) for x in [p1, p2]])
     segments = list(segmenter)
 
     # Should produce a single segment containing a single point
@@ -47,7 +48,8 @@ def test_good_speed_good_time():
             'timestamp': datetime.now(), 'course': 0, 'speed': 5}
     p2 = {'msgid': 2, 'ssvid': 1, 'lat': 1, 'lon': 0, 
             'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 5}
-    segmenter = Segmentizer([p1, p2])
+    msgs = [utcify(x) for x in [p1, p2]]
+    segmenter = Segmentizer(msgs)
     segments = list(segmenter)
 
     # Should produce a single segment with two points

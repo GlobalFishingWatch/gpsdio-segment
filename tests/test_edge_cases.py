@@ -11,6 +11,8 @@ import pytest
 
 from gpsdio_segment.core import Segmentizer
 
+from support import utcify
+
 
 def test_first_is_non_posit():
     pass
@@ -19,15 +21,19 @@ def test_first_is_non_posit():
 def test_unsorted():
     before = {'ssvid': 1, 'msgid' : 1, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
     after = {'ssvid': 1, 'msgid' : 2, 'timestamp': datetime.now(), 'lat': 90, 'lon': 90, 'course' : 0, 'speed': 1}
+    messages = [after, before]
+    messages = [utcify(x) for x in messages]
     with pytest.raises(ValueError):
-        list(Segmentizer([after, before]))
+        list(Segmentizer(messages))
 
 
 def test_same_point_same_time():
     msg1 = {'ssvid': 100, 'msgid' : 1, 'lat': 10, 'lon': 10, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
     msg2 = msg1.copy()
     msg2['msgid'] = 2
-    segments = list(Segmentizer([msg1, msg2]))
+    messages = [msg1, msg2]
+    messages = [utcify(x) for x in messages]
+    segments = list(Segmentizer(messages))
     assert len(segments) == 1
     for seg in segments:
         assert len(seg) == 1
@@ -37,7 +43,9 @@ def test_same_point_absurd_timedelta():
     msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': -90, 'lon': -90, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
     msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': -90, 'lon': -90,
             'timestamp': msg1['timestamp'] + timedelta(days=1000), 'course' : 1, 'speed': 1}
-    segments = list(Segmentizer([msg1, msg2]))
+    messages = [msg1, msg2]
+    messages = [utcify(x) for x in messages]
+    segments = list(Segmentizer(messages))
     assert len(segments) == 2
     for seg in segments:
         assert len(seg) == 1
@@ -46,7 +54,9 @@ def test_same_time_absurd_distance():
     t = datetime.now()
     msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': 0, 'lon': 0, 'timestamp': t, 'course' : 0, 'speed': 1}
     msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': 10, 'lon': 10, 'timestamp': t, 'course' : 1, 'speed': 1}
-    segments = list(Segmentizer([msg1, msg2]))
+    messages = [msg1, msg2]
+    messages = [utcify(x) for x in messages]
+    segments = list(Segmentizer(messages))
     assert len(segments) == 2
     for seg in segments:
         assert len(seg) == 1
@@ -70,7 +80,10 @@ def test_with_non_posit():
     msg6 = {'idx': 5, 'msgid': 6, 'ssvid': 1, 'lat': 65.00001, 'lon': 65.00001,
             'timestamp': msg4['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
 
-    segments = list(Segmentizer([msg1, msg2, msg3, msg4, msg5, msg6]))
+    messages = [msg1, msg2, msg3, msg4, msg5, msg6]
+    messages = [utcify(x) for x in messages]
+
+    segments = list(Segmentizer(messages))
     assert len(segments) == 4
     assert [len(seg) for seg in segments] == [1, 2, 1, 2]
 
@@ -85,6 +98,7 @@ def test_with_non_posit_first():
         {'ssvid': 1, 'msgid' : 3,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 1, 'speed': 1},
         {'ssvid': 1, 'msgid' : 4,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 2, 'speed': 1}
     ]
+    messages = [utcify(x) for x in messages]
 
     segs = list(Segmentizer(messages))
     assert len(segs) == 2
@@ -104,6 +118,7 @@ def test_first_message_out_of_bounds():
         {'ssvid': 1, 'msgid' : 3, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 2, 'speed': 1},
         {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 3, 'speed': 1}
     ]
+    messages = [utcify(x) for x in messages]
 
     output = list(Segmentizer(messages))
     assert len(output) == 2
@@ -133,6 +148,7 @@ def test_first_message_out_of_bounds_gt_24h():
         {'ssvid': 1, 'msgid' : 5, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 3), 'course' : 4, 'speed': 1},
         {'ssvid': 1, 'msgid' : 6, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 4), 'course' : 5, 'speed': 1}
     ]
+    messages = [utcify(x) for x in messages]
 
     segs = list(Segmentizer(messages))
     assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 1, 
@@ -152,6 +168,7 @@ def test_non_pos_first_followed_by_out_of_bounds():
         {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 3), 'course' : 2, 'speed': 1},
         {'ssvid': 1, 'msgid': 5, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 4), 'course' : 3, 'speed': 1}
     ]
+    messages = [utcify(x) for x in messages]
 
     segs = list(Segmentizer(messages))
     assert Counter([seg.__class__.__name__ for seg in segs]) == {'InfoSegment': 1, 'BadSegment': 1, 'Segment': 1}
@@ -165,6 +182,7 @@ def test_bad_message_in_stream():
         {'ssvid': 1, 'msgid': 3, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 2, 'speed': 1},
         {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 3, 'speed': 1}
     ]
+    messages = [utcify(x) for x in messages]
 
     # Should get one bad segment and one good segment
     bs, s = list(Segmentizer(messages))
@@ -181,9 +199,12 @@ def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
     messages1 = [
         {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
+    messages1 = [utcify(x) for x in messages1]
+
     messages2 = [
         {'ssvid': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 9, 1, 1, 1)}
     ]
+    messages2 = [utcify(x) for x in messages2]
 
     seg_states = [seg.state for seg in Segmentizer.from_seg_states(seg_states=[], instream=messages1)]
 
@@ -206,6 +227,7 @@ def test_duplicate_msgid():
         m['course'] += i
         msgs.append(m)
     msgs.append(msg2)
+    msgs = [utcify(x) for x in msgs]
     segments = list(Segmentizer(msgs))
     assert len(segments) == 1
     for seg in segments:
@@ -222,6 +244,7 @@ def test_duplicate_msgid_previ_day():
         m['course'] += i
         msgs.append(m)
     msgs.append(msg2)
+    msgs = [utcify(x) for x in msgs]
     segments = list(Segmentizer(msgs, prev_msgids=set([0])))
     assert len(segments) == 0
 
@@ -236,6 +259,7 @@ def test_duplicate_pos_prev_day():
         m['msgid'] += i
         msgs.append(m)
     msgs.append(msg2)
+    msgs = [utcify(x) for x in msgs]
     prev_locs = set([Segmentizer.normalize_location(
                         *Segmentizer.extract_location(msgs[0]))])
     segments = list(Segmentizer(msgs, prev_locations=prev_locs))
@@ -252,6 +276,7 @@ def test_duplicate_pos_msg():
         m['msgid'] += i
         msgs.append(m)
     msgs.append(msg2)
+    msgs = [utcify(x) for x in msgs]
     segments = list(Segmentizer(msgs))
     assert len(segments) == 1
     for seg in segments:
@@ -266,6 +291,7 @@ def test_duplicate_pos_msg_zero_speed():
         m['msgid'] += i
         msgs.append(m)
     msgs.append(msg2)
+    msgs = [utcify(x) for x in msgs]
     segments = list(Segmentizer(msgs))
     assert len(segments) == 1
     for seg in segments:
@@ -282,5 +308,6 @@ def test_duplicate_ts_multiple_segs():
         {'idx': 3, 'msgid': 3, 'ssvid': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
         {'idx': 4, 'msgid': 4, 'ssvid': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
     ]
+    messages = [utcify(x) for x in messages]
     segments = list(Segmentizer(messages))
     assert [{0, 2, 3, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]

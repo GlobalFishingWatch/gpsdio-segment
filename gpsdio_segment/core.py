@@ -76,8 +76,8 @@ DEFAULT_BUFFER_NM = 5.0
 DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
 DEFAULT_PENALTY_SPEED = 5.0
 DEFAULT_MAX_OPEN_SEGMENTS = 20
-DEFAULT_VERY_SLOW = 0.35
 
+VERY_SLOW = 0.35
 INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
@@ -119,7 +119,6 @@ class Segmentizer(object):
                  transponder_mismatch_weight=DEFAULT_TRANSPONDER_MISMATCH_WEIGHT,
                  penalty_speed=DEFAULT_PENALTY_SPEED,
                  max_open_segments=DEFAULT_MAX_OPEN_SEGMENTS,
-                 very_slow=DEFAULT_VERY_SLOW
                  ):
 
         """
@@ -182,9 +181,6 @@ class Segmentizer(object):
         max_open_segments : int, optional
             Maximum number of segments to keep open at one time. This is limited for performance
             reasons.
-        very_slow : float, optional
-            Speeds at or below this are considered slow enough that we allow courses over 360
-            (meaning not-available)
 
         """
         self.prev_msgids = prev_msgids if prev_msgids else set()
@@ -206,7 +202,6 @@ class Segmentizer(object):
         self.transponder_mismatch_weight = transponder_mismatch_weight
         self.penalty_speed = penalty_speed
         self.max_open_segments = max_open_segments
-        self.very_slow = very_slow
 
         # Exposed via properties
         self._instream = instream
@@ -286,7 +281,7 @@ class Segmentizer(object):
              -90.0 <= y <= 90.0 and
              course is not None and 
              speed is not None and
-             ((speed <= self.very_slow and course > 359.95) or
+             ((speed <= VERY_SLOW and course > 359.95) or
              0.0 <= course <= 359.95) and # 360 is invalid unless speed is very low.
              (speed < SAFE_SPEED or
              not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))):
@@ -321,14 +316,15 @@ class Segmentizer(object):
         ts2 = msg2['timestamp']
         return (ts1 - ts2).total_seconds() / 3600
 
-    def _compute_expected_position(self, msg, hours):
+    @classmethod
+    def _compute_expected_position(cls, msg, hours):
         epsilon = 1e-3
         x = msg['lon']
         y = msg['lat']
         speed = msg['speed']
         course = msg['course']
         if course > 359.95:
-            assert speed <= self.very_slow, (course, speed)
+            assert speed <= VERY_SLOW, (course, speed)
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
         dist = speed * hours 
@@ -575,12 +571,17 @@ class Segmentizer(object):
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
             if callsign is not None:
                 callsigns[callsign] = callsigns.get(callsign, 0) + 1
-            if imos is not None:
+            if imo is not None:
                 imos[imo] = imos.get(imo, 0) + 1
+
 
     def add_info(self, msg):
         ts = msg['timestamp']
-        k1 = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute)
+        # Using tzinfo as below is only stricly valid for UTC and naive time due to
+        # issues with DST (see http://pytz.sourceforge.net).
+        assert ts.tzinfo.zone == 'UTC'
+        k1 = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
+                                        tzinfo=ts.tzinfo)
         msg['shipnames'] = shipnames = {}
         msg['callsigns'] = callsigns = {}
         msg['imos'] = imos = {}

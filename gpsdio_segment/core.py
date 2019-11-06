@@ -274,6 +274,7 @@ class Segmentizer(object):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
+
     def _message_type(self, x, y, course, speed):
         def is_null(v):
             return (v is None) or math.isnan(v)
@@ -535,17 +536,18 @@ class Segmentizer(object):
                 round(speed * 10),
                 None if (heading is None) else round(heading))
 
-    def _prune_info(self, latest_time):
-        stale = set()
-        last_valid_ts = latest_time - datetime.timedelta(minutes=INFO_PING_INTERVAL_MINS)
-        for ts in self.cur_info:
-            if ts < last_valid_ts:
-                stale.add(ts)
-        for ts in stale:
-            self.cur_info.pop(ts)
+    # def _prune_info(self, latest_time):
+    #     stale = set()
+    #     last_valid_ts = latest_time - datetime.timedelta(minutes=INFO_PING_INTERVAL_MINS)
+    #     for ts in self.cur_info:
+    #         if ts < last_valid_ts:
+    #             stale.add(ts)
+    #     for ts in stale:
+    #         self.cur_info.pop(ts)
 
-    def store_info(self, msg):
-        self._prune_info(msg['timestamp'])
+    @classmethod
+    def store_info(cls, info, msg):
+        # self._prune_info(msg['timestamp'])
         shipname = msg.get('shipname')
         callsign = msg.get('callsign')
         imo = msg.get('imo')
@@ -558,17 +560,17 @@ class Segmentizer(object):
         ts = msg['timestamp']
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
-        assert ts.tzinfo is None or ts.tzinfo.zone == 'UTC'
+        assert ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
         k2 = (transponder_type, receiver_type)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
-            if k1 not in self.cur_info:
-                self.cur_info[k1] = {k2 : ({}, {}, {})}
-            elif k2 not in self.cur_info[k1]:
-                self.cur_info[k1][k2] = ({}, {}, {})
-            shipnames, callsigns, imos = self.cur_info[k1][k2]
+            if k1 not in info:
+                info[k1] = {k2 : ({}, {}, {})}
+            elif k2 not in info[k1]:
+                info[k1][k2] = ({}, {}, {})
+            shipnames, callsigns, imos = info[k1][k2]
             if shipname is not None:
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
             if callsign is not None:
@@ -627,8 +629,11 @@ class Segmentizer(object):
                               "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}").format(**locals()))
                 continue
 
+            # Type 19 messages, although rare, have both position and info, so 
+            # store any info in POSITION or INFO messages
+            self.store_info(self.cur_info, msg)
+
             if msg_type is INFO_MESSAGE:
-                self.store_info(msg)
                 yield self._create_segment(msg, cls=InfoSegment)
                 logger.debug("Skipping info message form ssvid: %s", msg['ssvid'])
                 continue

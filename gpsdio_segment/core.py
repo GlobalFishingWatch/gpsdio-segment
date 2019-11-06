@@ -556,6 +556,9 @@ class Segmentizer(object):
             return
         receiver_type = msg.get('receiver_type')
         ts = msg['timestamp']
+        # Using tzinfo as below is only stricly valid for UTC and naive time due to
+        # issues with DST (see http://pytz.sourceforge.net).
+        assert ts.tzinfo is None or ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
         k2 = (transponder_type, receiver_type)

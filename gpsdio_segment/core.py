@@ -32,7 +32,7 @@ import logging
 import datetime
 import math
 
-
+from gpsdio_segment.discrepancy import DiscrepancyCalculator
 from gpsdio_segment.segment import Segment, BadSegment, ClosedSegment
 from gpsdio_segment.segment import DiscardedSegment, InfoSegment
 
@@ -77,7 +77,6 @@ DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
 DEFAULT_PENALTY_SPEED = 5.0
 DEFAULT_MAX_OPEN_SEGMENTS = 20
 
-VERY_SLOW = 0.35
 INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
@@ -95,30 +94,34 @@ INFO_MESSAGE = object()
 BAD_MESSAGE = object()
 
 
-class Segmentizer(object):
+class Segmentizer(DiscrepancyCalculator):
 
     """
     Group positional messages into related segments based on speed and distance.
     """
 
-    def __init__(self, instream, ssvid=None, 
+    max_hours = 2.5 * 24 
+    penalty_hours = 1
+    hours_exp = 0.5
+    buffer_hours = 5 / 60
+    lookback = 5
+    lookback_factor = 1.2
+    max_knots = 25
+    ambiguity_factor = 10.0
+    short_seg_threshold = 10
+    short_seg_exp = 0.5
+    buffer_nm = 5.0
+    transponder_mismatch_weight = 0.1
+    penalty_speed = 5.0
+    max_open_segments = 20
+
+
+    def __init__(self, instream, 
+                 ssvid=None, 
                  prev_msgids=None, 
                  prev_locations=None,
                  prev_info=None,
-                 max_hours=DEFAULT_MAX_HOURS,
-                 penalty_hours=DEFAULT_PENALTY_HOURS, 
-                 buffer_hours=DEFAULT_BUFFER_HOURS,
-                 hours_exp=DEFAULT_HOURS_EXP,
-                 max_speed=DEFAULT_MAX_KNOTS, 
-                 lookback=DEFAULT_LOOKBACK,
-                 lookback_factor=DEFAULT_LOOKBACK_FACTOR,
-                 short_seg_threshold=DEFAULT_SHORT_SEG_THRESHOLD,
-                 short_seg_exp=DEFAULT_SHORT_SEG_EXP,
-                 shape_factor=DEFAULT_SHAPE_FACTOR,
-                 buffer_nm=DEFAULT_BUFFER_NM,
-                 transponder_mismatch_weight=DEFAULT_TRANSPONDER_MISMATCH_WEIGHT,
-                 penalty_speed=DEFAULT_PENALTY_SPEED,
-                 max_open_segments=DEFAULT_MAX_OPEN_SEGMENTS,
+                 **kwargs
                  ):
 
         """
@@ -155,7 +158,7 @@ class Segmentizer(object):
             Exponent used when computing the penalty hours correction.
         buffer_hours: float, optional
             Time between points is padded by this amount when computing metrics.
-        max_speed : int, optional
+        max_knots : int, optional
             Maximum speed allowed between points in nautical miles.
         lookback : int, optional
             Number of points to look backwards when matching segments.
@@ -167,7 +170,7 @@ class Segmentizer(object):
             Controls the scaling of short seg. 
         shape_factor : float, optional
             Controls how close we insist vessels to be along the path between their start
-            and the their extrapolated destination if not near there destination. Large
+            and the their extrapolated destination if not near their destination. Large
             shape factor means very close.
         buffer_nm : float, optional
             Distances closer than this are considered "very close" and speed is not enforced
@@ -188,20 +191,13 @@ class Segmentizer(object):
         self.prev_locations = prev_locations if prev_locations else set()
         self.cur_locations = {}
         self.cur_info = prev_info.copy() if prev_info else {}
-        self.max_hours = max_hours
-        self.penalty_hours = penalty_hours
-        self.hours_exp = hours_exp
-        self.max_speed = max_speed
-        self.buffer_hours = buffer_hours
-        self.lookback = lookback
-        self.lookback_factor = lookback_factor
-        self.short_seg_threshold = short_seg_threshold
-        self.short_seg_exp = short_seg_exp
-        self.shape_factor = shape_factor
-        self.buffer_nm = buffer_nm
-        self.transponder_mismatch_weight = transponder_mismatch_weight
-        self.penalty_speed = penalty_speed
-        self.max_open_segments = max_open_segments
+
+        for k in ['max_hours', 'penalty_hours', 'hours_exp', 'buffer_hours',
+                  'max_knots', 'lookback', 'lookback_factor', 
+                  'short_seg_threshold', 'short_seg_exp', 'shape_factor',
+                  'buffer_nm', 'transponder_mismatch_weight', 'penalty_speed',
+                  'max_open_segments']:
+            self._update(k, kwargs)
 
         # Exposed via properties
         self._instream = instream
@@ -210,11 +206,11 @@ class Segmentizer(object):
         self._segments = {}
         self._ssvid = ssvid
         self._prev_timestamp = None
-        self._discrepancy_alpha_0 = self.max_speed / self.penalty_speed
+        self._discrepancy_alpha_0 = self.max_knots / self.penalty_speed
 
     def __repr__(self):
-        return "<{cname}() max_speed={mspeed} max_hours={mhours} at {id_}>".format(
-            cname=self.__class__.__name__, mspeed=self.max_speed,
+        return "<{cname}() max_knots={mspeed} max_hours={mhours} at {id_}>".format(
+            cname=self.__class__.__name__, mspeed=self.max_knots,
             mhours=self.max_hours, id_=hash(self))
 
     @classmethod
@@ -281,7 +277,7 @@ class Segmentizer(object):
              -90.0 <= y <= 90.0 and
              course is not None and 
              speed is not None and
-             ((speed <= VERY_SLOW and course > 359.95) or
+             ((speed <= self.very_slow and course > 359.95) or
              0.0 <= course <= 359.95) and # 360 is invalid unless speed is very low.
              (speed < SAFE_SPEED or
              not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))):
@@ -311,97 +307,97 @@ class Segmentizer(object):
         self._segments[seg.id] = seg
 
 
-    def delta_hours(self, msg1, msg2):
-        ts1 = msg1['timestamp']
-        ts2 = msg2['timestamp']
-        return (ts1 - ts2).total_seconds() / 3600
+    # def delta_hours(self, msg1, msg2):
+    #     ts1 = msg1['timestamp']
+    #     ts2 = msg2['timestamp']
+    #     return (ts1 - ts2).total_seconds() / 3600
 
-    @classmethod
-    def _compute_expected_position(cls, msg, hours):
-        epsilon = 1e-3
-        x = msg['lon']
-        y = msg['lat']
-        speed = msg['speed']
-        course = msg['course']
-        if course > 359.95:
-            assert speed <= VERY_SLOW, (course, speed)
-            speed = 0
-        # Speed is in knots, so `dist` is in nautical miles (nm)
-        dist = speed * hours 
-        course = math.radians(90.0 - course)
-        deg_lat_per_nm = 1.0 / 60
-        deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
-        dx = math.cos(course) * dist * deg_lon_per_nm
-        dy = math.sin(course) * dist * deg_lat_per_nm
-        return x + dx, y + dy
+    # @classmethod
+    # def _compute_expected_position(cls, msg, hours):
+    #     epsilon = 1e-3
+    #     x = msg['lon']
+    #     y = msg['lat']
+    #     speed = msg['speed']
+    #     course = msg['course']
+    #     if course > 359.95:
+    #         assert speed <= cls.very_slow, (course, speed)
+    #         speed = 0
+    #     # Speed is in knots, so `dist` is in nautical miles (nm)
+    #     dist = speed * hours 
+    #     course = math.radians(90.0 - course)
+    #     deg_lat_per_nm = 1.0 / 60
+    #     deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
+    #     dx = math.cos(course) * dist * deg_lon_per_nm
+    #     dy = math.sin(course) * dist * deg_lat_per_nm
+    #     return x + dx, y + dy
 
-    def msg_diff_stats(self, msg1, msg2):
+    # def msg_diff_stats(self, msg1, msg2):
 
-        """
-        Compute the stats required to determine if two points are continuous.  Input
-        messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`, 
-        that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
+    #     """
+    #     Compute the stats required to determine if two points are continuous.  Input
+    #     messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`, 
+    #     that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
 
-        Returns
-        -------
-        dict
-        """
+    #     Returns
+    #     -------
+    #     dict
+    #     """
 
-        hours = self.delta_hours(msg2, msg1)
-        assert hours >= 0
+    #     # hours = self.delta_hours(msg2, msg1)
+    #     # assert hours >= 0
 
-        x1 = msg1['lon']
-        y1 = msg1['lat']
-        assert x1 is not None and y1 is not None
-        x2 = msg2.get('lon')
-        y2 = msg2.get('lat')
+    #     # x1 = msg1['lon']
+    #     # y1 = msg1['lat']
+    #     # assert x1 is not None and y1 is not None
+    #     # x2 = msg2.get('lon')
+    #     # y2 = msg2.get('lat')
 
-        if (x2 is None or y2 is None):
-            distance = None
-            speed = None
-            discrepancy = None
-        else:
-            x2p, y2p = self._compute_expected_position(msg1, hours)
-            x1p, y1p = self._compute_expected_position(msg2, -hours)
+    #     # if (x2 is None or y2 is None):
+    #     #     distance = None
+    #     #     speed = None
+    #     #     discrepancy = None
+    #     # else:
+    #     #     x2p, y2p = self._compute_expected_position(msg1, hours)
+    #     #     x1p, y1p = self._compute_expected_position(msg2, -hours)
 
-            def wrap(x):
-                return (x + 180) % 360 - 180
+    #     #     def wrap(x):
+    #     #         return (x + 180) % 360 - 180
 
-            nm_per_deg_lat = 60.0
-            y = 0.5 * (y1 + y2)
-            epsilon = 1e-3
-            nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
-            discrepancy1 = 0.5 * (
-                math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
-                           nm_per_deg_lat * (y1p - y1)) + 
-                math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
-                           nm_per_deg_lat * (y2p - y2)))
+    #     #     nm_per_deg_lat = 60.0
+    #     #     y = 0.5 * (y1 + y2)
+    #     #     epsilon = 1e-3
+    #     #     nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
+    #     #     discrepancy1 = 0.5 * (
+    #     #         math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
+    #     #                    nm_per_deg_lat * (y1p - y1)) + 
+    #     #         math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
+    #     #                    nm_per_deg_lat * (y2p - y2)))
 
-            # Vessel just stayed put
-            dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
-                              nm_per_deg_lon * wrap(x2 - x1))
-            discrepancy2 = dist * self.shape_factor
+    #     #     # Vessel just stayed put
+    #     #     dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
+    #     #                       nm_per_deg_lon * wrap(x2 - x1))
+    #     #     discrepancy2 = dist * self.shape_factor
 
-            # Distance perp to line
-            rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
-                                nm_per_deg_lon * wrap(x2 - x1))
-            delta21 = math.radians(90 - msg1['course']) - rads21
-            tangential21 = math.cos(delta21) * dist
-            if 0 < tangential21 <= msg1['speed'] * hours:
-                normal21 = abs(math.sin(delta21)) * dist
-            else:
-                normal21 = inf
-            delta12 = math.radians(90 - msg2['course']) - rads21 
-            tangential12 = math.cos(delta12) * dist
-            if 0 < tangential12 <= msg2['speed'] * hours:
-                normal12 = abs(math.sin(delta12)) * dist
-            else:
-                normal12 = inf
-            discrepancy3 = 0.5 * (normal12 + normal21) * self.shape_factor
+    #     #     # Distance perp to line
+    #     #     rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
+    #     #                         nm_per_deg_lon * wrap(x2 - x1))
+    #     #     delta21 = math.radians(90 - msg1['course']) - rads21
+    #     #     tangential21 = math.cos(delta21) * dist
+    #     #     if 0 < tangential21 <= msg1['speed'] * hours:
+    #     #         normal21 = abs(math.sin(delta21)) * dist
+    #     #     else:
+    #     #         normal21 = inf
+    #     #     delta12 = math.radians(90 - msg2['course']) - rads21 
+    #     #     tangential12 = math.cos(delta12) * dist
+    #     #     if 0 < tangential12 <= msg2['speed'] * hours:
+    #     #         normal12 = abs(math.sin(delta12)) * dist
+    #     #     else:
+    #     #         normal12 = inf
+    #     #     discrepancy3 = 0.5 * (normal12 + normal21) * self.shape_factor
 
-            discrepancy = min(discrepancy1, discrepancy2, discrepancy3)
+    #     #     discrepancy = min(discrepancy1, discrepancy2, discrepancy3)
 
-        return discrepancy, hours
+    #     return self.compute_discrepancy(msg1, msg2), self.compute_delta_hours(msg2, msg1)
 
 
     def _segment_match(self, segment, msg):
@@ -416,17 +412,19 @@ class Segmentizer(object):
         msgs_to_drop = []
         metric = 0
         transponder_types = set()
-        for cnd_msg in segment.get_all_reversed_msgs():
+        for prev_msg in segment.get_all_reversed_msgs():
             n -= 1
-            if cnd_msg.get('drop'):
+            if prev_msg.get('drop'):
                 continue
-            transponder_types |= self.transponder_types(cnd_msg)
-            candidates.append((metric, msgs_to_drop[:], self.msg_diff_stats(cnd_msg, msg)))
+            transponder_types |= self.transponder_types(prev_msg)
+            delta_hours = self.compute_msg_delta_hours(prev_msg, msg)
+            discrepancy = self.compute_discrepancy(prev_msg, msg)
+            candidates.append((metric, msgs_to_drop[:], discrepancy, delta_hours))
             if len(candidates) >= self.lookback or n < 0:
                 # This allows looking back 1 message into the previous batch of messages
                 break
-            msgs_to_drop.append(cnd_msg)
-            metric = cnd_msg.get('metric', 0)
+            msgs_to_drop.append(prev_msg)
+            metric = prev_msg.get('metric', 0)
 
         # Consider transponders matched if the transponder shows up in any of lookback items
         transponder_match = bool(transponder_types & self.transponder_types(msg))
@@ -434,7 +432,7 @@ class Segmentizer(object):
         assert len(candidates) > 0
 
         for lookback, match_info in enumerate(candidates):
-            existing_metric, msgs_to_drop, (discrepancy, hours) = match_info
+            existing_metric, msgs_to_drop, discrepancy, hours = match_info
             assert hours >= 0
             if hours > self.max_hours: 
                 # Too long has passed, we can't match this segment
@@ -443,7 +441,7 @@ class Segmentizer(object):
                 effective_hours = (math.hypot(hours, self.buffer_hours) / 
                                     (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)))
                 discrepancy = math.hypot(self.buffer_nm, discrepancy) - self.buffer_nm
-                max_allowed_discrepancy = effective_hours * self.max_speed
+                max_allowed_discrepancy = effective_hours * self.max_knots
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy 
                     metric = math.exp(-alpha ** 2) / effective_hours ** 2
@@ -622,6 +620,11 @@ class Segmentizer(object):
 
             x, y, course, speed, heading = self.extract_location(msg)
 
+            # Add empty info fields so they are always preset
+            msg['shipnames'] = {}
+            msg['callsigns'] = {}
+            msg['imos'] = {}
+
             msg_type = self._message_type(x, y, course, speed)
 
             if msg_type is BAD_MESSAGE:
@@ -656,7 +659,7 @@ class Segmentizer(object):
             else:
                 # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
-                    if (self.delta_hours(msg, segment.last_msg) > self.max_hours):
+                    if (self.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours):
                             for x in self.clean(self._segments.pop(segment.id), cls=ClosedSegment):
                                 yield x
 

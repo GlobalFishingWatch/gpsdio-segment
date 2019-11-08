@@ -54,30 +54,30 @@ POSITION_TYPES = {
 
 INFO_TYPES = {
     'AIS.5' : 'AIS-A',
-    'AIS.18' : 'AIS-B', 
-    'AIS.19' : 'AIS-B'
+    'AIS.19' : 'AIS-B', 
+    'AIS.24' : 'AIS-B'
     }
 
 
 
 # See Segmentizer() for more info
-DEFAULT_MAX_HOURS = 2.5 * 24 
-DEFAULT_PENALTY_HOURS = 1
-DEFAULT_HOURS_EXP = 0.5
-DEFAULT_BUFFER_HOURS = 5 / 60
-DEFAULT_LOOKBACK = 5
-DEFAULT_LOOKBACK_FACTOR = 1.2
-DEFAULT_MAX_KNOTS = 25
-DEFAULT_AMBIGUITY_FACTOR = 10.0
-DEFAULT_SHORT_SEG_THRESHOLD = 10
-DEFAULT_SHORT_SEG_EXP = 0.5
-DEFAULT_SHAPE_FACTOR = 4.0
-DEFAULT_BUFFER_NM = 5.0
-DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
-DEFAULT_PENALTY_SPEED = 5.0
-DEFAULT_MAX_OPEN_SEGMENTS = 20
+# DEFAULT_MAX_HOURS = 2.5 * 24 
+# DEFAULT_PENALTY_HOURS = 1
+# DEFAULT_HOURS_EXP = 0.5
+# DEFAULT_BUFFER_HOURS = 5 / 60
+# DEFAULT_LOOKBACK = 5
+# DEFAULT_LOOKBACK_FACTOR = 1.2
+# DEFAULT_MAX_KNOTS = 25
+# DEFAULT_AMBIGUITY_FACTOR = 10.0
+# DEFAULT_SHORT_SEG_THRESHOLD = 10
+# DEFAULT_SHORT_SEG_EXP = 0.5
+# DEFAULT_SHAPE_FACTOR = 4.0
+# DEFAULT_BUFFER_NM = 5.0
+# DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
+# DEFAULT_PENALTY_SPEED = 5.0
+# DEFAULT_MAX_OPEN_SEGMENTS = 20
 
-INFO_PING_INTERVAL_MINS = 6
+# INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -307,99 +307,6 @@ class Segmentizer(DiscrepancyCalculator):
         self._segments[seg.id] = seg
 
 
-    # def delta_hours(self, msg1, msg2):
-    #     ts1 = msg1['timestamp']
-    #     ts2 = msg2['timestamp']
-    #     return (ts1 - ts2).total_seconds() / 3600
-
-    # @classmethod
-    # def _compute_expected_position(cls, msg, hours):
-    #     epsilon = 1e-3
-    #     x = msg['lon']
-    #     y = msg['lat']
-    #     speed = msg['speed']
-    #     course = msg['course']
-    #     if course > 359.95:
-    #         assert speed <= cls.very_slow, (course, speed)
-    #         speed = 0
-    #     # Speed is in knots, so `dist` is in nautical miles (nm)
-    #     dist = speed * hours 
-    #     course = math.radians(90.0 - course)
-    #     deg_lat_per_nm = 1.0 / 60
-    #     deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)
-    #     dx = math.cos(course) * dist * deg_lon_per_nm
-    #     dy = math.sin(course) * dist * deg_lat_per_nm
-    #     return x + dx, y + dy
-
-    # def msg_diff_stats(self, msg1, msg2):
-
-    #     """
-    #     Compute the stats required to determine if two points are continuous.  Input
-    #     messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`, 
-    #     that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
-
-    #     Returns
-    #     -------
-    #     dict
-    #     """
-
-    #     # hours = self.delta_hours(msg2, msg1)
-    #     # assert hours >= 0
-
-    #     # x1 = msg1['lon']
-    #     # y1 = msg1['lat']
-    #     # assert x1 is not None and y1 is not None
-    #     # x2 = msg2.get('lon')
-    #     # y2 = msg2.get('lat')
-
-    #     # if (x2 is None or y2 is None):
-    #     #     distance = None
-    #     #     speed = None
-    #     #     discrepancy = None
-    #     # else:
-    #     #     x2p, y2p = self._compute_expected_position(msg1, hours)
-    #     #     x1p, y1p = self._compute_expected_position(msg2, -hours)
-
-    #     #     def wrap(x):
-    #     #         return (x + 180) % 360 - 180
-
-    #     #     nm_per_deg_lat = 60.0
-    #     #     y = 0.5 * (y1 + y2)
-    #     #     epsilon = 1e-3
-    #     #     nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
-    #     #     discrepancy1 = 0.5 * (
-    #     #         math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
-    #     #                    nm_per_deg_lat * (y1p - y1)) + 
-    #     #         math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
-    #     #                    nm_per_deg_lat * (y2p - y2)))
-
-    #     #     # Vessel just stayed put
-    #     #     dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
-    #     #                       nm_per_deg_lon * wrap(x2 - x1))
-    #     #     discrepancy2 = dist * self.shape_factor
-
-    #     #     # Distance perp to line
-    #     #     rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
-    #     #                         nm_per_deg_lon * wrap(x2 - x1))
-    #     #     delta21 = math.radians(90 - msg1['course']) - rads21
-    #     #     tangential21 = math.cos(delta21) * dist
-    #     #     if 0 < tangential21 <= msg1['speed'] * hours:
-    #     #         normal21 = abs(math.sin(delta21)) * dist
-    #     #     else:
-    #     #         normal21 = inf
-    #     #     delta12 = math.radians(90 - msg2['course']) - rads21 
-    #     #     tangential12 = math.cos(delta12) * dist
-    #     #     if 0 < tangential12 <= msg2['speed'] * hours:
-    #     #         normal12 = abs(math.sin(delta12)) * dist
-    #     #     else:
-    #     #         normal12 = inf
-    #     #     discrepancy3 = 0.5 * (normal12 + normal21) * self.shape_factor
-
-    #     #     discrepancy = min(discrepancy1, discrepancy2, discrepancy3)
-
-    #     return self.compute_discrepancy(msg1, msg2), self.compute_delta_hours(msg2, msg1)
-
-
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
                  'msgs_to_drop' : [],
@@ -528,7 +435,7 @@ class Segmentizer(DiscrepancyCalculator):
                 round(lon * 60000),
                 round(course * 10),
                 round(speed * 10),
-                None if (heading is None) else round(heading))
+                None if (heading is None or math.isnan(heading)) else round(heading))
 
     # def _prune_info(self, latest_time):
     #     stale = set()
@@ -551,13 +458,15 @@ class Segmentizer(DiscrepancyCalculator):
         if not transponder_type:
             return
         receiver_type = msg.get('receiver_type')
+        source = msg.get('source')
+        receiver = msg.get('receiver')
         ts = msg['timestamp']
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
         assert ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
-        k2 = (transponder_type, receiver_type)
+        k2 = (transponder_type, receiver_type, source, receiver)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
@@ -589,7 +498,9 @@ class Segmentizer(DiscrepancyCalculator):
         if k1 in self.cur_info:
             for transponder_type in POSITION_TYPES.get(msg.get('type'), ()):
                 receiver_type = msg.get('receiver_type')
-                k2 = (transponder_type, receiver_type)
+                source = msg.get('source')
+                receiver = msg.get('receiver')
+                k2 = (transponder_type, receiver_type, source, receiver)
                 if k2 in self.cur_info[k1]:
                     names, signs, nums = self.cur_info[k1][k2]
                     updatesum(shipnames, names)

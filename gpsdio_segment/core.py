@@ -58,26 +58,7 @@ INFO_TYPES = {
     'AIS.24' : 'AIS-B'
     }
 
-
-
-# See Segmentizer() for more info
-# DEFAULT_MAX_HOURS = 2.5 * 24 
-# DEFAULT_PENALTY_HOURS = 1
-# DEFAULT_HOURS_EXP = 0.5
-# DEFAULT_BUFFER_HOURS = 5 / 60
-# DEFAULT_LOOKBACK = 5
-# DEFAULT_LOOKBACK_FACTOR = 1.2
-# DEFAULT_MAX_KNOTS = 25
-# DEFAULT_AMBIGUITY_FACTOR = 10.0
-# DEFAULT_SHORT_SEG_THRESHOLD = 10
-# DEFAULT_SHORT_SEG_EXP = 0.5
-# DEFAULT_SHAPE_FACTOR = 4.0
-# DEFAULT_BUFFER_NM = 5.0
-# DEFAULT_TRANSPONDER_MISMATCH_WEIGHT = 0.1
-# DEFAULT_PENALTY_SPEED = 5.0
-# DEFAULT_MAX_OPEN_SEGMENTS = 20
-
-# INFO_PING_INTERVAL_MINS = 6
+INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -312,6 +293,10 @@ class Segmentizer(DiscrepancyCalculator):
                  'msgs_to_drop' : [],
                  'metric' : None}
 
+        # TODO:
+        # Type 27 messages have low spatial resolution, but are received better in low
+        # coverage areas. We want to remove them when they would impact the track.
+
         # Get the stats for the last `lookback` positional messages
         candidates = []
 
@@ -394,7 +379,7 @@ class Segmentizer(DiscrepancyCalculator):
             best_metric, best_match = metric_match_pairs[0]
             close_matches = [best_match]
             for metric, match in metric_match_pairs[1:]:
-                if metric * DEFAULT_AMBIGUITY_FACTOR >= best_metric:
+                if metric * self.ambiguity_factor >= best_metric:
                     close_matches.append(match)
             if len(close_matches) > 1:
                 logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))
@@ -437,21 +422,14 @@ class Segmentizer(DiscrepancyCalculator):
                 round(speed * 10),
                 None if (heading is None or math.isnan(heading)) else round(heading))
 
-    # def _prune_info(self, latest_time):
-    #     stale = set()
-    #     last_valid_ts = latest_time - datetime.timedelta(minutes=INFO_PING_INTERVAL_MINS)
-    #     for ts in self.cur_info:
-    #         if ts < last_valid_ts:
-    #             stale.add(ts)
-    #     for ts in stale:
-    #         self.cur_info.pop(ts)
-
     @classmethod
     def store_info(cls, info, msg):
-        # self._prune_info(msg['timestamp'])
         shipname = msg.get('shipname')
         callsign = msg.get('callsign')
         imo = msg.get('imo')
+        n_shipname = msg.get('n_shipname')
+        n_callsign = msg.get('n_callsign')
+        n_imo = msg.get('n_imo')
         if shipname is None and callsign is None and imo is None:
             return
         transponder_type = INFO_TYPES.get(msg.get('type'))
@@ -470,17 +448,19 @@ class Segmentizer(DiscrepancyCalculator):
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
-                info[k1] = {k2 : ({}, {}, {})}
+                info[k1] = {k2 : ({}, {}, {}, {}, {}, {})}
             elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {})
-            shipnames, callsigns, imos = info[k1][k2]
+                info[k1][k2] = ({}, {}, {}, {}, {}, {})
+            shipnames, callsigns, imos, n_shipnames, n_callsigns, n_imos = info[k1][k2]
             if shipname is not None:
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
+                n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
             if callsign is not None:
                 callsigns[callsign] = callsigns.get(callsign, 0) + 1
+                n_callsigns[n_callsign] = callsigns.get(n_callsign, 0) + 1
             if imo is not None:
                 imos[imo] = imos.get(imo, 0) + 1
-
+                n_imos[n_imo] = imos.get(n_imo, 0) + 1
 
     def add_info(self, msg):
         ts = msg['timestamp']
@@ -492,6 +472,9 @@ class Segmentizer(DiscrepancyCalculator):
         msg['shipnames'] = shipnames = {}
         msg['callsigns'] = callsigns = {}
         msg['imos'] = imos = {}
+        msg['n_shipnames'] = n_shipnames = {}
+        msg['n_callsigns'] = n_callsigns = {}
+        msg['n_imos'] = n_imos = {}
         def updatesum(orig, new):
             for k, v in new.items():
                 orig[k] = orig.get(k, 0) + v
@@ -502,13 +485,22 @@ class Segmentizer(DiscrepancyCalculator):
                 receiver = msg.get('receiver')
                 k2 = (transponder_type, receiver_type, source, receiver)
                 if k2 in self.cur_info[k1]:
-                    names, signs, nums = self.cur_info[k1][k2]
+                    names, signs, nums, n_names, n_signs, n_nums = self.cur_info[k1][k2]
                     updatesum(shipnames, names)
                     updatesum(callsigns, signs)
                     updatesum(imos, nums)
+                    updatesum(n_shipnames, n_names)
+                    updatesum(n_callsigns, n_signs)
+                    updatesum(n_imos, n_nums)
+
 
     def process(self):
         for msg in self.instream:
+            # Add empty info fields so they are always preset
+            msg['shipnames'] = {}
+            msg['callsigns'] = {}
+            msg['imos'] = {}
+            
             timestamp = msg.get('timestamp')
             if timestamp is None:
                 raise ValueError("Message missing timestamp") 
@@ -531,10 +523,6 @@ class Segmentizer(DiscrepancyCalculator):
 
             x, y, course, speed, heading = self.extract_location(msg)
 
-            # Add empty info fields so they are always preset
-            msg['shipnames'] = {}
-            msg['callsigns'] = {}
-            msg['imos'] = {}
 
             msg_type = self._message_type(x, y, course, speed)
 

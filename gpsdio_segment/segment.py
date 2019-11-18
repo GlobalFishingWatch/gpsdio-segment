@@ -8,7 +8,7 @@ logger.setLevel(logging.INFO)
 
 
 SegmentState = namedtuple('SegmentState', 
-    ['id', 'ssvid', 'first_msg', 'last_msg', 'msg_count', 'noise', 'closed'])
+    ['id', 'ssvid', 'first_msg', 'last_msg', 'msg_count', 'noise', 'closed', 'opaque'])
 
 
 class Segment(object):
@@ -94,8 +94,16 @@ class Segment(object):
                             closed = self.closed, 
                             first_msg = self.first_msg,
                             last_msg = self.last_msg, 
-                            msg_count = self.msg_count)
+                            msg_count = self.msg_count,
+                            opaque = self.opaque)
 
+
+    @property
+    def opaque(self):
+        if self.prev_state:
+            return self.prev_state.opaque
+        else:
+            return {}    
 
     @property
     def msg_count(self):

@@ -44,26 +44,6 @@ class Stitcher(DiscrepancyCalculator):
                 id_map[seg['seg_id']] = track_id
         for msg in msgs:
             msg['track_id'] = id_map.get(msg['seg_id'], None)
-    
-    # @staticmethod
-    # def _extract_sig_part(msgs, inner_key, outer_key):
-    #     counter = Counter()
-    #     for m in msgs:
-    #         for x in m[outer_key]:
-    #             counter.update({x[inner_key] : x['cnt']})
-    #     counted = counter.most_common(5)
-    #     total = sum(count for (name, count) in counted)
-    #     return dict([(name, count / total) for (name, count) in counted]), total
-
-    # @staticmethod
-    # def _update_sig_part(counters, msg, inner_key, outer):
-    #     seg_id = msg['seg_id']
-    #     if seg_id not in counters:
-    #         counters[seg_id] = Counter()
-    #     counter = counters[seg_id]
-    #     for x in msg[outer_key]:
-    #         counter.update({x[inner_key] : x['cnt']})
-    
 
     def _compute_signatures(self, segs):
         def get_sig(seg):
@@ -78,66 +58,19 @@ class Stitcher(DiscrepancyCalculator):
             sid = seg['seg_id']
             signatures[sid] = get_sig(seg)
         return signatures
-    # def _compute_signatures(self, msgs, segs):
-    #     msgs_by_seg = {}
-    #     for msg in msgs:
-    #         seg_id = msg['seg_id']
-    #         if seg_id is None:
-    #             continue
-    #         if seg_id not in msgs_by_seg:
-    #             msgs_by_seg[seg_id] = []
-    #         msgs_by_seg[seg_id].append(msg)
-    #     signatures = {}
-    #     sig_counts = {}
-    #     eroded_ends = {}
-    #     for sid in msgs_by_seg:
-    #         seg_msgs = msgs_by_seg[sid]
-    #         # Compute eroded ends that ignore ends of segments in case there are a few bad points
-    #         n = int(min(len(seg_msgs) *  self.max_overlap_fraction, self.max_overlap_points))
-    #         eroded_ends[sid] = (seg_msgs[n]['timestamp'], seg_msgs[-(1 + n)]['timestamp'])
-    #         a_types = set(['AIS.1', 'AIS.2', 'AIS.3'])
-    #         b_types = set(['AIS.18', 'AIS.19'])
-    #         ab_types = a_types | b_types
-    #         a_cnt = b_cnt = tp_count = 0
-    #         for msg in seg_msgs:
-    #             a_cnt += msg['type'] in a_types
-    #             b_cnt += msg['type'] in b_types
-    #             tp_count += msg['type'] in ab_types
-    #         if tp_count == 0:
-    #             tp_type = {'is_A' : 0.5, 'is_B' : 0.5}
-    #         else:
-    #             tp_type = {'is_A' : a_cnt / tp_count, 'is_B' : b_cnt / tp_count}
-    #         shipname, sn_count = self._extract_sig_part(seg_msgs, 'shipname', 'shipnames')
-    #         callsign, cs_count = self._extract_sig_part(seg_msgs, 'callsign', 'callsigns')
-    #         imo, imo_count = self._extract_sig_part(seg_msgs, 'imo', 'imos')
-    #         signatures[sid] = (tp_type, shipname, callsign, imo)
-    #         sig_counts[sid] = (tp_count, sn_count, cs_count, imo_count)
-    #     return signatures, sig_counts, eroded_ends
     
     def filter_and_sort(self, segs):
         segs = [seg for seg in segs if seg['seg_id'] is not None 
                                and seg['message_count'] >= self.min_seg_size]
-        segs.sort(key=lambda x: x['first_timestamp'])
+        segs.sort(key=lambda x: x['first_msg_timestamp'])
         return segs
     
     def compute_signature_metric(self, signatures, seg1, seg2):
         sig1 = signatures[seg1['seg_id']]
         sig2 = signatures[seg2['seg_id']]
 
-        # TODO: match should treat / B signature differently than others since that should 
-        # Almost always be present, and is 50/50 so is a much weaker signal. Primarily a negative
-        # signal if A / B mismatch then it's likely different tracks, but if they do then who knows
-        
-        # TODO: leverage wts to return weight that influences how seriously we take this. Note note
-        #       about A/B above too.
         match = []
         for a, b in zip(sig1, sig2):
-            # TODO: If a metric is present in one and not the other, it's not a definitive signal
-            # since short segments may not get any identity messages (sometimes only type 27 are
-            # received.) So, we want to consider 3 cases:
-            # 1. No data present in one or both sigs: return self.min_sig_match (rare)
-            # 2. Only A/B data in one or both sigs: return min(sig_metric, self.min_sig_match)
-            # 3. General case.
             if len(a) and len(b):
                 x = 0
                 ta = 0 
@@ -186,8 +119,8 @@ class Stitcher(DiscrepancyCalculator):
             best_metric = 0
             for track in tracks:
                 tgt = track[-1]
-                seg_t0, seg_t1 = seg['first_timestamp'], seg['last_timestamp']
-                tgt_t0, tgt_t1 = tgt['first_timestamp'], tgt['last_timestamp']
+                seg_t0, seg_t1 = seg['first_msg_timestamp'], seg['last_msg_timestamp']
+                tgt_t0, tgt_t1 = tgt['first_msg_timestamp'], tgt['last_msg_timestamp']
                 delta_hours = self.compute_ts_delta_hours(tgt_t1, seg_t0)
                 dt1 = self.compute_ts_delta_hours(seg_t0, seg_t1)
                 dt2 = self.compute_ts_delta_hours(tgt_t0, tgt_t1)
@@ -213,14 +146,13 @@ class Stitcher(DiscrepancyCalculator):
                     continue
                 # print('succesful match', laxity, sig_metric, self.min_sig_match)
 
-
-                msg0 = {'timestamp' : tgt['last_timestamp'], 
-                        'lat' : tgt['last_lat'], 'lon' : tgt['last_lon'],
-                        'speed' : tgt['last_speed'], 'course' : tgt['last_course']}
-                msg1 = {'timestamp' : seg['first_timestamp'], 
-                        'lat' : seg['first_lat'], 'lon' : seg['first_lon'],
-                        'speed' : seg['first_speed'], 'course' : seg['first_course']}
-                if tgt['last_timestamp'] > seg['first_timestamp']:
+                msg0 = {'timestamp' : tgt['last_msg_timestamp'], 
+                        'lat' : tgt['last_msg_lat'], 'lon' : tgt['last_msg_lon'],
+                        'speed' : tgt['last_msg_speed'], 'course' : tgt['last_msg_course']}
+                msg1 = {'timestamp' : seg['first_msg_timestamp'], 
+                        'lat' : seg['first_msg_lat'], 'lon' : seg['first_msg_lon'],
+                        'speed' : seg['first_msg_speed'], 'course' : seg['first_msg_course']}
+                if tgt['last_msg_timestamp'] > seg['first_msg_timestamp']:
                     # Segments overlap so flip the messages to keep time positive
                     msg0, msg1 = msg1, msg0
 

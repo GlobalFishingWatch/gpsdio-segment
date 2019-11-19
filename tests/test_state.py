@@ -11,7 +11,7 @@ def test_SegmentState():
     s = SegmentState(id='ABC', ssvid='123456789', 
         first_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
         last_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
-        msg_count=1, noise=False, closed=False)
+        msg_count=1, noise=False, closed=False, opaque={})
     assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 

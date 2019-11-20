@@ -52,7 +52,7 @@ class DiscrepancyCalculator(object):
         dy = math.sin(course) * dist * deg_lat_per_nm
         return x + dx, y + dy
 
-    def compute_discrepancy(self, msg1, msg2):
+    def compute_discrepancy(self, msg1, msg2, hours=None):
 
         """
         Compute the stats required to determine if two points are continuous.  Input
@@ -64,7 +64,8 @@ class DiscrepancyCalculator(object):
         dict
         """
 
-        hours = self.compute_msg_delta_hours(msg1, msg2)
+        if hours is None:
+            hours = self.compute_msg_delta_hours(msg1, msg2,)
         assert hours >= 0
 
         x1 = msg1['lon']

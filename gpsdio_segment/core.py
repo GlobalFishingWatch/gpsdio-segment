@@ -82,16 +82,15 @@ class Segmentizer(DiscrepancyCalculator):
     """
 
     max_hours = 2.5 * 24 
-    penalty_hours = 1
+    penalty_hours = 6
     hours_exp = 0.5
     buffer_hours = 0.25
     lookback = 5
-    lookback_factor = 100.0
-    max_knots = 40
-    ambiguity_factor = 10.0
+    lookback_factor = 2
+    max_knots = 25
+    ambiguity_factor = 2.0
     short_seg_threshold = 10
     short_seg_exp = 0.5
-    buffer_nm = 30.0
     transponder_mismatch_weight = 0.1
     penalty_speed = 5.0
     max_open_segments = 20
@@ -153,9 +152,6 @@ class Segmentizer(DiscrepancyCalculator):
             Controls how close we insist vessels to be along the path between their start
             and the their extrapolated destination if not near their destination. Large
             shape factor means very close.
-        buffer_nm : float, optional
-            Distances closer than this are considered "very close" and speed is not enforced
-            as rigorously.
         transponder_mismatch_weight : float, optional
             Weight to multiply messages by that have a different transponder type than the
             segment we want to match to. Should be between 0 and 1.
@@ -176,7 +172,7 @@ class Segmentizer(DiscrepancyCalculator):
         for k in ['max_hours', 'penalty_hours', 'hours_exp', 'buffer_hours',
                   'max_knots', 'lookback', 'lookback_factor', 
                   'short_seg_threshold', 'short_seg_exp', 'shape_factor',
-                  'buffer_nm', 'transponder_mismatch_weight', 'penalty_speed',
+                  'transponder_mismatch_weight', 'penalty_speed',
                   'max_open_segments']:
             self._update(k, kwargs)
 
@@ -309,9 +305,10 @@ class Segmentizer(DiscrepancyCalculator):
             if prev_msg.get('drop'):
                 continue
             transponder_types |= self.transponder_types(prev_msg)
-            delta_hours = self.compute_msg_delta_hours(prev_msg, msg)
-            discrepancy = self.compute_discrepancy(prev_msg, msg)
-            candidates.append((metric, msgs_to_drop[:], discrepancy, delta_hours))
+            hours = self.compute_msg_delta_hours(prev_msg, msg)
+            penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
+            discrepancy = self.compute_discrepancy(prev_msg, msg, penalized_hours)
+            candidates.append((metric, msgs_to_drop[:], discrepancy, hours))
             if len(candidates) >= self.lookback or n < 0:
                 # This allows looking back 1 message into the previous batch of messages
                 break
@@ -330,13 +327,11 @@ class Segmentizer(DiscrepancyCalculator):
                 # Too long has passed, we can't match this segment
                 break
             else:
-                effective_hours = (math.hypot(hours, self.buffer_hours) / 
-                                    (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)))
-                discrepancy = math.hypot(self.buffer_nm, discrepancy) - self.buffer_nm
-                max_allowed_discrepancy = effective_hours * self.max_knots
+                padded_hours = math.hypot(hours, self.buffer_hours)
+                max_allowed_discrepancy = padded_hours * self.max_knots
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy 
-                    metric = math.exp(-alpha ** 2) / effective_hours ** 2
+                    metric = math.exp(-alpha ** 2) / padded_hours ** 2
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
                     metric = metric / max(1, lookback * self.lookback_factor) 

@@ -17,7 +17,6 @@ class Stitcher(DiscrepancyCalculator):
     # hours_exp = 2.0
     buffer_hours = 1.0
     max_overlap_hours = 1
-    max_overlap_points = 3
     max_overlap_fraction = 0.1
     speed_0 = 12.5
     min_sig_match = 0.2
@@ -74,19 +73,20 @@ class Stitcher(DiscrepancyCalculator):
         match = []
         for a, b in zip(sig1, sig2):
             if len(a) and len(b):
-                x = 0
-                ta = 0 
-                tb = 0
                 na = sum(a.values())
                 nb = sum(b.values())
-                for k in set(a) & set(b):
-                    va = a[k] / na
-                    vb = b[k] / nb
-                    x += va * vb
-                    ta += va ** 2
-                    tb += vb ** 2
-                wt = math.sqrt(ta * tb) + 1e-10
-                match.append((x, wt))
+                if na and nb:
+                    x = 0
+                    ta = 0 
+                    tb = 0
+                    for k in set(a) & set(b):
+                        va = a[k] / na
+                        vb = b[k] / nb
+                        x += va * vb
+                        ta += va ** 2
+                        tb += vb ** 2
+                    wt = math.sqrt(ta * tb) + 1e-10
+                    match.append((x, wt))
         # print('>>>>')
         # print(sig1)
         # print(sig2)
@@ -122,7 +122,7 @@ class Stitcher(DiscrepancyCalculator):
             for track in tracks:
                 tgt = track[-1]
                 seg_t0, seg_t1 = seg['first_msg_timestamp'], seg['last_msg_timestamp']
-                tgt_t0, tgt_t1 = tgt['first_msg_timestamp'], tgt['last_msg_timestamp']
+                tgt_t0, tgt_t1 = track[0]['first_msg_timestamp'], tgt['last_msg_timestamp']
                 delta_hours = self.compute_ts_delta_hours(tgt_t1, seg_t0)
                 dt1 = self.compute_ts_delta_hours(seg_t0, seg_t1)
                 dt2 = self.compute_ts_delta_hours(tgt_t0, tgt_t1)

@@ -9,8 +9,8 @@ class Stitcher(DiscrepancyCalculator):
     """Stitch segments together into coherent tracks.
     """
     
-    min_seed_size = 20 # minimum segment size to start a track
-    min_seg_size = 10 # segments shorter than this are dropped
+    min_seed_size = 10 # minimum segment size to start a track
+    min_seg_size = 5 # segments shorter than this are dropped
     max_average_knots = 25 # fastest speed we allow when connecting segments
     # min_dist = 10 * 0.1 # uncertainty due to type 27 messages
     penalty_hours = 1
@@ -59,10 +59,12 @@ class Stitcher(DiscrepancyCalculator):
             signatures[sid] = get_sig(seg)
         return signatures
     
-    def filter_and_sort(self, segs):
+    def uniquify_filter_and_sort(self, segs, min_seg_size=1):
         segs = [seg for seg in segs if seg['seg_id'] is not None 
-                               and seg['message_count'] >= self.min_seg_size]
-        segs.sort(key=lambda x: x['first_msg_timestamp'])
+                               and seg['message_count'] >= min_seg_size]
+        segs.sort(key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
+        segsmap = {x['seg_id'] : x for x in segs}
+        segs = sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
         return segs
     
     def compute_signature_metric(self, signatures, seg1, seg2):
@@ -108,7 +110,7 @@ class Stitcher(DiscrepancyCalculator):
 
     
     def create_tracks(self, segs):
-        segs = self.filter_and_sort(segs)
+        segs = self.uniquify_filter_and_sort(segs, self.min_seg_size)
         signatures = self._compute_signatures(segs)
         # Build up tracks, joining to most reasonable segment (speed needed to join not crazy)
         tracks = []

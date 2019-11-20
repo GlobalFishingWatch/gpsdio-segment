@@ -84,14 +84,14 @@ class Segmentizer(DiscrepancyCalculator):
     max_hours = 2.5 * 24 
     penalty_hours = 1
     hours_exp = 0.5
-    buffer_hours = 5 / 60
+    buffer_hours = 0.25
     lookback = 5
-    lookback_factor = 1.2
-    max_knots = 25
+    lookback_factor = 100.0
+    max_knots = 40
     ambiguity_factor = 10.0
     short_seg_threshold = 10
     short_seg_exp = 0.5
-    buffer_nm = 5.0
+    buffer_nm = 30.0
     transponder_mismatch_weight = 0.1
     penalty_speed = 5.0
     max_open_segments = 20
@@ -339,7 +339,7 @@ class Segmentizer(DiscrepancyCalculator):
                     metric = math.exp(-alpha ** 2) / effective_hours ** 2
                     # Scale the metric using the lookback factor so that it only
                     # matches to points further in the past if they are noticeably better
-                    metric = metric * self.lookback_factor ** -lookback 
+                    metric = metric / max(1, lookback * self.lookback_factor) 
                     # Down weight cases where transceiver types don't match.
                     if not transponder_match:
                         metric *= self.transponder_mismatch_weight
@@ -500,7 +500,7 @@ class Segmentizer(DiscrepancyCalculator):
             msg['shipnames'] = {}
             msg['callsigns'] = {}
             msg['imos'] = {}
-            
+
             timestamp = msg.get('timestamp')
             if timestamp is None:
                 raise ValueError("Message missing timestamp") 

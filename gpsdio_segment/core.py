@@ -82,16 +82,16 @@ class Segmentizer(DiscrepancyCalculator):
     """
 
     max_hours = 36
-    penalty_hours = 6
+    penalty_hours = 8
     hours_exp = 0.5
-    buffer_hours = 0.25
+    buffer_hours = 0.5
     lookback = 5
-    lookback_factor = 1.2
-    max_knots = 20 
-    ambiguity_factor = 2.0
+    lookback_factor = 2.0
+    max_knots = 10
+    ambiguity_factor = 5.0
     short_seg_threshold = 10
     transponder_mismatch_weight = 0.1
-    penalty_speed = 5.0
+    penalty_speed = 1.0
     max_open_segments = 20
     min_type_27_hours = 1.0
 
@@ -301,9 +301,9 @@ class Segmentizer(DiscrepancyCalculator):
                 continue
             transponder_types |= self.transponder_types(prev_msg)
             hours = self.compute_msg_delta_hours(prev_msg, msg)
-            penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
+            penalized_hours = hours / math.hypot(1, hours / self.penalty_hours)
             discrepancy = self.compute_discrepancy(prev_msg, msg, penalized_hours)
-            candidates.append((metric, msgs_to_drop[:], discrepancy, hours))
+            candidates.append((metric, msgs_to_drop[:], discrepancy, hours, penalized_hours))
             if len(candidates) >= self.lookback or n < 0:
                 # This allows looking back 1 message into the previous batch of messages
                 break
@@ -316,24 +316,23 @@ class Segmentizer(DiscrepancyCalculator):
         assert len(candidates) > 0
 
         for lookback, match_info in enumerate(candidates):
-            existing_metric, msgs_to_drop, discrepancy, hours = match_info
+            existing_metric, msgs_to_drop, discrepancy, hours, penalized_hours = match_info
             assert hours >= 0
             if hours > self.max_hours: 
                 # Too long has passed, we can't match this segment
                 break
             else:
-                padded_hours = math.hypot(hours, self.buffer_hours)
+                padded_hours = math.hypot(penalized_hours, self.buffer_hours)
                 max_allowed_discrepancy = padded_hours * self.max_knots
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy 
-                    metric = math.exp(-alpha ** 2) / padded_hours ** 2
-                    # Scale the metric using the lookback factor so that it only
-                    # matches to points further in the past if they are noticeably better
-                    metric = metric / max(1, lookback * self.lookback_factor) 
+                    metric = math.exp(-alpha ** 2) #/ padded_hours ** 2
                     # Down weight cases where transceiver types don't match.
                     if not transponder_match:
                         metric *= self.transponder_mismatch_weight
-                    if metric <= existing_metric:
+                    # Scale the existing metric using the lookback factor so that we only
+                    # matches to points further in the past if they are noticeably better
+                    if metric <= existing_metric * max(1, lookback * self.lookback_factor):
                         # Don't make existing segment worse
                         continue
                     if match['metric'] is None or metric > match['metric']:

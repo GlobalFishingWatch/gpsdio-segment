@@ -7,7 +7,7 @@ import math
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-log = logger.warning
+log = logger.debug
 
 
 from .discrepancy import DiscrepancyCalculator
@@ -26,12 +26,12 @@ class Stitcher(DiscrepancyCalculator):
     max_overlap_factor = 0.8
     duration_weight = 0.1
     overlap_weight = 1.0
-    speed_0 = 5
-    min_sig_match = -0.3
-    # penalty_tracks = 4 # for more than this number of tracks become more strict
-    #                     # todo: possibly only apply when multiple tracks.
-    #                     # todo: possibly factor size in somehow
-    #                     # penalty_hours = 12
+    speed_0 = 12.5
+    min_sig_match = 0.0
+    penalty_tracks = 4 # for more than this number of tracks become more strict
+                        # todo: possibly only apply when multiple tracks.
+                        # todo: possibly factor size in somehow
+                        # penalty_hours = 12
     base_hour_penalty = 1.5
     no_id_hour_penalty = 2.0 # be more strict for tracks with no id info joining them across long times
     speed_weight = 0.1
@@ -126,7 +126,7 @@ class Stitcher(DiscrepancyCalculator):
             # specificity and badness, then we multiply by weight to
             # get back the correct match value. There may be a cleaner
             # approach.
-            return min(match), True
+            return sum(match) / len(match), True
 
     
     def create_tracks(self, segs):
@@ -159,19 +159,16 @@ class Stitcher(DiscrepancyCalculator):
                 if delta_hours + max_overlap_hours <= 0:
                     continue 
 
-                # laxity = (1 if (len(tracks) < self.penalty_tracks) else 
-                #         math.sqrt(2) / math.hypot(1, len(tracks)/self.penalty_tracks))
+                laxity = (1 if (len(tracks) < self.penalty_tracks) else 
+                        math.sqrt(2) / math.hypot(1, len(tracks)/self.penalty_tracks))
 
 
                 # print('sig_metric', sig_metric)
                 
-                hours_exp = sig_metric / self.base_hour_penalty 
-                #if had_match else 1.0 / self.no_id_hour_penalty
+                hours_exp = 1.0 / self.base_hour_penalty if had_match else 1.0 / self.no_id_hour_penalty
         
                 
-                # TODO: fix no longer works with -1 to 1 sig_metric
-                # if laxity * sig_metric < self.min_sig_match:               
-                if sig_metric < self.min_sig_match:
+                if laxity * sig_metric < self.min_sig_match:
                     # print('failing match', laxity, sig_metric, self.min_sig_match)
                     continue
                 # print('succesful match', laxity, sig_metric, self.min_sig_match)
@@ -195,14 +192,15 @@ class Stitcher(DiscrepancyCalculator):
 
                 speed = discrepancy / effective_hours
                 log("discrepancy %s, effective_hours: %s", discrepancy, effective_hours)
-                log('speed: %s, max_average_knots: %s', speed, self.max_average_knots)
-                if speed > self.max_average_knots:
+                log('speed: %s, laxity: %s, max_average_knots: %s', speed, laxity, self.max_average_knots)
+                if speed > self.max_average_knots * laxity:
                     log('failed speed test')
+                    # print('failing speed match', speed, laxity, effective_hours)
                     continue
 
-                speed_metric = math.exp(-(speed / self.speed_0) ** 2) / hours ** 2   
+                speed_metric = math.exp(-(speed / self.speed_0) ** 2) / hours    
 
-                duration_metric = math.log(1 + dt2)
+                duration_metric = math.log(dt2)
                 overlap_metric = 1 if (delta_hours >= 0) else 1 - delta_hours / max_overlap_hours
 
                 metric = (sig_metric + 

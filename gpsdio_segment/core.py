@@ -81,19 +81,19 @@ class Segmentizer(DiscrepancyCalculator):
     Group positional messages into related segments based on speed and distance.
     """
 
-    max_hours = 2.5 * 24 
+    max_hours = 36
     penalty_hours = 6
     hours_exp = 0.5
     buffer_hours = 0.25
     lookback = 5
-    lookback_factor = 2
-    max_knots = 25
+    lookback_factor = 1.2
+    max_knots = 20 
     ambiguity_factor = 2.0
     short_seg_threshold = 10
-    short_seg_exp = 0.5
     transponder_mismatch_weight = 0.1
     penalty_speed = 5.0
     max_open_segments = 20
+    min_type_27_hours = 1.0
 
 
     def __init__(self, instream, 
@@ -146,8 +146,6 @@ class Segmentizer(DiscrepancyCalculator):
             How much better a match to a previous point has to be in order to use lookback.
         short_seg_threshold : int, optional
             Segments shorter than this are penalized when computing metrics
-        short_seg_exp : float, optional
-            Controls the scaling of short seg. 
         shape_factor : float, optional
             Controls how close we insist vessels to be along the path between their start
             and the their extrapolated destination if not near their destination. Large
@@ -171,7 +169,7 @@ class Segmentizer(DiscrepancyCalculator):
 
         for k in ['max_hours', 'penalty_hours', 'hours_exp', 'buffer_hours',
                   'max_knots', 'lookback', 'lookback_factor', 
-                  'short_seg_threshold', 'short_seg_exp', 'shape_factor',
+                  'short_seg_threshold', 'shape_factor',
                   'transponder_mismatch_weight', 'penalty_speed',
                   'max_open_segments']:
             self._update(k, kwargs)
@@ -287,11 +285,8 @@ class Segmentizer(DiscrepancyCalculator):
     def _segment_match(self, segment, msg):
         match = {'seg_id': segment.id,
                  'msgs_to_drop' : [],
+                 'hours' : None,
                  'metric' : None}
-
-        # TODO:
-        # Type 27 messages have low spatial resolution, but are received better in low
-        # coverage areas. We want to remove them when they would impact the track.
 
         # Get the stats for the last `lookback` positional messages
         candidates = []
@@ -343,6 +338,7 @@ class Segmentizer(DiscrepancyCalculator):
                         continue
                     if match['metric'] is None or metric > match['metric']:
                         match['metric'] = metric
+                        match['hours'] = hours
                         match['msgs_to_drop'] = msgs_to_drop
 
 
@@ -366,8 +362,8 @@ class Segmentizer(DiscrepancyCalculator):
         elif len(matches) > 1:
             # Down-weight (decrease metric) for short segments
             valid_segs = [s for s, m in zip(segs, raw_matches) if m is not None]
-            alphas = [min(s.msg_count / self.short_seg_threshold, 1) for s in valid_segs]
-            metric_match_pairs = [(m['metric'] * a ** self.short_seg_exp, m) 
+            alphas = [s.msg_count / self.short_seg_threshold for s in valid_segs]
+            metric_match_pairs = [(m['metric'] * a / math.sqrt(1 + a**2), m) 
                                     for (m, a) in zip(matches, alphas)]
             metric_match_pairs.sort(key=lambda x: x[0], reverse=True)
             # Check if best match is close enough to an existing match to be ambiguous.
@@ -379,6 +375,14 @@ class Segmentizer(DiscrepancyCalculator):
             if len(close_matches) > 1:
                 logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))
                 best_match = close_matches
+
+        if best_match:
+            hours = (min([x['hours'] for x in best_match]) 
+                        if isinstance(best_match, list) else best_match['hours'])
+            if  msg.get('type') == 'AIS.27' and hours < self.min_type_27_hours:
+                # Type 27 messages have low resolution, so only include them where there likely to 
+                # not mess up the tracks
+                return None
 
         return best_match
 

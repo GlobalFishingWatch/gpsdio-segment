@@ -88,7 +88,7 @@ class Segmentizer(DiscrepancyCalculator):
     lookback = 5
     lookback_factor = 1.2
     max_knots = 25
-    ambiguity_factor = 2.0
+    ambiguity_factor = 3.0
     short_seg_threshold = 10
     transponder_mismatch_weight = 0.1
     penalty_speed = 5.0

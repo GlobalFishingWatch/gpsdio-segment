@@ -20,8 +20,7 @@ def test_noise_segment():
         src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 68
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 2, 
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 4, 
             'Segment': 3, 'InfoSegment': 60, 'DiscardedSegment': 3}
 
 
@@ -33,7 +32,7 @@ def test_noise_segment():
         for day, msgs in it.groupby(src, key=lambda x: x['timestamp'].day):
             prev_states = seg_states.get(day - 1)
             if prev_states:
-                segmentizer = Segmentizer.from_seg_states(prev_states, list(msgs)[:1])
+                segmentizer = Segmentizer.from_seg_states(prev_states, list(msgs))
             else:
                 segmentizer = Segmentizer(msgs)
 
@@ -45,6 +44,6 @@ def test_noise_segment():
         # some noise segments on the first day that does not get passed back in on the second day
         assert seg_types == {
                               18: {'InfoSegment': 14, 'Segment': 1, 'DiscardedSegment': 3},
-                              19: {'Segment': 1},
-                              20: {'Segment': 1}
+                              19: {'InfoSegment': 23, 'Segment': 2, 'ClosedSegment': 2},
+                              20: {'InfoSegment': 23, 'Segment': 3, 'ClosedSegment': 2}
                              }

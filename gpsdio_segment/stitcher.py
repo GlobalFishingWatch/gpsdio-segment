@@ -7,7 +7,7 @@ import math
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-log = logger.debug
+log = logger.warning
 
 
 from .discrepancy import DiscrepancyCalculator
@@ -18,7 +18,7 @@ class Stitcher(DiscrepancyCalculator):
     
     min_seed_size = 5 # minimum segment size to start a track
     min_seg_size = 3 # segments shorter than this are dropped
-    max_average_knots = 40 # fastest speed we allow when connecting segments
+    max_average_knots = 25 # fastest speed we allow when connecting segments
     # min_dist = 10 * 0.1 # uncertainty due to type 27 messages
     penalty_hours = 12
     # hours_exp = 2.0
@@ -27,7 +27,7 @@ class Stitcher(DiscrepancyCalculator):
     duration_weight = 0.1
     overlap_weight = 1.0
     speed_0 = 12.5
-    min_sig_match = 0.0
+    min_sig_match = -0.3
     penalty_tracks = 4 # for more than this number of tracks become more strict
                         # todo: possibly only apply when multiple tracks.
                         # todo: possibly factor size in somehow
@@ -126,7 +126,7 @@ class Stitcher(DiscrepancyCalculator):
             # specificity and badness, then we multiply by weight to
             # get back the correct match value. There may be a cleaner
             # approach.
-            return sum(match) / len(match), True
+            return min(match), True
 
     
     def create_tracks(self, segs):

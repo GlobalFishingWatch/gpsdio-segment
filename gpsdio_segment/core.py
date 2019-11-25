@@ -39,7 +39,9 @@ from gpsdio_segment.segment import DiscardedSegment, InfoSegment
 
 
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
+
+log = logger.info
 
 inf = float("inf")
 
@@ -74,6 +76,9 @@ POSITION_MESSAGE = object()
 INFO_MESSAGE = object()
 BAD_MESSAGE = object()
 
+NO_MATCH = object()
+IS_NOISE = object()
+
 
 class Segmentizer(DiscrepancyCalculator):
 
@@ -81,14 +86,14 @@ class Segmentizer(DiscrepancyCalculator):
     Group positional messages into related segments based on speed and distance.
     """
 
-    max_hours = 36
+    max_hours = 24
     penalty_hours = 6
     hours_exp = 0.5
     buffer_hours = 0.25
     lookback = 5
-    lookback_factor = 1.2
+    lookback_factor = 2
     max_knots = 25
-    ambiguity_factor = 3.0
+    ambiguity_factor = 10.0
     short_seg_threshold = 10
     transponder_mismatch_weight = 0.1
     penalty_speed = 5.0
@@ -271,7 +276,7 @@ class Segmentizer(DiscrepancyCalculator):
             segs = list(self._segments.items())
             segs.sort(key=lambda x: x[1].last_msg['timestamp'])
             stalest_seg_id, _ = segs[0]
-            logger.debug('Removing stale segment {}'.format(stalest_seg_id))
+            log('Removing stale segment {}'.format(stalest_seg_id))
             for x in self.clean(self._segments.pop(stalest_seg_id), ClosedSegment):
                 yield x
 
@@ -315,10 +320,12 @@ class Segmentizer(DiscrepancyCalculator):
 
         assert len(candidates) > 0
 
+        best_metric_lb = 0
         for lookback, match_info in enumerate(candidates):
             existing_metric, msgs_to_drop, discrepancy, hours, penalized_hours = match_info
             assert hours >= 0
             if hours > self.max_hours: 
+                log("can't match due to max_hours")
                 # Too long has passed, we can't match this segment
                 break
             else:
@@ -326,19 +333,29 @@ class Segmentizer(DiscrepancyCalculator):
                 max_allowed_discrepancy = padded_hours * self.max_knots
                 if discrepancy <= max_allowed_discrepancy:
                     alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy 
-                    metric = math.exp(-alpha ** 2) / padded_hours ** 2
+                    metric = math.exp(-alpha ** 2) / padded_hours #** 2
                     # Down weight cases where transceiver types don't match.
                     if not transponder_match:
                         metric *= self.transponder_mismatch_weight
+                    # For lookback use the weight reduced by the lookback factor,
+                    # But don't store this weight, use base metric instead.
+                    metric_lb = metric / max(1, lookback * self.lookback_factor)
                     # Scale the existing metric using the lookback factor so that we only
                     # matches to points further in the past if they are noticeably better
-                    if metric <= existing_metric * max(1, lookback * self.lookback_factor):
+                    if metric_lb <= existing_metric:
+                        log("can't make metric worse: %s vs %s (%s) at lb %s", 
+                            metric_lb, existing_metric, metric, lookback)
                         # Don't make existing segment worse
                         continue
-                    if match['metric'] is None or metric > match['metric']:
+                    if metric_lb > best_metric_lb:
+                        log('updating metric %s (%s)', metric_lb, metric)
+                        best_metric_lb = metric_lb
                         match['metric'] = metric
                         match['hours'] = hours
                         match['msgs_to_drop'] = msgs_to_drop
+                else:
+                    log("can't match due to discrepancy: %s / %s = %s", 
+                            discrepancy, padded_hours, discrepancy / padded_hours)
 
 
         return match
@@ -347,7 +364,7 @@ class Segmentizer(DiscrepancyCalculator):
         # figure out which segment is the best match for the given message
 
         segs = list(self._segments.values())
-        best_match = None
+        best_match = NO_MATCH
 
         # get match metrics for all candidate segments
         raw_matches = [self._segment_match(seg, msg) for seg in segs]
@@ -372,16 +389,16 @@ class Segmentizer(DiscrepancyCalculator):
                 if metric * self.ambiguity_factor >= best_metric:
                     close_matches.append(match)
             if len(close_matches) > 1:
-                logger.debug('Ambiguous messages for id {}'.format(msg['ssvid']))
+                log('Ambiguous messages for id {}'.format(msg['ssvid']))
                 best_match = close_matches
 
-        if best_match:
+        if best_match is not NO_MATCH:
             hours = (min([x['hours'] for x in best_match]) 
                         if isinstance(best_match, list) else best_match['hours'])
             if  msg.get('type') == 'AIS.27' and hours < self.min_type_27_hours:
                 # Type 27 messages have low resolution, so only include them where there likely to 
                 # not mess up the tracks
-                return None
+                return IS_NOISE
 
         return best_match
 
@@ -396,7 +413,7 @@ class Segmentizer(DiscrepancyCalculator):
         for msg in segment.msgs:
             msg.pop('metric', None)
             if msg.pop('drop', False):
-                logger.debug(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
+                log(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
                     **msg))
                 yield self._create_segment(msg, cls=DiscardedSegment)
                 continue
@@ -550,7 +567,7 @@ class Segmentizer(DiscrepancyCalculator):
             self.cur_locations[loc] = timestamp
 
             if len(self._segments) == 0:
-                logger.debug("adding new segment because no current segments")
+                log("adding new segment because no current segments")
                 for x in self._add_segment(msg):
                     yield x
             else:
@@ -561,10 +578,12 @@ class Segmentizer(DiscrepancyCalculator):
                                 yield x
 
                 best_match = self._compute_best(msg)
-                if best_match is None:
-                    logger.debug("adding new segment because no match")
+                if best_match is NO_MATCH:
+                    log("adding new segment because no match")
                     for x in self._add_segment(msg):
                         yield x
+                elif best_match is IS_NOISE:
+                    yield self._create_segment(msg, cls=BadSegment)
                 elif isinstance(best_match, list):
                     # This message could match multiple segments. 
                     # So finalize and remove ambiguous segments so we can start fresh
@@ -573,7 +592,7 @@ class Segmentizer(DiscrepancyCalculator):
                         for x in self.clean(self._segments.pop(match['seg_id']), cls=ClosedSegment):
                             yield x
                     # Then add as new segment.
-                    logger.debug("adding new segment because of ambiguity with {} segments".format(len(best_match)))
+                    log("adding new segment because of ambiguity with {} segments".format(len(best_match)))
                     for x in self._add_segment(msg):
                         yield x
                 else:

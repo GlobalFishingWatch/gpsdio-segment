@@ -20,8 +20,8 @@ def test_noise_segment():
         src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 4, 
-            'Segment': 3, 'InfoSegment': 60, 'DiscardedSegment': 3}
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 14, 
+            'Segment': 1, 'InfoSegment': 60, 'DiscardedSegment': 2}
 
 
     with open('tests/data/338013000.json') as f:
@@ -43,7 +43,7 @@ def test_noise_segment():
 
         # some noise segments on the first day that does not get passed back in on the second day
         assert seg_types == {
-                              18: {'InfoSegment': 14, 'Segment': 1, 'DiscardedSegment': 3},
-                              19: {'InfoSegment': 23, 'Segment': 2, 'ClosedSegment': 2},
-                              20: {'InfoSegment': 23, 'Segment': 3, 'ClosedSegment': 2}
+                              18: {'InfoSegment': 14, 'Segment': 1, 'DiscardedSegment': 2},
+                              19: {'InfoSegment': 23, 'Segment': 1, 'ClosedSegment': 6},
+                              20: {'InfoSegment': 23, 'Segment': 1, 'ClosedSegment': 8}
                              }

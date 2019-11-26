@@ -7,7 +7,7 @@ import math
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-log = logger.warning
+log = logger.debug
 
 
 from .discrepancy import DiscrepancyCalculator

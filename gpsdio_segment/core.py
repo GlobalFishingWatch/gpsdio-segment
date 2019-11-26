@@ -1,29 +1,23 @@
 """
 Some ships using AIS are using the same ship identifiers, MMSI. This
 means that it is not possible to directly distinguish points for one
-ship from points from points for the other ship.
+ship from points from points for the other ship. In addition timing 
+noise in satellite clocks and bit noise in the received signals can
+result in points or whole portions of tracks displaced in either 
+time or space.
 
-To do so, we use a spatial algorithm. It separates the tracks based on
-a maximum possible speed between two consecutive points for a vessel.
-If two points are impossible to get between in a low enough speed,
-given their times and locations, they must belong to different tracks
-(from different vessels).
-
-We also consider any break longer than max_hours=24 hours as creating
-two separate tracks, as it would be possible to travel around the
-whole earth in that time, in a sufficiently low speed, making it
-impossible to say if the two tracks belong to the same vessel or not.
+To combat this we look at the projected position based on the reported
+course and speed and consider whether it is plausible for the message
+to correspond to one of the existing tracks or to start a new track.
 
 The segmenter maintains a set of "open tracks". For each open tracks
-it keeps the last point (latitude, longitude, timestamp). For each new
-point, it considers which of the open tracks to add it to, or to
-create a new track, and also if it should close any open tracks.
+it keeps the last point (latitude, longitude, course, speed and timestamp). 
+For each new point, it considers which of the open tracks to add 
+it to, or to create a new track, and also if it should close any 
+open tracks.
 
 The details of how this is performed is best explained by examining
 the logic in the function `_compute_best`.
-
-Points that do not have a timestamp or lat/lon are added to the track
-last added to.
 """
 
 
@@ -164,6 +158,10 @@ class Segmentizer(DiscrepancyCalculator):
         max_open_segments : int, optional
             Maximum number of segments to keep open at one time. This is limited for performance
             reasons.
+        min_type_27_hours : float, optional
+            If a type 27 message occurs closer than this time to a non-type 27 message, it is 
+            dropped. This is because the low resolution type 27 messages can result in strange
+            tracks, particularly when a vessel is in port.
 
         """
         self.prev_msgids = prev_msgids if prev_msgids else set()

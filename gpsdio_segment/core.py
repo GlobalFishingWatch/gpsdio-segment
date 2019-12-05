@@ -80,6 +80,11 @@ class Segmentizer(DiscrepancyCalculator):
     Group positional messages into related segments based on speed and distance.
     """
 
+    # These default values are a result of generating segments 
+    # and assembling them into vessel tracks for a large number
+    # of vessels.  There are enough knobs here that these are
+    # likely still not optimal and more experimentation would likely
+    # be helpful.
     max_hours = 24
     penalty_hours = 6
     hours_exp = 0.5

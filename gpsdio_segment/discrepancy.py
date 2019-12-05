@@ -6,6 +6,14 @@ inf = float("inf")
 class DiscrepancyCalculator(object):
     """Base class that supplies discrepancy calculator"""
 
+    # When vessels are traveling slowly, the can't always determine their
+    # heading from GPS, so they return `360` (`unavailable`). Empirically,
+    # almost all cases of this occur at or below 0.3 knots (the 0.05 is
+    # account for floating point issues). When this occurs at `very_slow`
+    # speeds we set the speed to zero when computing the discrepancy since
+    # the heading is unknown. `unavailable` headings can also crop up at non-
+    # slow speeds, presumably due to some issue with the AIS transponder.
+    # These messages are discarded.
     very_slow = 0.35
 
     shape_factor = 4.0
@@ -45,6 +53,11 @@ class DiscrepancyCalculator(object):
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
         dist = speed * hours 
+        # Course is assumed to have `0` pointing north and positive
+        # is clockwise as is reported by AIS. This in contrast with
+        # the natural math based definition which has 0 pointing east
+        # and positive being counter-clockwise, so we switch to that
+        # here.
         course = math.radians(90.0 - course)
         deg_lat_per_nm = 1.0 / 60
         deg_lon_per_nm = deg_lat_per_nm / (math.cos(math.radians(y)) + epsilon)

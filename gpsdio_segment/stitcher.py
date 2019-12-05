@@ -67,12 +67,25 @@ class Stitcher(DiscrepancyCalculator):
         return signatures
     
     def uniquify_filter_and_sort(self, segs, min_seg_size=1):
+        # For now aggregate all identity information for the segment
+        # and apply to last segment and return. In the future, we want
+        # one segment per day with the identity information for the next
+        # / previous week separately.
         segs = [seg for seg in segs if seg['seg_id'] is not None 
                                and seg['message_count'] >= min_seg_size]
         segs.sort(key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
-        segsmap = {x['seg_id'] : x for x in segs}
-        segs = sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
-        return segs
+        keys = ['shipnames', 'callsigns', 'imos', 'transponders']
+        identities = {}
+        segsmap = {}
+        for seg in segs:
+            if seg['seg_id'] in identities:
+                for k in keys:
+                    for v, cnt in identities[seg['seg_id]']][k]:
+                        seg[k][v] = seg[k].get(v, 0) + cnt
+                    identities[seg.seg_id][k] = seg[k]
+            segsmap[seg['seg_id']] = seg
+
+        return sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
     
     def compute_signature_metric(self, signatures, seg1, seg2):
         sig1 = signatures[seg1['seg_id']][:2]

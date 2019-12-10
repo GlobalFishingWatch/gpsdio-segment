@@ -22,9 +22,9 @@ def test_bad_segment():
         # Run the whole thing - makes 2 segments, one of them is a BadSegment
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment' : 2,
                 'InfoSegment': 19, 'Segment': 1, 'BadSegment': 1}
-        assert {len(seg) for seg in segs} == {1, 582}
+        assert {len(seg) for seg in segs} == {1, 109, 224, 249}
 
 def test_bad_segment_daily():
 
@@ -45,5 +45,5 @@ def test_bad_segment_daily():
 
 
         # 1 bad segment the first day that does not get passed back in on the second day
-        assert seg_types == {15: Counter({ 'InfoSegment': 10, 'Segment': 1, 'BadSegment': 1}),  
+        assert seg_types == {15: Counter({ 'InfoSegment': 10, 'Segment': 1, 'BadSegment': 1, 'ClosedSegment' : 1}),  
                              16: Counter({'InfoSegment': 9, 'Segment': 1})}

@@ -71,14 +71,14 @@ def test_with_non_posit():
     msg1 = {'idx': 0, 'msgid' : 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
     msg2 = {'idx': 1, 'msgid' : 2, 'ssvid': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
     msg3 = {'idx': 2, 'msgid' : 3, 'ssvid': 1, 'lat': 0.00001, 'lon': 0.00001,
-            'timestamp': msg1['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
+            'timestamp': msg1['timestamp'] + timedelta(hours=2), 'course' : 0, 'speed': 1}
 
     # Also continuous but not to the previous trio
     msg4 = {'idx': 3, 'msgid': 4, 'ssvid': 1, 'lat': 65, 'lon': 65,
             'timestamp': msg3['timestamp'] + timedelta(days=100), 'course' : 0, 'speed': 1}
     msg5 = {'idx': 4, 'msgid': 5, 'ssvid': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
     msg6 = {'idx': 5, 'msgid': 6, 'ssvid': 1, 'lat': 65.00001, 'lon': 65.00001,
-            'timestamp': msg4['timestamp'] + timedelta(hours=12), 'course' : 0, 'speed': 1}
+            'timestamp': msg4['timestamp'] + timedelta(hours=2), 'course' : 0, 'speed': 1}
 
     messages = [msg1, msg2, msg3, msg4, msg5, msg6]
     messages = [utcify(x) for x in messages]
@@ -95,8 +95,8 @@ def test_with_non_posit_first():
     messages = [
         {'ssvid': 1, 'msgid' : 1,  'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
         {'ssvid': 1, 'msgid' : 2,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 3,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 4,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 2, 'speed': 1}
+        {'ssvid': 1, 'msgid' : 3,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 4,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 2, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -115,8 +115,8 @@ def test_first_message_out_of_bounds():
     messages = [
         {'ssvid': 1, 'msgid' : 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
         {'ssvid': 1, 'msgid' : 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 3, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 3, 'speed': 1}
+        {'ssvid': 1, 'msgid' : 3, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 3, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -178,14 +178,16 @@ def test_bad_message_in_stream():
 
     messages = [
         {'ssvid': 1, 'msgid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid': 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 2, 1, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid': 3, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 3, 1, 1, 1), 'course' : 3, 'speed': 1}
+        {'ssvid': 1, 'msgid': 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid': 3, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 3, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
     # Should get one bad segment and one good segment
-    bs, s = list(Segmentizer(messages))
+    new_msgs = list(Segmentizer(messages))
+    print new_msgs
+    bs, s = new_msgs
 
     assert len(s) == 3
     assert s.msgs == messages[:2] + messages[3:]
@@ -302,12 +304,12 @@ def test_duplicate_ts_multiple_segs():
     # 2 segments present because of a noise position in idx=1
     # so we have 2 segments [0,2,3,4] and [1] .
     messages = [
-        {'idx': 0, 'msgid': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 40, 12), 'course' : 0, 'speed': 1},
-        {'idx': 1, 'msgid': 1, 'ssvid': 1, 'lat': 51.629493, 'lon': -63.55381, 'timestamp': datetime(2018, 5, 18, 14, 43, 8), 'course' : 0, 'speed': 1},
-        {'idx': 2, 'msgid': 2, 'ssvid': 1, 'lat': 44.63896, 'lon': -63.55386, 'timestamp': datetime(2018, 5, 18, 14, 43, 16), 'course' : 0, 'speed': -1},
-        {'idx': 3, 'msgid': 3, 'ssvid': 1, 'lat': 44.573973, 'lon': -63.534027, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
-        {'idx': 4, 'msgid': 4, 'ssvid': 1, 'lat': 44.583315, 'lon': -63.533645, 'timestamp': datetime(2018, 5, 19, 7, 48, 12), 'course' : 0, 'speed': 1},
+        {'idx': 0, 'msgid': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 1, 'msgid': 1, 'ssvid': 1, 'lat': 44.63928, 'lon': -64.551334, 'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 2, 'msgid': 2, 'ssvid': 1, 'lat': 44.63896, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 12, 0, 0), 'course' : 180, 'speed': 0},
+        {'idx': 3, 'msgid': 3, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 4, 'msgid': 4, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551334, 'timestamp': datetime(2018, 5, 18, 16, 0, 0), 'course' : 0, 'speed': 0},
     ]
     messages = [utcify(x) for x in messages]
     segments = list(Segmentizer(messages))
-    assert [{0, 2, 3, 4}, {1}]== [{msg['idx'] for msg in seg} for seg in segments]
+    assert [{1}, {0, 2, 3, 4}]== [{msg['idx'] for msg in seg} for seg in segments]

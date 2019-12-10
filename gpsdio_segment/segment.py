@@ -3,12 +3,15 @@ from __future__ import print_function, division
 from collections import namedtuple
 import logging
 
+logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
 
 SegmentState = namedtuple('SegmentState', 
-    ['id', 'ssvid', 'first_msg', 'last_msg', 'msg_count', 'noise', 'closed', 'opaque'])
+    ['id', 'ssvid', 
+     'first_msg', 'last_msg', 'first_msg_of_day',  'last_msg_of_day', 
+     'msg_count', 'noise', 'closed'])
 
 
 class Segment(object):
@@ -95,15 +98,8 @@ class Segment(object):
                             first_msg = self.first_msg,
                             last_msg = self.last_msg, 
                             msg_count = self.msg_count,
-                            opaque = self.opaque)
-
-
-    @property
-    def opaque(self):
-        if self.prev_state:
-            return self.prev_state.opaque
-        else:
-            return {}    
+                            first_msg_of_day = self.first_msg_of_day,
+                            last_msg_of_day = self.last_msg_of_day) 
 
     @property
     def msg_count(self):
@@ -130,8 +126,22 @@ class Segment(object):
     
     @property
     def last_msg(self):
-        for msg in self.get_all_reversed_msgs():
-            return msg
+        if self.msgs:
+            return self.msgs[-1]
+        if self.prev_state and self.prev_state.last_msg is not None:
+            return self.prev_state.last_msg
+        return None
+
+    @property
+    def first_msg_of_day(self):
+        if self.msgs:
+            return self.msgs[0]
+        return None
+
+    @property
+    def last_msg_of_day(self):
+        if self.msgs:
+            return self.msgs[-1]
         return None
 
     def add_msg(self, msg):

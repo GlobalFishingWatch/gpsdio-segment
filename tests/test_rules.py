@@ -47,7 +47,7 @@ def test_good_speed_good_time():
     p1 = {'msgid': 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 
             'timestamp': datetime.now(), 'course': 0, 'speed': 5}
     p2 = {'msgid': 2, 'ssvid': 1, 'lat': 1, 'lon': 0, 
-            'timestamp': p1['timestamp'] + timedelta(hours=12), 'course': 0, 'speed': 5}
+            'timestamp': p1['timestamp'] + timedelta(hours=3), 'course': 0, 'speed': 5}
     msgs = [utcify(x) for x in [p1, p2]]
     segmenter = Segmentizer(msgs)
     segments = list(segmenter)

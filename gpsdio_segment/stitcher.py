@@ -4,6 +4,7 @@ from itertools import chain
 import logging
 import math
 
+logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
@@ -12,29 +13,51 @@ log = logger.debug
 
 from .discrepancy import DiscrepancyCalculator
 
+class Overlap(Exception):
+    pass
+
+class BadMatch(Exception):
+    pass
+
+inf = float('Inf')
+
 class Stitcher(DiscrepancyCalculator):
     """Stitch segments together into coherent tracks.
     """
     
     min_seed_size = 5 # minimum segment size to start a track
     min_seg_size = 3 # segments shorter than this are dropped
-    max_average_knots = 25 # fastest speed we allow when connecting segments
+    max_average_knots = 30 # fastest speed we allow when connecting segments
     # min_dist = 10 * 0.1 # uncertainty due to type 27 messages
-    penalty_hours = 12
-    # hours_exp = 2.0
-    buffer_hours = 1.0
-    max_overlap_factor = 0.8
-    duration_weight = 0.1
-    overlap_weight = 1.0
-    speed_0 = 12.5
-    min_sig_match = -0.3
-    penalty_tracks = 4 # for more than this number of tracks become more strict
-                        # todo: possibly only apply when multiple tracks.
-                        # todo: possibly factor size in somehow
-                        # penalty_hours = 12
-    base_hour_penalty = 1.5
-    no_id_hour_penalty = 2.0 # be more strict for tracks with no id info joining them across long times
-    speed_weight = 0.1
+    # penalty_hours = 24
+    # # hours_exp = 2.0
+    # buffer_hours = 1.0
+
+    penalty_hours = 4
+    hours_exp = 0.5
+    buffer_hours = 0.25
+
+    # penalty_speed = 5.0
+
+    # penalty_hours = 3
+    # hours_exp = 0.0
+    # buffer_hours = 0.25
+
+    # shape_factor = 1.0
+
+    # max_overlap_factor = 0.8
+    # duration_weight = 0.1
+    # overlap_weight = 1.0
+    # speed_0 = 12.5
+    min_sig_metric = 0.35
+    # penalty_tracks = 4 # for more than this number of tracks become more strict
+    #                     # todo: possibly only apply when multiple tracks.
+    #                     # todo: possibly factor size in somehow
+    #                     # penalty_hours = 12
+    # hour_penalty = 2.0
+    # speed_weight = 0.1
+    lookahead = 50
+    # lookahead_penalty = 1.
     
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -42,15 +65,21 @@ class Stitcher(DiscrepancyCalculator):
             self._update(k, kwargs)
     
     @staticmethod
+    def aug_seg_id(obj):
+        if obj['seg_id'] is None:
+            return None
+        return obj['seg_id'] + obj['timestamp'].date().isoformat()        
+
+    @staticmethod
     def add_track_ids(msgs, tracks):
         # Use the seg_id of the first seg in the track as the track id.
         id_map = {}
         for track in tracks:
-            track_id = track[0]['seg_id']
+            track_id = Stitcher.aug_seg_id(track[0])
             for seg in track:
-                id_map[seg['seg_id']] = track_id
+                id_map[Stitcher.aug_seg_id(seg)] = track_id
         for msg in msgs:
-            msg['track_id'] = id_map.get(msg['seg_id'], None)
+            msg['track_id'] = id_map.get(Stitcher.aug_seg_id(msg), None)
 
     def _compute_signatures(self, segs):
         def get_sig(seg):
@@ -62,34 +91,64 @@ class Stitcher(DiscrepancyCalculator):
             ]
         signatures = {}
         for seg in segs:
-            sid = seg['seg_id']
+            sid = self.aug_seg_id(seg)
             signatures[sid] = get_sig(seg)
         return signatures
     
-    def uniquify_filter_and_sort(self, segs, min_seg_size=1):
-        # For now aggregate all identity information for the segment
-        # and apply to last segment and return. In the future, we want
-        # one segment per day with the identity information for the next
-        # / previous week separately.
-        segs = [seg for seg in segs if seg['seg_id'] is not None 
-                               and seg['message_count'] >= min_seg_size]
-        segs.sort(key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
+    def filter_and_sort(self, segs, min_seg_size=1):
+        segs.sort(key=lambda x: (x['timestamp'],x['first_msg_of_day_timestamp'], ))
         keys = ['shipnames', 'callsigns', 'imos', 'transponders']
         identities = {}
-        segsmap = {}
+        sizes = {}
+        days = {}
         for seg in segs:
-            if seg['seg_id'] in identities:
-                for k in keys:
-                    for v, cnt in identities[seg['seg_id]']][k]:
-                        seg[k][v] = seg[k].get(v, 0) + cnt
-                    identities[seg.seg_id][k] = seg[k]
-            segsmap[seg['seg_id']] = seg
+            seg_id = seg['seg_id']
+            sizes[seg_id] = max(seg['message_count'], sizes.get(seg_id, 0))
+            if seg_id not in identities:
+                identities[seg_id] = {k : {} for k in keys}
+                days[seg_id] = 0
+            days[seg_id] += 1
+            for k in keys:
+                for x in seg[k]:
+                    v = x['value']
+                    cnt = x['count']
+                    identities[seg_id][k][v] = identities[seg_id][k].get(v, 0) + cnt
 
-        return sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
+        for seg in segs:
+            seg_id = seg['seg_id']
+            assert seg_id is not None
+            for k, sig in identities[seg_id].items():
+                seg_sig = []
+                for value, count in sig.items():
+                    seg_sig.append({'value' : value, 'count' : count / days[seg_id]})
+                seg[k] = seg_sig
+
+        def is_null(x):
+            return x is None or str(x) == 'NaT'
+
+        def has_messages(s):
+            return not(is_null(s['last_msg_of_day_timestamp']) or
+                       is_null(s['first_msg_of_day_timestamp']))
+        return [seg for seg in segs if 
+                            sizes[seg['seg_id']] > min_seg_size and
+                            has_messages(seg)]
+
     
+    # def uniquify_filter_and_sort(self, segs, min_seg_size=1):
+    #     all_segs = self.filter_and_sort(segs, min_seg_size)
+    #     segsmap = {seg['seg_id'] : seg for seg in all_segs}
+    #     return sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
+
+
+
     def compute_signature_metric(self, signatures, seg1, seg2):
-        sig1 = signatures[seg1['seg_id']][:2]
-        sig2 = signatures[seg2['seg_id']][:2]
+        if seg1['seg_id'] == seg2['seg_id']:
+            # These two chunks are from the same segment, so 
+            # say they match
+            return 1, True
+
+        sig1 = signatures[self.aug_seg_id(seg1)][:2]
+        sig2 = signatures[self.aug_seg_id(seg2)][:2]
 
         match = []
         for a, b in zip(sig1, sig2):
@@ -121,123 +180,176 @@ class Stitcher(DiscrepancyCalculator):
                         specificity_a = alpha * maxa - beta
                         specificity_b = alpha * maxb - beta
                         specificity = specificity_a * specificity_b
-                    # print('cos2, spec', cos2, specificity)
                     match.append(cos2 * specificity)
         log('signature 1: %s', sig1)
         log('signature 2: %s', sig2)
         log('match_vector: %s', match)
         if len(match) == 0:
-            return self.min_sig_match, False
-        elif len(match) == 1:
-            sig_metric = match[0]
-            return min(sig_metric, self.min_sig_match), False
-        else:
-            # The idea here is that we want to consider 
-            #   (a) the worst match and
-            #   (b) the most specific match
-            # Minimizing x/wt minimizes a particular combination of
-            # specificity and badness, then we multiply by weight to
-            # get back the correct match value. There may be a cleaner
-            # approach.
-            return min(match), True
+            return self.min_sig_metric, False            
+        metric = 0.5 * (1 + min(match))
+        if len(match) == 1:
+            return min(metric, self.min_sig_metric), False
+        return metric, (len(match) > 1)
 
-    
+
+
+    def overlaps(self, track, seg):
+        before = self._before
+        for seg1 in track:
+            if not (before(seg, seg1) or before(seg1, seg)):
+                return  True
+        return False
+
+    @staticmethod
+    def _before(seg0, seg1):
+        """True if seg0 is completely before seg1"""
+        return seg0['last_msg_of_day_timestamp'] <= seg1['first_msg_of_day_timestamp']
+
+    def track_index(self, track, seg):
+        """Return index where seg would insert within track, raise Overlap if overlaps"""
+        if not track:
+            logging.warning('track_index called on empty track')
+            return 0
+        before = self._before
+        if before(seg, track[0]):
+            logging.warning('track_index returning 0')
+            return 0
+        for i, segi in enumerate(track[:-1]):
+            if not before(segi, seg):
+                logger.info('internal overlap')
+                raise Overlap
+            if before(seg, track[i + 1]):
+                logger.info('internal segment')
+                return i + 1
+        if not before(track[-1], seg):
+            raise Overlap
+        return len(track)
+
+    def _compute_metric(self, signatures, tgt, seg):
+        sig_metric, had_match = self.compute_signature_metric(signatures, seg, tgt)
+        log('sig_metric: %s, had_match: %s', sig_metric, had_match)
+        
+        if sig_metric < self.min_sig_metric:
+            log('failed signature test')
+            logger.info("sig_metric: %s, min_sig_metric: %s", sig_metric, self.min_sig_metric)
+            raise BadMatch()
+
+        msg0 = {'timestamp' : tgt['last_msg_of_day_timestamp'], 
+                'lat' : tgt['last_msg_of_day_lat'], 'lon' : tgt['last_msg_of_day_lon'],
+                'speed' : tgt['last_msg_of_day_speed'], 'course' : tgt['last_msg_of_day_course']}
+        msg1 = {'timestamp' : seg['first_msg_of_day_timestamp'], 
+                'lat' : seg['first_msg_of_day_lat'], 'lon' : seg['first_msg_of_day_lon'],
+                'speed' : seg['first_msg_of_day_speed'], 'course' : seg['first_msg_of_day_course']}
+        overlapped = msg0['timestamp'] > msg1['timestamp']
+        assert not overlapped
+
+
+        hours = self.compute_msg_delta_hours(msg0, msg1)
+        assert self.compute_msg_delta_hours(msg0, msg1) >= 0
+        # effective_hours = math.hypot(hours, self.penalty_hours)
+        penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
+
+        discrepancy = self.compute_discrepancy(msg0, msg1, penalized_hours)
+        penalized_padded_hours = math.hypot(penalized_hours, self.buffer_hours)
+        padded_hours = math.hypot(hours, self.buffer_hours)
+
+        if tgt['seg_id'] == seg['seg_id']:
+            speed_metric = 0
+        else:
+            speed = discrepancy / padded_hours
+            # print(speed, self.max_average_knots, discrepancy, padded_hours)
+            if speed > self.max_average_knots:
+                logger.info('failed speed test')
+                logger.info("discrepancy %s, effective_hours: %s, speed:  %s, max_speed: %s", discrepancy, padded_hours, speed, self.max_average_knots)
+                raise BadMatch()
+            # speed_metric = 1 - speed / self.max_average_knots  
+            # print('metric', speed_metric)
+            speed_metric = -discrepancy
+
+        # print(discrepancy, speed_metric, sig_metric, speed, penalized_padded_hours, padded_hours)
+
+        return sig_metric + speed_metric
+
+
+    def compute_metric(self, signatures, track, seg):
+        ndx = self.track_index(track, seg)
+        assert ndx > 0, "should never be inserting before start of track ({})".format(ndx)
+        if ndx == len(track):
+            return ndx, self._compute_metric(signatures, track[ndx-1], seg)
+        else:
+            return ndx, 0.5 * (self._compute_metric(signatures, track[ndx-1], seg) + 
+                               self._compute_metric(signatures, seg, track[ndx]))
+
+
+
     def create_tracks(self, segs):
-        segs = self.uniquify_filter_and_sort(segs, self.min_seg_size)
+        segs = self.filter_and_sort(segs, self.min_seg_size)
         signatures = self._compute_signatures(segs)
         # Build up tracks, joining to most reasonable segment (speed needed to join not crazy)
         tracks = []
-        alive = True
-        for seg in segs:
-            # print('\n\n')
-            best_track = None
-            best_metric = 0
-            for track in tracks:
-                tgt = track[-1]
-                sig_metric, had_match = self.compute_signature_metric(signatures, seg, tgt)
-                log('sig_metric: %s, had_match: %s', sig_metric, had_match)
-
-                seg_t0, seg_t1 = seg['first_msg_timestamp'], seg['last_msg_timestamp']
-                tgt_t0, tgt_t1 = track[0]['first_msg_timestamp'], tgt['last_msg_timestamp']
-                delta_hours = self.compute_ts_delta_hours(tgt_t1, seg_t0)
-                log('delta_hours: %s', delta_hours)
-                dt1 = self.compute_ts_delta_hours(seg_t0, seg_t1)
-                dt2 = self.compute_ts_delta_hours(tgt_t0, tgt_t1)
-                max_overlap_hours = min(dt1 * self.max_overlap_factor * sig_metric, 
-                                        dt2 * self.max_overlap_factor * sig_metric)  
-
-                log('max_overlap_hours: %s, dt1: %s, dt2: %s', 
-                        max_overlap_hours, dt1, dt2)
-                # print('Hours', delta_hours, max_overlap_hours, dt1, dt2, sig_metric)
-                if delta_hours + max_overlap_hours <= 0:
-                    continue 
-
-                laxity = (1 if (len(tracks) < self.penalty_tracks) else 
-                        math.sqrt(2) / math.hypot(1, len(tracks)/self.penalty_tracks))
-
-
-                # print('sig_metric', sig_metric)
-                
-                hours_exp = 1.0 / self.base_hour_penalty if had_match else 1.0 / self.no_id_hour_penalty
-        
-                
-                if laxity * sig_metric < self.min_sig_match:
-                    # print('failing match', laxity, sig_metric, self.min_sig_match)
-                    continue
-                # print('succesful match', laxity, sig_metric, self.min_sig_match)
-
-                msg0 = {'timestamp' : tgt['last_msg_timestamp'], 
-                        'lat' : tgt['last_msg_lat'], 'lon' : tgt['last_msg_lon'],
-                        'speed' : tgt['last_msg_speed'], 'course' : tgt['last_msg_course']}
-                msg1 = {'timestamp' : seg['first_msg_timestamp'], 
-                        'lat' : seg['first_msg_lat'], 'lon' : seg['first_msg_lon'],
-                        'speed' : seg['first_msg_speed'], 'course' : seg['first_msg_course']}
-                overlapped = tgt['last_msg_timestamp'] > seg['first_msg_timestamp']
-                if overlapped:
-                    # Segments overlap so flip the messages to keep time positive
-                    msg0, msg1 = msg1, msg0
-
-
-                hours = math.hypot(self.compute_msg_delta_hours(msg0, msg1), self.buffer_hours)
-                effective_hours = (hours if (hours < self.penalty_hours) else 
-                                   self.penalty_hours * (hours / self.penalty_hours) ** hours_exp)
-                discrepancy = self.compute_discrepancy(msg0, msg1, effective_hours)
-
-                speed = discrepancy / effective_hours
-                log("discrepancy %s, effective_hours: %s", discrepancy, effective_hours)
-                log('speed: %s, laxity: %s, max_average_knots: %s', speed, laxity, self.max_average_knots)
-                if speed > self.max_average_knots * laxity:
-                    log('failed speed test')
-                    # print('failing speed match', speed, laxity, effective_hours)
-                    continue
-
-                speed_metric = math.exp(-(speed / self.speed_0) ** 2) / hours    
-
-                duration_metric = math.log(dt2)
-                overlap_metric = 1 if (delta_hours >= 0) else 1 - delta_hours / max_overlap_hours
-
-                metric = (sig_metric + 
-                          self.speed_weight * speed_metric + 
-                          self.duration_weight * duration_metric +
-                          self.overlap_weight * overlap_metric)
-                # print(sig_metric, speed_metric, metric)
-                if metric > best_metric:
-                    best_metric = metric 
-                    best_track = track
-            if best_track is not None: 
+        seg_source = iter(segs)
+        active_segs = []
+        while True:
+            log('currently %s tracks', len(tracks))
+            while len(active_segs) < self.lookahead:
+                try:
+                    # print("trying next", len(active_segs))
+                    active_segs.append(next(seg_source))
+                    # print("finished next", len(active_segs))
+                except StopIteration:
+                    # print("StopIteration", len(active_segs))
+                    if len(active_segs) == 0:
+                        logger.info("Created %s tracks from %s segments", len(tracks), len(segs))
+                        return tracks
+                    break
+            # print(len(tracks), len(active_segs), len(segs))
+            best_track_info = None
+            best_metric = -inf
+            segs_with_match = set()
+            for seg in active_segs:
+                for track in tracks:
+                    try:
+                        ndx, metric = self.compute_metric(signatures, track, seg)
+                    except Overlap: 
+                        continue
+                    except BadMatch:
+                        continue
+                    segs_with_match.add(self.aug_seg_id(seg))
+                    if metric >= best_metric:
+                        logger.info('new best metric: %s', metric)
+                        best_metric = metric 
+                        best_track_info = track, ndx, seg
+            if best_track_info is not None: 
+                best_track, ndx, best_seg = best_track_info
+                # print('Adding to existing track', len(active_segs))
+                match_ndx = active_segs.index(best_seg)
+                active_segs.pop(match_ndx)
+                # print(len(active_segs))
                 new_sigs = []
                 new_counts = []
-                for s1, s2 in zip(signatures[seg['seg_id']], 
-                                          signatures[best_track[-1]['seg_id']]):
+                for s1, s2 in zip(signatures[self.aug_seg_id(best_seg)], 
+                                  signatures[self.aug_seg_id(best_track[0])]):
                     new_sig = {}
                     for k in set(s1.keys()) | set(s2.keys()):
                         new_sig[k] = s1.get(k, 0) + s2.get(k, 0) 
                     new_sigs.append(new_sig)
-                signatures[seg['seg_id']] = new_sigs
-                best_track.append(seg)
-            elif seg['message_count'] >= self.min_seed_size:
-                tracks.append([seg])
-            # print()
-            # print()
-                
-        return tracks
+                # print("inserting new seg at", ndx)
+                best_track.insert(ndx, best_seg)
+                for tgt in best_track:
+                    signatures[self.aug_seg_id(tgt)] = new_sigs
+                # If seg[0] did not match, turn it into it's own track
+                if match_ndx != 0 and self.aug_seg_id(active_segs[0]) not in segs_with_match:
+                    seg = active_segs.pop(0)
+                    if seg['message_count'] >= self.min_seed_size:
+                        logger.info('adding new track')
+                        tracks.append([seg])
+            else:
+                # print('Not sdding to existing track', len(active_segs), len(tracks))
+                while active_segs:
+                    seg = active_segs.pop(0)
+                    if seg['message_count'] >= self.min_seed_size:
+                        logger.info('adding new track')
+                        tracks.append([seg])
+                        break
+                # print(len(active_segs), len(tracks))
+            # print(len(active_segs))

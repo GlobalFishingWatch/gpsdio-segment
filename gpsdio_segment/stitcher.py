@@ -96,6 +96,12 @@ class Stitcher(DiscrepancyCalculator):
         return signatures
     
     def filter_and_sort(self, segs, min_seg_size=1):
+        def is_null(x):
+            return x is None or str(x) == 'NaT'
+        def has_messages(s):
+            return not(is_null(s['last_msg_of_day_timestamp']) and
+                       is_null(s['first_msg_of_day_timestamp']))
+        segs = [x for x in segs if has_messages(x)]
         segs.sort(key=lambda x: (x['timestamp'],x['first_msg_of_day_timestamp'], ))
         keys = ['shipnames', 'callsigns', 'imos', 'transponders']
         identities = {}
@@ -123,21 +129,8 @@ class Stitcher(DiscrepancyCalculator):
                     seg_sig.append({'value' : value, 'count' : count / days[seg_id]})
                 seg[k] = seg_sig
 
-        def is_null(x):
-            return x is None or str(x) == 'NaT'
 
-        def has_messages(s):
-            return not(is_null(s['last_msg_of_day_timestamp']) or
-                       is_null(s['first_msg_of_day_timestamp']))
-        return [seg for seg in segs if 
-                            sizes[seg['seg_id']] > min_seg_size and
-                            has_messages(seg)]
-
-    
-    # def uniquify_filter_and_sort(self, segs, min_seg_size=1):
-    #     all_segs = self.filter_and_sort(segs, min_seg_size)
-    #     segsmap = {seg['seg_id'] : seg for seg in all_segs}
-    #     return sorted(segsmap.values(), key=lambda x: (x['first_msg_timestamp'], x['timestamp']))
+        return [seg for seg in segs if sizes[seg['seg_id']] > min_seg_size]
 
 
 

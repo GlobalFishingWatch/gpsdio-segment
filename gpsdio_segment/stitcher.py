@@ -27,7 +27,7 @@ class Stitcher(DiscrepancyCalculator):
     
     min_seed_size = 5 # minimum segment size to start a track
     min_seg_size = 3 # segments shorter than this are dropped
-    max_average_knots = 30 # fastest speed we allow when connecting segments
+    max_average_knots = 25 # fastest speed we allow when connecting segments
     # min_dist = 10 * 0.1 # uncertainty due to type 27 messages
     # penalty_hours = 24
     # # hours_exp = 2.0
@@ -57,6 +57,9 @@ class Stitcher(DiscrepancyCalculator):
     # hour_penalty = 2.0
     # speed_weight = 0.1
     lookahead = 50
+
+    buffer_count = 10
+    count_weight = 1.0
     # lookahead_penalty = 1.
     
     def __init__(self, **kwargs):
@@ -267,11 +270,17 @@ class Stitcher(DiscrepancyCalculator):
     def compute_metric(self, signatures, track, seg):
         ndx = self.track_index(track, seg)
         assert ndx > 0, "should never be inserting before start of track ({})".format(ndx)
+        track_id = self.aug_seg_id(track[0])
+        sig = signatures[track_id]
+
+        # TODO: This is an average count, could revamp to use real message count
+        count = sum(sig[0].values()) #  Brittle :-()
+        count_metric = self.count_weight * math.log(self.buffer_count + count)
         if ndx == len(track):
-            return ndx, self._compute_metric(signatures, track[ndx-1], seg)
+            return ndx, self._compute_metric(signatures, track[ndx-1], seg) + count_metric
         else:
             return ndx, 0.5 * (self._compute_metric(signatures, track[ndx-1], seg) + 
-                               self._compute_metric(signatures, seg, track[ndx]))
+                               self._compute_metric(signatures, seg, track[ndx])) + count_metric
 
 
 

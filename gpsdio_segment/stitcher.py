@@ -201,7 +201,7 @@ class Stitcher(DiscrepancyCalculator):
         """True if seg0 is completely before seg1"""
         return seg0['last_msg_of_day_timestamp'] <= seg1['first_msg_of_day_timestamp']
 
-    def track_index(self, track, seg):
+    def track_index(self, track, seg, has_multi_sigs):
         """Return index where seg would insert within track, raise Overlap if overlaps"""
         if not track:
             logging.warning('track_index called on empty track')
@@ -213,19 +213,28 @@ class Stitcher(DiscrepancyCalculator):
         for i, segi in enumerate(track[:-1]):
             if not before(segi, seg):
                 logger.info('internal overlap')
-                raise Overlap
+                if has_multi_sigs:
+                    raise Overlap
+                else:
+                    return i + 1
             if before(seg, track[i + 1]):
                 logger.info('internal segment')
                 return i + 1
-        if not before(track[-1], seg):
+        if not before(track[-1], seg) and has_multi_sigs:
+            logger.info('internal overlap')
             raise Overlap
         return len(track)
 
-    def _compute_metric(self, signatures, tgt, seg):
+    def _compute_metric(self, signatures, tgt, seg, has_multi_sigs):
         sig_metric, had_match = self.compute_signature_metric(signatures, seg, tgt)
         log('sig_metric: %s, had_match: %s', sig_metric, had_match)
         
         if sig_metric < self.min_sig_metric:
+            if not has_multi_sigs:
+                logger.warning('sig_metric test failed when only one sig (%s, %s, %s',
+                    signatures[self.aug_seg_id(seg)][:2], 
+                    signatures[self.aug_seg_id(tgt)][:2],
+                    sig_metric)
             log('failed signature test')
             logger.info("sig_metric: %s, min_sig_metric: %s", sig_metric, self.min_sig_metric)
             raise BadMatch()
@@ -237,8 +246,9 @@ class Stitcher(DiscrepancyCalculator):
                 'lat' : seg['first_msg_of_day_lat'], 'lon' : seg['first_msg_of_day_lon'],
                 'speed' : seg['first_msg_of_day_speed'], 'course' : seg['first_msg_of_day_course']}
         overlapped = msg0['timestamp'] > msg1['timestamp']
-        assert not overlapped
-
+        assert not has_multi_sigs or not overlapped
+        if overlapped:
+            msg0, msg1 = msg1, msg0
 
         hours = self.compute_msg_delta_hours(msg0, msg1)
         assert self.compute_msg_delta_hours(msg0, msg1) >= 0
@@ -267,8 +277,8 @@ class Stitcher(DiscrepancyCalculator):
         return sig_metric + speed_metric
 
 
-    def compute_metric(self, signatures, track, seg):
-        ndx = self.track_index(track, seg)
+    def compute_metric(self, signatures, track, seg, has_multi_sigs):
+        ndx = self.track_index(track, seg, has_multi_sigs)
         assert ndx > 0, "should never be inserting before start of track ({})".format(ndx)
         track_id = self.aug_seg_id(track[0])
         sig = signatures[track_id]
@@ -277,14 +287,46 @@ class Stitcher(DiscrepancyCalculator):
         count = sum(sig[0].values()) #  Brittle :-()
         count_metric = self.count_weight * math.log(self.buffer_count + count)
         if ndx == len(track):
-            return ndx, self._compute_metric(signatures, track[ndx-1], seg) + count_metric
+            return ndx, self._compute_metric(signatures, track[ndx-1], seg, has_multi_sigs) + count_metric
         else:
-            return ndx, 0.5 * (self._compute_metric(signatures, track[ndx-1], seg) + 
-                               self._compute_metric(signatures, seg, track[ndx])) + count_metric
+            return ndx, 0.5 * (self._compute_metric(signatures, track[ndx-1], seg, has_multi_sigs) + 
+                               self._compute_metric(signatures, seg, track[ndx], has_multi_sigs)) + count_metric
 
+
+    def signatures_count(self, segs, sig_abs=1, sig_frac=0.05):
+        """Check if this vessel has multiple ids based on the signature
+        """
+        keys = ['shipnames', 'callsigns', 'imos']
+        identities = {k : {} for k in keys}
+        sizes = {}
+        days = {}
+        for seg in segs:
+            for k in keys:
+                for x in seg[k]:
+                    v = x['value']
+                    cnt = x['count']
+                    identities[k][v] = identities[k].get(v, 0) + cnt
+        counts = []
+        for k in keys:
+            total = 0
+            for lbl, cnt in identities[k].items():
+                total += cnt
+            idents = 0
+            for lbl, cnt in identities[k].items():
+                if cnt > sig_abs and cnt > sig_frac * total:
+                    idents += 1
+            counts.append(idents)
+        return max(counts)
 
 
     def create_tracks(self, segs):
+        signature_count = max(self.signatures_count(segs), 1)
+        has_multi_sigs = (signature_count > 1)
+        # For now just have two cases eventually, recalculate if
+        # we later decide there are multiple signatures based on speed
+        # also, perhaps be less agressive when we have more tracks than
+        # signatures.
+        print('signature_count', signature_count)
         segs = self.filter_and_sort(segs, self.min_seg_size)
         signatures = self._compute_signatures(segs)
         # Build up tracks, joining to most reasonable segment (speed needed to join not crazy)
@@ -311,7 +353,7 @@ class Stitcher(DiscrepancyCalculator):
             for seg in active_segs:
                 for track in tracks:
                     try:
-                        ndx, metric = self.compute_metric(signatures, track, seg)
+                        ndx, metric = self.compute_metric(signatures, track, seg, has_multi_sigs)
                     except Overlap: 
                         continue
                     except BadMatch:

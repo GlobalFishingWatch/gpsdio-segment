@@ -186,7 +186,6 @@ def test_bad_message_in_stream():
 
     # Should get one bad segment and one good segment
     new_msgs = list(Segmentizer(messages))
-    print new_msgs
     bs, s = new_msgs
 
     assert len(s) == 3
@@ -312,4 +311,6 @@ def test_duplicate_ts_multiple_segs():
     ]
     messages = [utcify(x) for x in messages]
     segments = list(Segmentizer(messages))
-    assert [{1}, {0, 2, 3, 4}]== [{msg['idx'] for msg in seg} for seg in segments]
+    assert [[0, 2, 3, 4], [1]] == sorted([sorted({msg['idx'] for msg in seg}) for seg in segments])
+
+

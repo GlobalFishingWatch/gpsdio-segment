@@ -1,5 +1,6 @@
 from __future__ import division, print_function, absolute_import
 from collections import Counter
+import datetime as DT
 from itertools import chain
 import logging
 import math
@@ -36,6 +37,7 @@ class Stitcher(DiscrepancyCalculator):
     penalty_hours = 4
     hours_exp = 0.5
     buffer_hours = 0.25
+    max_overlap_hours = 5 / 60
 
     # penalty_speed = 5.0
 
@@ -82,7 +84,11 @@ class Stitcher(DiscrepancyCalculator):
             for seg in track:
                 id_map[Stitcher.aug_seg_id(seg)] = track_id
         for msg in msgs:
-            msg['track_id'] = id_map.get(Stitcher.aug_seg_id(msg), None)
+            try:
+                msg['track_id'] = id_map.get(Stitcher.aug_seg_id(msg), None)
+            except:
+                print(msg)
+                raise
 
     def _compute_signatures(self, segs):
         def get_sig(seg):
@@ -190,16 +196,21 @@ class Stitcher(DiscrepancyCalculator):
 
 
     def overlaps(self, track, seg):
-        before = self._before
+        def mostly_before(s0, s1):
+            return self.timedelta(s0, s1).total_seconds() >= -self.max_overlap_hours / (60 * 60)
         for seg1 in track:
-            if not (before(seg, seg1) or before(seg1, seg)):
+            if not (mostly_before(seg, seg1) or mostly_before(seg1, seg)):
                 return  True
         return False
 
     @staticmethod
+    def time_delta(seg0, seg1):
+        return seg1['first_msg_of_day_timestamp'] - seg0['last_msg_of_day_timestamp']
+
+    @staticmethod
     def _before(seg0, seg1):
         """True if seg0 is completely before seg1"""
-        return seg0['last_msg_of_day_timestamp'] <= seg1['first_msg_of_day_timestamp']
+        return Stitcher.time_delta(seg0, seg1).total_seconds() >= 0.0
 
     def track_index(self, track, seg):
         """Return index where seg would insert within track, raise Overlap if overlaps"""
@@ -228,7 +239,7 @@ class Stitcher(DiscrepancyCalculator):
         
         if sig_metric < self.min_sig_metric:
             if signature_count == 1:
-                logger.warning('sig_metric test failed when only one sig (%s, %s, %s',
+                logger.info('sig_metric test failed when only one sig (%s, %s, %s',
                     signatures[self.aug_seg_id(seg)][:2], 
                     signatures[self.aug_seg_id(tgt)][:2],
                     sig_metric)
@@ -282,7 +293,10 @@ class Stitcher(DiscrepancyCalculator):
         # and use alpha to scale count_weight.
         reference = sorted(track_counts.values(), reverse=True)[:signature_count][-1]
         count = min(track_counts[track_id], reference)
-        alpha = count / reference
+        if reference > 0:
+            alpha = count / reference
+        else:
+            alpha = 1
 
         count_metric = alpha * self.max_count_weight * math.log(self.buffer_count + count)
         if ndx == len(track):
@@ -292,7 +306,8 @@ class Stitcher(DiscrepancyCalculator):
                                self._compute_metric(signatures, seg, track[ndx], signature_count)) + count_metric
 
 
-    def signatures_count(self, segs, sig_abs=1, sig_frac=0.05):
+    @staticmethod
+    def signatures_count(segs, sig_abs=1, sig_frac=0.05):
         """Check if this vessel has multiple ids based on the signature
         """
         keys = ['shipnames', 'callsigns', 'imos']
@@ -318,18 +333,56 @@ class Stitcher(DiscrepancyCalculator):
         return max(counts)
 
 
-    def create_tracks(self, segs):
+    def find_track_signatures(self, start_date, tracks, segs, lookback=30):
+        # TODO: add blank signatures when track has no active points
+        end_range = start_date - DT.timedelta(days=1)
+        start_range = start_date - DT.timedelta(days=lookback)
+        segs = [x for x in segs if start_range <= x['timestamp'].date() <= end_range]
+        seg_sigs = self._compute_signatures(segs)
+        track_sigs = {}
+        for track in tracks:
+            track_id = self.aug_seg_id(track[0])
+            sigs = [{}, {}, {}, {}]
+            for seg in track:
+                seg_id = self.aug_seg_id(seg)
+                if seg_id in seg_sigs:
+                    track_sigs
+                    for i, (s1, s2) in enumerate(zip(seg_sigs[seg_id], sigs)):
+                        for k in set(s1.keys()) | set(s2.keys()):
+                            sigs[i][k] = s1.get(k, 0) + s2.get(k, 0) 
+            track_sigs[track_id] = sigs
+
+        return track_sigs
+
+    # def create_tracks(self, segs):
+    def create_tracks(self, start_date, tracks, track_sigs, segs):
+        # Trim tracks to start_date
+        # Check that segs do not extend before start_date
+        # Scan tracks and count number of tracks with > active_track_threshold (100 pts?) over active_track_window (30 days?)
+        # 
+
+        # TODO: determine "active_tracks" by looking at number of tracks in window with counts over threshold.
+        # TODO: then add len(active_tracks) to max function below.
+
         signature_count = max(self.signatures_count(segs), 1)
-        has_multi_sigs = (signature_count > 1)
         # For now just have two cases eventually, recalculate if
         # we later decide there are multiple signatures based on speed
         # also, perhaps be less agressive when we have more tracks than
         # signatures.
-        print('signature_count', signature_count)
+        # print('signature_count', signature_count)
         segs = self.filter_and_sort(segs, self.min_seg_size)
         signatures = self._compute_signatures(segs)
+
+        signatures.update(track_sigs) # TODO: there is probably a lot of improving to do in the way we deal with signatures now
+        for track in tracks:
+            track_id = self.aug_seg_id(track[0])
+            for seg in track:
+                seg_id = self.aug_seg_id(seg)
+                signatures[seg_id] = signatures[track_id]
+
+
         # Build up tracks, joining to most reasonable segment (speed needed to join not crazy)
-        tracks = []
+        # tracks = []
         seg_source = iter(segs)
         active_segs = []
         while True:
@@ -378,7 +431,6 @@ class Stitcher(DiscrepancyCalculator):
                 active_segs.pop(match_ndx)
                 # print(len(active_segs))
                 new_sigs = []
-                new_counts = []
                 for s1, s2 in zip(signatures[self.aug_seg_id(best_seg)], 
                                   signatures[self.aug_seg_id(best_track[0])]):
                     new_sig = {}

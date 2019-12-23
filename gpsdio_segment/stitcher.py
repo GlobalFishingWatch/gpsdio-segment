@@ -354,6 +354,15 @@ class Stitcher(DiscrepancyCalculator):
 
         return track_sigs
 
+
+    def active_tracks(self, start_date, tracks, lookback=30):
+        end_range = start_date - DT.timedelta(days=1)
+        start_range = start_date - DT.timedelta(days=lookback)
+        active = []
+        for track in tracks:
+            count = [x for x in track if start_range <= x['timestamp'].date() <= end_range]
+
+
     # def create_tracks(self, segs):
     def create_tracks(self, start_date, tracks, track_sigs, segs):
         # Trim tracks to start_date

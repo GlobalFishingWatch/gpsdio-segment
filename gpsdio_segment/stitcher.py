@@ -58,10 +58,12 @@ class Stitcher(DiscrepancyCalculator):
     #                     # penalty_hours = 12
     # hour_penalty = 2.0
     # speed_weight = 0.1
-    lookahead = 50
+    lookahead = 32
 
     buffer_count = 10
     max_count_weight = 10.0
+
+    max_active_tracks = 32
     # lookahead_penalty = 1.
     
     def __init__(self, **kwargs):
@@ -287,10 +289,6 @@ class Stitcher(DiscrepancyCalculator):
         ndx = self.track_index(track, seg)
         assert ndx > 0, "should never be inserting before start of track ({})".format(ndx)
         track_id = self.aug_seg_id(track[0])
-
-        # TODO: sort by track_count. the value that is the `signature_count`th largest
-        # is the reference value clip to that value. Then alpha = track_count / reference
-        # and use alpha to scale count_weight.
         reference = sorted(track_counts.values(), reverse=True)[:signature_count][-1]
         count = min(track_counts[track_id], reference)
         if reference > 0:
@@ -390,8 +388,6 @@ class Stitcher(DiscrepancyCalculator):
                 signatures[seg_id] = signatures[track_id]
 
 
-        # Build up tracks, joining to most reasonable segment (speed needed to join not crazy)
-        # tracks = []
         seg_source = iter(segs)
         active_segs = []
         while True:
@@ -416,12 +412,17 @@ class Stitcher(DiscrepancyCalculator):
                 count = sum(sig[0].values()) #  Brittle :-()
                 track_counts[track_id] = count
 
+            active_tracks_ids = set(sorted(track_counts, key=lambda x: track_counts[x], 
+                                        reverse=True)[:self.max_active_tracks])
             # print(len(tracks), len(active_segs), len(segs))
             best_track_info = None
             best_metric = -inf
             segs_with_match = set()
             for seg in active_segs:
                 for track in tracks:
+                    track_id = Stitcher.aug_seg_id(track[0])
+                    if track_id not in active_tracks_ids:
+                        continue
                     try:
                         ndx, metric = self.compute_metric(signatures, track, seg, signature_count, track_counts)
                     except Overlap: 

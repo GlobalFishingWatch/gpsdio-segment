@@ -63,7 +63,7 @@ class Stitcher(DiscrepancyCalculator):
     buffer_count = 10
     max_count_weight = 10.0
 
-    max_active_tracks = 32
+    max_active_tracks = 8
     # lookahead_penalty = 1.
     
     def __init__(self, **kwargs):
@@ -412,6 +412,8 @@ class Stitcher(DiscrepancyCalculator):
                 count = sum(sig[0].values()) #  Brittle :-()
                 track_counts[track_id] = count
 
+            # TODO: need a way to incorporate recentness into active tracks so we can
+            #       create new tracks by retiring old tracks. Maybe only use recentness?
             active_tracks_ids = set(sorted(track_counts, key=lambda x: track_counts[x], 
                                         reverse=True)[:self.max_active_tracks])
             # print(len(tracks), len(active_segs), len(segs))

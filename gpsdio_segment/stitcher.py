@@ -394,14 +394,13 @@ class Stitcher(DiscrepancyCalculator):
             log('currently %s tracks', len(tracks))
             while len(active_segs) < self.lookahead:
                 try:
-                    # print("trying next", len(active_segs))
                     active_segs.append(next(seg_source))
-                    # print("finished next", len(active_segs))
                 except StopIteration:
-                    # print("StopIteration", len(active_segs))
                     if len(active_segs) == 0:
                         logger.info("Created %s tracks from %s segments", len(tracks), len(segs))
-                        return tracks
+                        for track in tracks:
+                            yield track
+                        return
                     break
 
             track_counts = {}
@@ -416,15 +415,21 @@ class Stitcher(DiscrepancyCalculator):
             #       create new tracks by retiring old tracks. Maybe only use recentness?
             active_tracks_ids = set(sorted(track_counts, key=lambda x: track_counts[x], 
                                         reverse=True)[:self.max_active_tracks])
-            # print(len(tracks), len(active_segs), len(segs))
+            # Inactive tracks are never resurrected, so emit now.
+            active_tracks = []
+            for track in tracks:
+                track_id = Stitcher.aug_seg_id(track[0])
+                if track_id in active_tracks_ids:
+                    active_tracks.append(track)
+                else:
+                    yield track
+            tracks = active_tracks
             best_track_info = None
             best_metric = -inf
             segs_with_match = set()
             for seg in active_segs:
                 for track in tracks:
                     track_id = Stitcher.aug_seg_id(track[0])
-                    if track_id not in active_tracks_ids:
-                        continue
                     try:
                         ndx, metric = self.compute_metric(signatures, track, seg, signature_count, track_counts)
                     except Overlap: 
@@ -438,10 +443,8 @@ class Stitcher(DiscrepancyCalculator):
                         best_track_info = track, ndx, seg
             if best_track_info is not None: 
                 best_track, ndx, best_seg = best_track_info
-                # print('Adding to existing track', len(active_segs))
                 match_ndx = active_segs.index(best_seg)
                 active_segs.pop(match_ndx)
-                # print(len(active_segs))
                 new_sigs = []
                 for s1, s2 in zip(signatures[self.aug_seg_id(best_seg)], 
                                   signatures[self.aug_seg_id(best_track[0])]):
@@ -449,7 +452,6 @@ class Stitcher(DiscrepancyCalculator):
                     for k in set(s1.keys()) | set(s2.keys()):
                         new_sig[k] = s1.get(k, 0) + s2.get(k, 0) 
                     new_sigs.append(new_sig)
-                # print("inserting new seg at", ndx)
                 best_track.insert(ndx, best_seg)
                 for tgt in best_track:
                     signatures[self.aug_seg_id(tgt)] = new_sigs
@@ -460,12 +462,9 @@ class Stitcher(DiscrepancyCalculator):
                         logger.info('adding new track')
                         tracks.append([seg])
             else:
-                # print('Not sdding to existing track', len(active_segs), len(tracks))
                 while active_segs:
                     seg = active_segs.pop(0)
                     if seg['message_count'] >= self.min_seed_size:
                         logger.info('adding new track')
                         tracks.append([seg])
                         break
-                # print(len(active_segs), len(tracks))
-            # print(len(active_segs))

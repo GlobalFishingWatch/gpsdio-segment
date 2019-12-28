@@ -7,7 +7,7 @@ import math
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 log = logger.debug
 
@@ -38,6 +38,7 @@ class Stitcher(DiscrepancyCalculator):
     hours_exp = 0.5
     buffer_hours = 1.0
     max_overlap_hours = 2.0
+    max_overlap_fraction = max_overlap_hours / 24.0
 
     # penalty_speed = 5.0
 
@@ -196,23 +197,34 @@ class Stitcher(DiscrepancyCalculator):
         return metric, (len(match) > 1)
 
 
+    def _mostly_before(self, s0, s1, tolerance=0):
+        def dt(s):
+            return (s['last_msg_of_day_timestamp'] - 
+                    s['first_msg_of_day_timestamp']).total_seconds() / (60 * 60)
+        dt0 = dt(s0)
+        dt1 = dt(s1)
+        max_oh = min(self.max_overlap_hours, 
+                     self.max_overlap_fraction * dt0,
+                     self.max_overlap_fraction * dt1)
+        return self.time_delta(s0, s1).total_seconds() / (60 * 60) >= -max_oh * (1 - tolerance)
 
-    def overlaps(self, track, seg):
-        def mostly_before(s0, s1):
-            return DT.timedelta(s0, s1).total_seconds() >= -self.max_overlap_hours / (60 * 60)
-        for seg1 in track:
-            if not (mostly_before(seg, seg1) or mostly_before(seg1, seg)):
-                return  True
-        return False
+
+    # def overlaps(self, track, seg):
+    #     def mostly_before(s0, s1):
+    #         return DT.timedelta(s0, s1).total_seconds() >= -self.max_overlap_hours / (60 * 60)
+    #     for seg1 in track:
+    #         if not (mostly_before(seg, seg1) or mostly_before(seg1, seg)):
+    #             return  True
+    #     return False
 
     @staticmethod
     def time_delta(seg0, seg1):
         return seg1['first_msg_of_day_timestamp'] - seg0['last_msg_of_day_timestamp']
 
-    @staticmethod
-    def _before(seg0, seg1):
-        """True if seg0 is completely before seg1"""
-        return Stitcher.time_delta(seg0, seg1).total_seconds() >= 0.0
+    # @staticmethod
+    # def _before(seg0, seg1):
+    #     """True if seg0 is completely before seg1"""
+    #     return Stitcher.time_delta(seg0, seg1).total_seconds() >= 0.0
 
     def track_index(self, track, seg, tolerance):
         """Return index where seg would insert within track, raise Overlap if overlaps"""
@@ -220,8 +232,7 @@ class Stitcher(DiscrepancyCalculator):
             logging.info('track_index called on empty track')
             return 0
         def mostly_before(s0, s1):
-            return (self.time_delta(s0, s1).total_seconds() / (60 * 60) >= 
-                       -self.max_overlap_hours * (1 - tolerance))
+            return self._mostly_before(s0, s1, tolerance)
         # TODO: clean up so more bulletproof (don't want to return wrong index for short segments.)
         if mostly_before(seg, track[0]):
             logging.warning('track_index returning 0')

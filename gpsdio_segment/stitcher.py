@@ -29,43 +29,20 @@ class Stitcher(DiscrepancyCalculator):
     min_seed_size = 5 # minimum segment size to start a track
     min_seg_size = 3 # segments shorter than this are dropped
     max_average_knots = 50 # fastest speed we allow when connecting segments
-    # min_dist = 10 * 0.1 # uncertainty due to type 27 messages
-    # penalty_hours = 24
-    # # hours_exp = 2.0
-    # buffer_hours = 1.0
 
     penalty_hours = 4
     hours_exp = 0.5
     buffer_hours = 1.0
     max_overlap_hours = 2.0
     max_overlap_fraction = max_overlap_hours / 24.0
-
-    # penalty_speed = 5.0
-
-    # penalty_hours = 3
-    # hours_exp = 0.0
-    # buffer_hours = 0.25
-
-    # shape_factor = 1.0
-
-    # max_overlap_factor = 0.8
-    # duration_weight = 0.1
-    # overlap_weight = 1.0
-    # speed_0 = 12.5
     min_sig_metric = 0.35
-    # penalty_tracks = 4  # for more than this number of tracks become more strict
-    #                     # todo: possibly only apply when multiple tracks.
-    #                     # todo: possibly factor size in somehow
-    #                     # penalty_hours = 12
-    # hour_penalty = 2.0
-    # speed_weight = 0.1
-    lookahead = 32
-
+    max_lookahead = 32
     buffer_count = 10
     max_count_weight = 10.0
-
     max_active_tracks = 8
-    # lookahead_penalty = 1.
+
+    signature_weight = 1.0
+    discrepancy_weight = 0.01
     
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -208,23 +185,9 @@ class Stitcher(DiscrepancyCalculator):
                      self.max_overlap_fraction * dt1)
         return self.time_delta(s0, s1).total_seconds() / (60 * 60) >= -max_oh * (1 - tolerance)
 
-
-    # def overlaps(self, track, seg):
-    #     def mostly_before(s0, s1):
-    #         return DT.timedelta(s0, s1).total_seconds() >= -self.max_overlap_hours / (60 * 60)
-    #     for seg1 in track:
-    #         if not (mostly_before(seg, seg1) or mostly_before(seg1, seg)):
-    #             return  True
-    #     return False
-
     @staticmethod
     def time_delta(seg0, seg1):
         return seg1['first_msg_of_day_timestamp'] - seg0['last_msg_of_day_timestamp']
-
-    # @staticmethod
-    # def _before(seg0, seg1):
-    #     """True if seg0 is completely before seg1"""
-    #     return Stitcher.time_delta(seg0, seg1).total_seconds() >= 0.0
 
     def track_index(self, track, seg, tolerance):
         """Return index where seg would insert within track, raise Overlap if overlaps"""
@@ -285,7 +248,6 @@ class Stitcher(DiscrepancyCalculator):
 
         hours = self.compute_msg_delta_hours(msg0, msg1)
         assert self.compute_msg_delta_hours(msg0, msg1) >= 0
-        # effective_hours = math.hypot(hours, self.penalty_hours)
         penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
 
         discrepancy = self.compute_discrepancy(msg0, msg1, penalized_hours)
@@ -293,22 +255,18 @@ class Stitcher(DiscrepancyCalculator):
         padded_hours = math.hypot(hours, self.buffer_hours)
 
         if tgt['seg_id'] == seg['seg_id']:
-            speed_metric = 0
+            disc_metric = 0
         else:
             speed = discrepancy / padded_hours
-            # print(speed, self.max_average_knots, discrepancy, padded_hours)
             if speed > (1 - tolerance) * self.max_average_knots:
                 logger.info('failed speed test')
                 logger.info("discrepancy %s, effective_hours: %s, speed:  %s, max_speed: %s", 
                              discrepancy, padded_hours, speed, self.max_average_knots)
                 raise BadMatch()
-            # speed_metric = 1 - speed / self.max_average_knots  
-            # print('metric', speed_metric)
-            speed_metric = -discrepancy / 100.0 # TODO: parametrize (maxish speed * 1 hour)
+            disc_metric = -discrepancy
 
-        # print(discrepancy, speed_metric, sig_metric, speed, penalized_padded_hours, padded_hours)
 
-        return sig_metric + speed_metric
+        return self.signature_weight * sig_metric + self.discrepancy_weight * disc_metric
 
 
     def compute_metric(self, signatures, track, seg, signature_count, track_counts):
@@ -358,7 +316,6 @@ class Stitcher(DiscrepancyCalculator):
 
 
     def find_track_signatures(self, start_date, tracks, segs, lookback=30):
-        # TODO: add blank signatures when track has no active points
         end_range = start_date - DT.timedelta(days=1)
         start_range = start_date - DT.timedelta(days=lookback)
         segs = [x for x in segs if start_range <= x['timestamp'].date() <= end_range]
@@ -402,7 +359,7 @@ class Stitcher(DiscrepancyCalculator):
         segs = self.filter_and_sort(segs, self.min_seg_size)
         signatures = self._compute_signatures(segs)
 
-        signatures.update(track_sigs) # TODO: there is probably a lot of improving to do in the way we deal with signatures now
+        signatures.update(track_sigs)
         for track in tracks:
             track_id = track[0]['aug_seg_id']
             for seg in track:
@@ -416,17 +373,6 @@ class Stitcher(DiscrepancyCalculator):
         active_segs = []
         while True:
             log('currently %s tracks', len(tracks))
-            while len(active_segs) < self.lookahead:
-                try:
-                    active_segs.append(next(seg_source))
-                except StopIteration:
-                    if len(active_segs) == 0:
-                        logger.info("Created %s tracks from %s segments", len(tracks), len(segs))
-                        for track in tracks:
-                            yield track
-                        return
-                    break
-
             track_counts = {}
             for track in tracks:
                 track_id = track[0]['aug_seg_id']
@@ -434,24 +380,38 @@ class Stitcher(DiscrepancyCalculator):
                 # TODO: This is an average count, could revamp to use real message count
                 count = sum(sig[0].values()) #  Brittle :-()
                 track_counts[track_id] = count
-            # print(len(tracks), 'track_counts', track_counts)
 
-            # TODO: need a way to incorporate recentness into active tracks so we can
-            #       create new tracks by retiring old tracks. Maybe only use recentness?
+            track_ids_by_count= sorted(track_counts, key=lambda x: track_counts[x], reverse=True)
             active_tracks_ids = set(sorted(track_counts, key=lambda x: track_counts[x], 
-                                        reverse=True)[:self.max_active_tracks])
+                                           reverse=True)[:self.max_active_tracks])
+
+            while len(active_segs) < self.max_lookahead:
+                try:
+                    active_segs.append(next(seg_source))
+                except StopIteration:
+                    if len(active_segs) == 0:
+                        logger.info("Created %s tracks from %s segments", len(tracks), len(segs))
+                        for track in tracks:
+                            track_id = track[0]['aug_seg_id']
+                            ndx = track_ids_by_count.index(track_id)
+                            yield track, ndx
+                        return
+                    break
+
             # Inactive tracks are never resurrected, so emit now.
             active_tracks = []
             for track in tracks:
                 track_id = track[0]['aug_seg_id']
+                ndx = track_ids_by_count.index(track_id)
                 if track_id in active_tracks_ids:
                     active_tracks.append(track)
                 else:
-                    yield track
+                    yield track, ndx
             tracks = active_tracks
             best_track_info = None
             best_metric = -inf
             segs_with_match = set()
+
             for seg in active_segs:
                 for track in tracks:
                     track_id = track[0]['aug_seg_id']
@@ -459,10 +419,8 @@ class Stitcher(DiscrepancyCalculator):
                         ndx, metric = self.compute_metric(signatures, track, seg, 
                                                 signature_count, track_counts)
                     except Overlap: 
-                        # print("overlap", track_id, seg['aug_seg_id'])
                         continue
                     except BadMatch:
-                        # print("bad_match", track_id, seg['aug_seg_id'])
                         continue
                     segs_with_match.add(seg['aug_seg_id'])
                     if metric >= best_metric:
@@ -472,7 +430,6 @@ class Stitcher(DiscrepancyCalculator):
                         best_track_info = track, ndx, seg
             if best_track_info is not None: 
                 best_track, ndx, best_seg = best_track_info
-                # print("extending track", len(tracks), len(active_segs))
                 match_ndx = active_segs.index(best_seg)
                 assert active_segs.pop(match_ndx) == best_seg
                 new_sigs = []
@@ -486,17 +443,16 @@ class Stitcher(DiscrepancyCalculator):
                 for tgt in best_track:
                     signatures[tgt['aug_seg_id']] = new_sigs
                 # If seg[0] did not match due to overlap or speed, turn it into it's own track
+                # This is so that it's a candidate to add to for other tracks and since it
+                # is unlikely be added to any existing track (technically, it could get added
+                # if it failed due to speed when another segment gets added, but it's unlikely)
                 if match_ndx != 0 and active_segs[0]['aug_seg_id'] not in segs_with_match:
                     seg = active_segs.pop(0)
-                    # print(seg)
-                    # print('best_seg', best_seg)
                     if seg['message_count'] >= self.min_seed_size:
                         logger.info('adding new track')
-                        # print("creating track from seg0 since it did not match")
                         tracks.append([seg])
             else:
                 while active_segs:
-                    # print("adding track", len(tracks), len(active_segs))
                     seg = active_segs.pop(0)
                     if seg['message_count'] >= self.min_seed_size:
                         logger.info('adding new track')

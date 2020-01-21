@@ -46,12 +46,14 @@ POSITION_TYPES = {
     'AIS.18' : {'AIS-B'}, 
     'AIS.19' : {'AIS-B'},
     'AIS.27' : {'AIS-A', 'AIS-B'}
+    'VMS' : {'VMS'}
     } 
 
 INFO_TYPES = {
     'AIS.5' : 'AIS-A',
     'AIS.19' : 'AIS-B', 
-    'AIS.24' : 'AIS-B'
+    'AIS.24' : 'AIS-B',
+    'VMS' : 'VMS'
     }
 
 INFO_PING_INTERVAL_MINS = 6

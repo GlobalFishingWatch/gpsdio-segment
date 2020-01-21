@@ -518,12 +518,6 @@ class Segmentizer(DiscrepancyCalculator):
     def process(self):
         for msg in self.instream:
 
-            # normalized VMS data does not have the type field. Add that field here if not
-            # present.
-            if 'type' not in msg:
-                msg['type'] = 'VMS'
-
-
             # Add empty info fields so they are always preset
             msg['shipnames'] = {}
             msg['callsigns'] = {}

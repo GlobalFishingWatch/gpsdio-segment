@@ -56,6 +56,7 @@ INFO_TYPES = {
     'VMS' : 'VMS'
     }
 
+
 INFO_PING_INTERVAL_MINS = 6
 
 # The values 52 and 102.3 are both almost always noise, and don't
@@ -516,6 +517,13 @@ class Segmentizer(DiscrepancyCalculator):
 
     def process(self):
         for msg in self.instream:
+
+            # normalized VMS data does not have the type field. Add that field here if not
+            # present.
+            if 'type' not in msg:
+                msg['type'] = 'VMS'
+
+
             # Add empty info fields so they are always preset
             msg['shipnames'] = {}
             msg['callsigns'] = {}

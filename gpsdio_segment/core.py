@@ -517,6 +517,8 @@ class Segmentizer(DiscrepancyCalculator):
 
     def process(self):
         for msg in self.instream:
+            if 'type' not in msg:
+                raise ValueError("`msg` is missing required field `type`")
 
             # Add empty info fields so they are always preset
             msg['shipnames'] = {}

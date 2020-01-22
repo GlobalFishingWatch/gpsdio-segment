@@ -45,7 +45,7 @@ POSITION_TYPES = {
     'AIS.3' : {'AIS-A'},
     'AIS.18' : {'AIS-B'}, 
     'AIS.19' : {'AIS-B'},
-    'AIS.27' : {'AIS-A', 'AIS-B'}
+    'AIS.27' : {'AIS-A', 'AIS-B'},
     'VMS' : {'VMS'}
     } 
 

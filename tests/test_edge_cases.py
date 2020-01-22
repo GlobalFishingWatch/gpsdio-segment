@@ -28,7 +28,8 @@ def test_unsorted():
 
 
 def test_same_point_same_time():
-    msg1 = {'ssvid': 100, 'msgid' : 1, 'lat': 10, 'lon': 10, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg1 = {'ssvid': 100, 'msgid' : 1, 'lat': 10, 'lon': 10, 'type' : 'UNKNOWN',
+            'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
     msg2 = msg1.copy()
     msg2['msgid'] = 2
     messages = [msg1, msg2]
@@ -40,8 +41,9 @@ def test_same_point_same_time():
 
 
 def test_same_point_absurd_timedelta():
-    msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': -90, 'lon': -90, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': -90, 'lon': -90,
+    msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': -90, 'lon': -90, 'type' : 'UNKNOWN',
+                'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': -90, 'lon': -90, 'type' : 'UNKNOWN',
             'timestamp': msg1['timestamp'] + timedelta(days=1000), 'course' : 1, 'speed': 1}
     messages = [msg1, msg2]
     messages = [utcify(x) for x in messages]
@@ -52,8 +54,10 @@ def test_same_point_absurd_timedelta():
 
 def test_same_time_absurd_distance():
     t = datetime.now()
-    msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': 0, 'lon': 0, 'timestamp': t, 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': 10, 'lon': 10, 'timestamp': t, 'course' : 1, 'speed': 1}
+    msg1 = {'ssvid': 10000, 'msgid': 1, 'lat': 0, 'lon': 0, 'type' : 'UNKNOWN',
+            'timestamp': t, 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 10000, 'msgid': 2, 'lat': 10, 'lon': 10, 'type' : 'UNKNOWN',
+             'timestamp': t, 'course' : 1, 'speed': 1}
     messages = [msg1, msg2]
     messages = [utcify(x) for x in messages]
     segments = list(Segmentizer(messages))
@@ -68,16 +72,19 @@ def test_with_non_posit():
     # positional and 1 that is a non-posit
 
     # Continuous
-    msg1 = {'idx': 0, 'msgid' : 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
-    msg2 = {'idx': 1, 'msgid' : 2, 'ssvid': 1, 'timestamp': msg1['timestamp'] + timedelta(hours=1)}
-    msg3 = {'idx': 2, 'msgid' : 3, 'ssvid': 1, 'lat': 0.00001, 'lon': 0.00001,
+    msg1 = {'idx': 0, 'msgid' : 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 'type' : 'AIS.1',
+            'timestamp': datetime.now(), 'course' : 0, 'speed': 1}
+    msg2 = {'idx': 1, 'msgid' : 2, 'ssvid': 1, 'type' : 'AIS.1',
+            'timestamp': msg1['timestamp'] + timedelta(hours=1)}
+    msg3 = {'idx': 2, 'msgid' : 3, 'ssvid': 1, 'lat': 0.00001, 'lon': 0.00001, 'type' : 'AIS.1',
             'timestamp': msg1['timestamp'] + timedelta(hours=2), 'course' : 0, 'speed': 1}
 
     # Also continuous but not to the previous trio
-    msg4 = {'idx': 3, 'msgid': 4, 'ssvid': 1, 'lat': 65, 'lon': 65,
+    msg4 = {'idx': 3, 'msgid': 4, 'ssvid': 1, 'lat': 65, 'lon': 65, 'type' : 'AIS.1',
             'timestamp': msg3['timestamp'] + timedelta(days=100), 'course' : 0, 'speed': 1}
-    msg5 = {'idx': 4, 'msgid': 5, 'ssvid': 1, 'timestamp': msg4['timestamp'] + timedelta(hours=1)}
-    msg6 = {'idx': 5, 'msgid': 6, 'ssvid': 1, 'lat': 65.00001, 'lon': 65.00001,
+    msg5 = {'idx': 4, 'msgid': 5, 'ssvid': 1, 'type' : 'AIS.1',
+            'timestamp': msg4['timestamp'] + timedelta(hours=1)}
+    msg6 = {'idx': 5, 'msgid': 6, 'ssvid': 1, 'lat': 65.00001, 'lon': 65.00001, 'type' : 'AIS.1',
             'timestamp': msg4['timestamp'] + timedelta(hours=2), 'course' : 0, 'speed': 1}
 
     messages = [msg1, msg2, msg3, msg4, msg5, msg6]
@@ -93,10 +100,14 @@ def test_with_non_posit_first():
     non-pos message added first should be emitted as single message noise segment
     """
     messages = [
-        {'ssvid': 1, 'msgid' : 1,  'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
-        {'ssvid': 1, 'msgid' : 2,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 3,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 4,  'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 2, 'speed': 1}
+        {'ssvid': 1, 'msgid' : 1,  'timestamp': datetime(2015, 1, 1, 1, 1, 1),
+        'type' : 'AIS.1',},
+        {'ssvid': 1, 'msgid' : 2,  'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 3,  'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 4,  'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 2, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -113,10 +124,14 @@ def test_first_message_out_of_bounds():
     """
 
     messages = [
-        {'ssvid': 1, 'msgid' : 1, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 3, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 3, 'speed': 1}
+        {'ssvid': 1, 'msgid' : 1, 'lat': 91, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 2, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 3, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 2, 1, 1), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 3, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -136,17 +151,23 @@ def test_first_message_out_of_bounds():
 
 def test_first_message_out_of_bounds_gt_24h():
     """
-    Out of bounds location as teh first message after all previous segments have been cleared.
+    Out of bounds location as the first message after all previous segments have been cleared.
     Should put the bad message in a BadSegment and continue with the next good message
     """
 
     messages = [
-        {'ssvid': 1, 'msgid' : 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 3, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 1), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 2), 'course' : 3, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 5, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 3), 'course' : 4, 'speed': 1},
-        {'ssvid': 1, 'msgid' : 6, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 10, 1, 1, 4), 'course' : 5, 'speed': 1}
+        {'ssvid': 1, 'msgid' : 1, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 2, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 3, 'lat': 91, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 10, 1, 1, 1), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 4, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 10, 1, 1, 2), 'course' : 3, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 5, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 10, 1, 1, 3), 'course' : 4, 'speed': 1},
+        {'ssvid': 1, 'msgid' : 6, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 10, 1, 1, 4), 'course' : 5, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -162,11 +183,15 @@ def test_non_pos_first_followed_by_out_of_bounds():
     it gets emitted as noise. Then a real segment is created.
     """
     messages = [
-        {'ssvid': 1, 'msgid': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1)},
-        {'ssvid': 1, 'msgid': 2, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid': 3, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 3), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid': 5, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 4), 'course' : 3, 'speed': 1}
+        {'ssvid': 1, 'msgid': 1, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'type' : 'AIS.1'},
+        {'ssvid': 1, 'msgid': 2, 'lat': 91, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'msgid': 3, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 2), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 3), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid': 5, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 4), 'course' : 3, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -177,10 +202,14 @@ def test_non_pos_first_followed_by_out_of_bounds():
 def test_bad_message_in_stream():
 
     messages = [
-        {'ssvid': 1, 'msgid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
-        {'ssvid': 1, 'msgid': 2, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 1, 'speed': 1},
-        {'ssvid': 1, 'msgid': 3, 'lat': 91, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 2, 'speed': 1},
-        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 3, 'speed': 1}
+        {'ssvid': 1, 'msgid': 1, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1},
+        {'ssvid': 1, 'msgid': 2, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 4, 1, 1), 'course' : 1, 'speed': 1},
+        {'ssvid': 1, 'msgid': 3, 'lat': 91, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 2, 'speed': 1},
+        {'ssvid': 1, 'msgid': 4, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 7, 1, 1), 'course' : 3, 'speed': 1}
     ]
     messages = [utcify(x) for x in messages]
 
@@ -198,12 +227,14 @@ def test_bad_message_in_stream():
 def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
 
     messages1 = [
-        {'ssvid': 1, 'lat': 89, 'lon': 0, 'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1}
+        {'ssvid': 1, 'lat': 89, 'lon': 0, 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 1, 1, 1, 1), 'course' : 0, 'speed': 1}
     ]
     messages1 = [utcify(x) for x in messages1]
 
     messages2 = [
-        {'ssvid': 1, 'shipname': 'Boaty', 'timestamp': datetime(2015, 1, 9, 1, 1, 1)}
+        {'ssvid': 1, 'shipname': 'Boaty', 'type' : 'AIS.1',
+        'timestamp': datetime(2015, 1, 9, 1, 1, 1)}
     ]
     messages2 = [utcify(x) for x in messages2]
 
@@ -219,8 +250,10 @@ def test_isssue_24_prev_state_nonpos_msg_gt_max_hours():
 
 
 def test_duplicate_msgid():
-    msg1 = {'ssvid': 1, 'msgid': 0, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
+    msg1 = {'ssvid': 1, 'msgid': 0, 'lat': 21.42061667, 'lon': -91.77805, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
     msgs = []
     for i in range(4):
         m = msg1.copy()
@@ -236,8 +269,10 @@ def test_duplicate_msgid():
 
 
 def test_duplicate_msgid_previ_day():
-    msg1 = {'ssvid': 1, 'msgid': 0, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
+    msg1 = {'ssvid': 1, 'msgid': 0, 'lat': 21.42061667, 'lon': -91.77805, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
     msgs = []
     for i in range(4):
         m = msg1.copy()
@@ -252,8 +287,10 @@ def test_duplicate_msgid_previ_day():
 
 
 def test_duplicate_pos_prev_day():
-    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
+    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 1}
     msgs = []
     for i in range(4):
         m = msg1.copy()
@@ -269,8 +306,10 @@ def test_duplicate_pos_prev_day():
         assert len(seg) == 1
 
 def test_duplicate_pos_msg():
-    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
-    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
+    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 1}
+    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
     msgs = []
     for i in range(4):
         m = msg1.copy()
@@ -284,8 +323,10 @@ def test_duplicate_pos_msg():
         assert len(seg) == 2
 
 def test_duplicate_pos_msg_zero_speed():
-    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 0}
-    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
+    msg1 = {'ssvid': 1, 'msgid': 1, 'lat': 21.42061667, 'lon': -91.77805, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 0, 31, 27), 'course' : 0, 'speed': 0}
+    msg2 = {'ssvid': 1, 'msgid': 0, 'lat': 21.45295, 'lon': -91.80513333, 'type' : 'AIS.1',
+    'timestamp': datetime(2016, 5, 1, 1, 31, 27), 'course' : 0, 'speed': 0}
     msgs = []
     for i in range(4):
         m = msg1.copy()
@@ -303,11 +344,16 @@ def test_duplicate_ts_multiple_segs():
     # 2 segments present because of a noise position in idx=1
     # so we have 2 segments [0,2,3,4] and [1] .
     messages = [
-        {'idx': 0, 'msgid': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
-        {'idx': 1, 'msgid': 1, 'ssvid': 1, 'lat': 44.63928, 'lon': -64.551334, 'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
-        {'idx': 2, 'msgid': 2, 'ssvid': 1, 'lat': 44.63896, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 12, 0, 0), 'course' : 180, 'speed': 0},
-        {'idx': 3, 'msgid': 3, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'timestamp': datetime(2018, 5, 18, 14, 0, 0), 'course' : 0, 'speed': 0},
-        {'idx': 4, 'msgid': 4, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551334, 'timestamp': datetime(2018, 5, 18, 16, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 0, 'msgid': 0, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'type' : 'AIS.1',
+        'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 1, 'msgid': 1, 'ssvid': 1, 'lat': 44.63928, 'lon': -64.551334, 'type' : 'AIS.1',
+        'timestamp': datetime(2018, 5, 18, 10, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 2, 'msgid': 2, 'ssvid': 1, 'lat': 44.63896, 'lon': -63.551333, 'type' : 'AIS.1',
+        'timestamp': datetime(2018, 5, 18, 12, 0, 0), 'course' : 180, 'speed': 0},
+        {'idx': 3, 'msgid': 3, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551333, 'type' : 'AIS.1',
+        'timestamp': datetime(2018, 5, 18, 14, 0, 0), 'course' : 0, 'speed': 0},
+        {'idx': 4, 'msgid': 4, 'ssvid': 1, 'lat': 44.63928, 'lon': -63.551334, 'type' : 'AIS.1',
+        'timestamp': datetime(2018, 5, 18, 16, 0, 0), 'course' : 0, 'speed': 0},
     ]
     messages = [utcify(x) for x in messages]
     segments = list(Segmentizer(messages))

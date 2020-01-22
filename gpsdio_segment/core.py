@@ -45,14 +45,17 @@ POSITION_TYPES = {
     'AIS.3' : {'AIS-A'},
     'AIS.18' : {'AIS-B'}, 
     'AIS.19' : {'AIS-B'},
-    'AIS.27' : {'AIS-A', 'AIS-B'}
+    'AIS.27' : {'AIS-A', 'AIS-B'},
+    'VMS' : {'VMS'}
     } 
 
 INFO_TYPES = {
     'AIS.5' : 'AIS-A',
     'AIS.19' : 'AIS-B', 
-    'AIS.24' : 'AIS-B'
+    'AIS.24' : 'AIS-B',
+    'VMS' : 'VMS'
     }
+
 
 INFO_PING_INTERVAL_MINS = 6
 
@@ -514,6 +517,9 @@ class Segmentizer(DiscrepancyCalculator):
 
     def process(self):
         for msg in self.instream:
+            if 'type' not in msg:
+                raise ValueError("`msg` is missing required field `type`")
+
             # Add empty info fields so they are always preset
             msg['shipnames'] = {}
             msg['callsigns'] = {}

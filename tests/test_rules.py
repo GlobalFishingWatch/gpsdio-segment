@@ -31,8 +31,10 @@ def generate_messages_from_deltas(deltas):
 def test_two_different_ssvid():
     # If a second different ssvid is encountered it should be ignored
     # Should produce a single segment containing a single point
-    p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
-    p2 = {'ssvid': 2, 'lat': 0.0000001, 'lon': 0.0000001, 'timestamp': datetime.now(), 'course': 0, 'speed': 0}
+    p1 = {'ssvid': 1, 'lat': 0, 'lon': 0, 'type' : 'UNKNOWN',
+            'timestamp': datetime.now(), 'course': 0, 'speed': 0}
+    p2 = {'ssvid': 2, 'lat': 0.0000001, 'lon': 0.0000001,  'type' : 'UNKNOWN',
+            'timestamp': datetime.now(), 'course': 0, 'speed': 0}
     segmenter = Segmentizer([utcify(x) for x in [p1, p2]])
     segments = list(segmenter)
 
@@ -44,9 +46,9 @@ def test_two_different_ssvid():
 
 def test_good_speed_good_time():
     # Make sure two points within the max_hours and max_speed are in the same segment
-    p1 = {'msgid': 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 
+    p1 = {'msgid': 1, 'ssvid': 1, 'lat': 0, 'lon': 0, 'type' : 'UNKNOWN',
             'timestamp': datetime.now(), 'course': 0, 'speed': 5}
-    p2 = {'msgid': 2, 'ssvid': 1, 'lat': 1, 'lon': 0, 
+    p2 = {'msgid': 2, 'ssvid': 1, 'lat': 1, 'lon': 0, 'type' : 'UNKNOWN',
             'timestamp': p1['timestamp'] + timedelta(hours=3), 'course': 0, 'speed': 5}
     msgs = [utcify(x) for x in [p1, p2]]
     segmenter = Segmentizer(msgs)

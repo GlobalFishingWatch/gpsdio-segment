@@ -12,7 +12,12 @@ def utcify(msg):
             msg['timestamp'] = msg['timestamp'].astimezone(pytz.utc)
     return msg
 
-def read_json(src, add_msgid=True):
+def add_type_field(msgs):
+    for x in msgs:
+        if 'type' not in x:
+            x['type'] = 'UNKNOWN'
+
+def read_json(src, add_msgid=True, add_type=True):
     for x in src:
         x = x.strip()
         if x:
@@ -22,5 +27,7 @@ def read_json(src, add_msgid=True):
             msg = utcify(msg)
             if add_msgid and 'msgid' not in msg:
                 msg['msgid'] = random.random()
+            if add_type and 'type' not in msg:
+                msg['type'] = 'UNKNOWN'
             yield msg
 

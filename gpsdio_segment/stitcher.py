@@ -394,7 +394,7 @@ class Stitcher(DiscrepancyCalculator):
                         for track in tracks:
                             track_id = track[0]['aug_seg_id']
                             ndx = track_ids_by_count.index(track_id)
-                            yield track, ndx
+                            yield track, ndx, 'active'
                         return
                     break
 
@@ -406,7 +406,7 @@ class Stitcher(DiscrepancyCalculator):
                 if track_id in active_tracks_ids:
                     active_tracks.append(track)
                 else:
-                    yield track, ndx
+                    yield track, ndx, 'inactive'
             tracks = active_tracks
             best_track_info = None
             best_metric = -inf

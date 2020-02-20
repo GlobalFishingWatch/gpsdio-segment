@@ -44,10 +44,11 @@ class Stitcher(DiscrepancyCalculator):
     max_active_tracks = 8
 
     signature_weight = 1.0
-    discrepancy_weight = 2.0
+    discrepancy_weight = 15.0
     time_metric_weight = 1.0
     max_discrepancy = 1500
     time_metric_scale_hours = 7 * 24
+    same_seg_weight = 0.2
     
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -285,9 +286,14 @@ class Stitcher(DiscrepancyCalculator):
         time_metric = self.time_metric_scale_hours / (self.time_metric_scale_hours + hours) 
         # TODO: time_metric
 
+        id1 = tgt['seg_id']
+        id2 = seg['seg_id']
+        same_seg = (id1 == id2)
+
         return ( self.signature_weight * sig_metric +
                  self.discrepancy_weight * disc_metric +
-                 self.time_metric_weight * time_metric)
+                 self.time_metric_weight * time_metric +
+                 self.same_seg_weight * same_seg)
 
 
     def compute_metric(self, signatures, track, seg, signature_count, track_counts):

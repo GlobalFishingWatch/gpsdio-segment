@@ -11,6 +11,8 @@ logger.setLevel(logging.WARNING)
 
 log = logger.debug
 
+EPSILON = 1e-10
+
 
 from .discrepancy import DiscrepancyCalculator
 
@@ -42,7 +44,10 @@ class Stitcher(DiscrepancyCalculator):
     max_active_tracks = 8
 
     signature_weight = 1.0
-    discrepancy_weight = 0.01
+    discrepancy_weight = 2.0
+    time_metric_weight = 1.0
+    max_discrepancy = 1500
+    time_metric_scale_hours = 7 * 24
     
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -131,9 +136,12 @@ class Stitcher(DiscrepancyCalculator):
 
         sig1 = signatures[seg1['aug_seg_id']][:2]
         sig2 = signatures[seg2['aug_seg_id']][:2]
+        # A perfect match of transponder type is not very specific since there only two types,
+        # So we cap the specificity if the match is positive
+        max_pos_specificities = [0.5, 0.99]
 
         match = []
-        for a, b in zip(sig1, sig2):
+        for a, b, mps in zip(sig1, sig2, max_pos_specificities):
             if len(a) and len(b):
                 na = math.sqrt(sum([v**2 for v in a.values()]))
                 nb = math.sqrt(sum([v**2 for v in b.values()]))
@@ -141,14 +149,10 @@ class Stitcher(DiscrepancyCalculator):
                     maxa = max(a.values()) / na
                     maxb = max(b.values()) / nb
                     cos = 0
-                    ta = 0 
-                    tb = 0
                     for k in set(a) & set(b):
                         va = a[k] / na
                         vb = b[k] / nb
                         cos += va * vb
-                        ta += va ** 2
-                        tb += vb ** 2
                     cos2 = 2 * cos ** 2 - 1
                     num_dims = len(set(a) | set(b))
                     # Specificity is an ad hoc measure of how much information the
@@ -162,16 +166,22 @@ class Stitcher(DiscrepancyCalculator):
                         specificity_a = alpha * maxa - beta
                         specificity_b = alpha * maxb - beta
                         specificity = specificity_a * specificity_b
-                    match.append(cos2 * specificity)
+                    if cos2 >= 0:
+                        specificity *= mps
+                    match.append((cos2, specificity))
+                    continue
+            else:
+                match.append((0, 0))
         log('signature 1: %s', sig1)
         log('signature 2: %s', sig2)
         log('match_vector: %s', match)
-        if len(match) == 0:
-            return self.min_sig_metric, False            
-        metric = 0.5 * (1 + min(match))
-        if len(match) == 1:
-            return min(metric, self.min_sig_metric), False
-        return metric, (len(match) > 1)
+
+        denom = sum(x[1] for x in match) + EPSILON
+        # Raw metric is a value between -1 and 1
+        raw_metric = sum((x[0] * x[1]) for x in match) / denom
+        # Return a value between 0 and 1
+        return 2 * raw_metric - 1, True
+      
 
 
     def _mostly_before(self, s0, s1, tolerance=0):
@@ -247,26 +257,37 @@ class Stitcher(DiscrepancyCalculator):
             msg0, msg1 = msg1, msg0
 
         hours = self.compute_msg_delta_hours(msg0, msg1)
-        assert self.compute_msg_delta_hours(msg0, msg1) >= 0
+        assert hours >= 0
         penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
 
         discrepancy = self.compute_discrepancy(msg0, msg1, penalized_hours)
         penalized_padded_hours = math.hypot(penalized_hours, self.buffer_hours)
         padded_hours = math.hypot(hours, self.buffer_hours)
 
+
         if tgt['seg_id'] == seg['seg_id']:
             disc_metric = 0
         else:
+            if discrepancy > self.max_discrepancy:
+                logger.info('failed discrepancy test')
+                logger.info("discrepancy %s, max_discrepancy", 
+                             discrepancy, self.max_discrepancy)
+                raise BadMatch()   
             speed = discrepancy / padded_hours
             if speed > (1 - tolerance) * self.max_average_knots:
                 logger.info('failed speed test')
                 logger.info("discrepancy %s, effective_hours: %s, speed:  %s, max_speed: %s", 
                              discrepancy, padded_hours, speed, self.max_average_knots)
                 raise BadMatch()
-            disc_metric = -discrepancy
+            disc_metric = 1 - discrepancy / self.max_discrepancy
 
 
-        return self.signature_weight * sig_metric + self.discrepancy_weight * disc_metric
+        time_metric = self.time_metric_scale_hours / (self.time_metric_scale_hours + hours) 
+        # TODO: time_metric
+
+        return ( self.signature_weight * sig_metric +
+                 self.discrepancy_weight * disc_metric +
+                 self.time_metric_weight * time_metric)
 
 
     def compute_metric(self, signatures, track, seg, signature_count, track_counts):

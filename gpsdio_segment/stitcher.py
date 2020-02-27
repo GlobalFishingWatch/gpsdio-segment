@@ -465,6 +465,9 @@ class Stitcher(DiscrepancyCalculator):
             decayed_count = 0
             last_dtime = None
             for seg in raw:
+                # Another reason it would be better to pass around track objects TODO:
+                if seg.timestamp is None:
+                    continue # Placeholder
                 count += seg.msg_count
                 if last_dtime is not None:
                     s_since_track = (seg.first_msg_of_day.timestamp - 

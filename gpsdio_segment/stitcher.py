@@ -488,7 +488,7 @@ class Stitcher(DiscrepancyCalculator):
         segs = self.filter_and_sort(segs, self.min_seg_size)
         self.signatures  = self._compute_signatures(segs)
         # Now remove all segments that occur before today:
-        segs = [x for x in segs if x.timestamp.date() >= start_date.date()]
+        segs = [x for x in segs if x.timestamp and x.timestamp.date() >= start_date.date()]
 
         # New below here
 

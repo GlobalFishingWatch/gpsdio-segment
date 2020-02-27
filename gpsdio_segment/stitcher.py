@@ -1,19 +1,21 @@
 from __future__ import division, print_function, absolute_import
-from collections import Counter, namedtuple
+from collections import namedtuple
 import datetime as DT
-from itertools import chain
 import logging
 import math
 
-Track = namedtuple('Track', ['id', 'prefix', 'segments'])
+from .discrepancy import DiscrepancyCalculator
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
+Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active'])
+
+
 log = logger.debug
 
-EPSILON = 1e-10
+EPSILON = 1e-6
 
 def clip(x, l, h):
     if x < l:
@@ -22,45 +24,45 @@ def clip(x, l, h):
         return h
     return x
 
-epsilon = 1e-6
+S_PER_HR = 60 * 60
+S_PER_DAY = S_PER_HR * 24
 
-from .discrepancy import DiscrepancyCalculator
-
-class Overlap(Exception):
-    pass
-
-class BadMatch(Exception):
-    pass
-
-inf = float('Inf')
 
 class Stitcher(DiscrepancyCalculator):
     """Stitch segments together into coherent tracks.
     """
     
-    min_seed_size = 5 # minimum segment size to start a track
+    # General parameters
+    condense_interval = 32
+    max_hypotheses = 16
     min_seg_size = 3 # segments shorter than this are dropped
-    max_average_knots = 50 # fastest speed we allow when connecting segments
+    max_active_tracks = 8
 
+    # Parameters controlling how effective hours are computed
     penalty_hours = 4
     hours_exp = 0.5
     buffer_hours = 1.0
+
+    # Parameters used in computing costs
+    buffer_count = 10
+    max_discrepancy = 3000
+    time_metric_scale_hours = 7 * 24
+    max_average_knots = 50 
     max_overlap_hours = 2.0
     max_overlap_fraction = max_overlap_hours / 24.0
-    min_sig_metric = 0.35
-    max_lookahead = 32
-    buffer_count = 10
-    max_count_weight = 10.0
-    max_active_tracks = 8
+    base_track_cost = 1.0
 
+    # Weights of various cost components
+    # TODO: weight should be incorporated into costs
+    count_weight = 0.1
     signature_weight = 1.0
-    discrepancy_weight = 10.0
-    overlap_weight = .0
-    speed_weight = 10.0
+    discrepancy_weight = 1.0
+    overlap_weight = 1.0
+    speed_weight = 1.0
     time_metric_weight = 1.0
-    max_discrepancy = 1500
-    time_metric_scale_hours = 7 * 24
-    same_seg_weight = 0.2
+
+    track_count_decay_per_day = 0.9
+    msg_count_decacy_per_day = 0.99
     
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -69,13 +71,23 @@ class Stitcher(DiscrepancyCalculator):
     
     @staticmethod
     def aug_seg_id(dict_obj):
+        """Return the segment id augmented with the date of this subsegment"""
         if dict_obj['seg_id'] is None:
             return None
         return dict_obj['seg_id'] + '-' + dict_obj['timestamp'].date().isoformat()        
 
     @staticmethod
     def add_track_ids(msgs, tracks):
-        # Use the seg_id of the first seg in the track as the track id.
+        """Add track ids to a messages.
+
+        Parameters
+        ----------
+        msgs : list of messages
+            List of messages encoded as dictionaries
+        tracks : list segments 
+
+        """
+        # TODO: eventually use objects where appropriate
         id_map = {}
         for track in tracks:
             track_id = Stitcher.aug_seg_id(track[0])
@@ -134,12 +146,29 @@ class Stitcher(DiscrepancyCalculator):
         return [seg for seg in segs if sizes[seg.id] > min_seg_size]
 
 
+    @staticmethod
+    def seg_time_delta(seg0, seg1):
+        return seg1.first_msg_of_day.timestamp - seg0.last_msg_of_day.timestamp
 
-    def compute_signature_metric(self, signatures, seg1, seg2):
+    def _tolerance(self, signature_count, n_tracks):
+        # Tolerance *for new tracks*, so when this is lower we should be less
+        # likely to form new tracks
+        alpha = n_tracks / max(signature_count, 1)
+        return math.exp(1 - alpha)
+
+
+    @staticmethod
+    def seg_duration(seg):
+        return (seg.last_msg_of_day.timestamp - 
+                seg.first_msg_of_day.timestamp)
+
+
+    def signature_cost(self, seg1, seg2):
+        signatures = self.signatures
         if seg1.id == seg2.id:
             # These two chunks are from the same segment, so 
             # say they match
-            return 1, True
+            return 0.0
 
         sig1 = signatures[seg1.aug_id][:2]
         sig2 = signatures[seg2.aug_id][:2]
@@ -187,156 +216,65 @@ class Stitcher(DiscrepancyCalculator):
         # Raw metric is a value between -1 and 1
         raw_metric = sum((x[0] * x[1]) for x in match) / denom
         # Return a value between 0 and 1
-        return 2 * raw_metric - 1, True
+        return self.signature_weight * 0.5 * (1 - raw_metric)
       
 
-
-    def _mostly_before(self, s0, s1, tolerance=0):
-        def dt(s):
-            return (s.last_msg_of_day.timestamp - 
-                    s.first_msg_of_day.timestamp).total_seconds() / (60 * 60)
-        dt0 = dt(s0)
-        dt1 = dt(s1)
-        max_oh = min(self.max_overlap_hours, 
-                     self.max_overlap_fraction * dt0,
-                     self.max_overlap_fraction * dt1)
-        return self.time_delta(s0, s1).total_seconds() / (60 * 60) >= -max_oh * (1 - tolerance)
-
-    @staticmethod
-    def time_delta(seg0, seg1):
-        return seg1.first_msg_of_day.timestamp - seg0.last_msg_of_day.timestamp
-
-    def track_index(self, track, seg, tolerance):
-        """Return index where seg would insert within track, raise Overlap if overlaps"""
-        if not track:
-            logging.info('track_index called on empty track')
-            return 0
-        def mostly_before(s0, s1):
-            return self._mostly_before(s0, s1, tolerance)
-        if mostly_before(seg, track[0]):
-            logging.warning('track_index returning 0')
-            return 0
-        for i, _ in enumerate(track[:-1]):
-            if not mostly_before(track[i], seg):
-                assert track[i].id != seg.id
-                logger.info('internal overlap %s', self.time_delta(track[0], seg).total_seconds() / (60 * 60))
-                raise Overlap
-            if mostly_before(seg, track[i + 1]):
-                logger.debug('internal segment')
-                return i + 1
-        if not mostly_before(track[-1], seg):
-            logger.info('internal overlap %s', self.time_delta(track[-1], seg).total_seconds() / (60 * 60))
-            raise Overlap
-        return len(track)
-
-    def _tolerance(self, signature_count, n_tracks):
-        # Tolerance *for new tracks*, so when this is lower we should be less
-        # likely to form new tracks
-        alpha = (n_tracks + 1) / max(signature_count, 1)
-        # print(n_tracks, signature_count, alpha, math.exp(-alpha))
-        return math.exp(-alpha)
-
-    def _compute_metric(self, tgt, seg, hard_fail=True):
-        n_tracks = len(self.track_counts)
-        signatures = self.signatures
-        sig_metric, had_match = self.compute_signature_metric(signatures, seg, tgt)
-        log('sig_metric: %s, had_match: %s', sig_metric, had_match)
-        # Adjust the tolerance to generating new tracks based on  the number of 
-        # excess tracks present.
-        tolerance = self._tolerance(self.signature_count, n_tracks)
-        # TODO: think about incorporating tolerance into sig_metric
-        if hard_fail and sig_metric < self.min_sig_metric:
-            if self.signature_count == 1:
-                logger.info('sig_metric test failed when only one sig (%s, %s, %s %s)',
-                    signatures[seg.aug_id][:2], 
-                    signatures[tgt.aug_id][:2],
-                    sig_metric, tolerance)
-            log('failed signature test')
-            logger.info("sig_metric: %s, min_sig_metric: %s", sig_metric, self.min_sig_metric)
-            raise BadMatch()
-
-        msg0 = tgt.last_msg_of_day
-        msg1 = seg.first_msg_of_day
+    def overlap_cost(self, seg1, seg2):
+        msg0 = seg1.last_msg_of_day
+        msg1 = seg2.first_msg_of_day
         overlapped = msg0.timestamp > msg1.timestamp
         if overlapped:
             msg0, msg1 = msg1, msg0
             def dt(s):
                 return (s.last_msg_of_day.timestamp - 
-                        s.first_msg_of_day.timestamp).total_seconds() / (60 * 60)
-            dt0 = dt(seg)
-            dt1 = dt(tgt)
+                        s.first_msg_of_day.timestamp).total_seconds() / S_PER_HR
+            dt0 = self.seg_duration(seg1).total_seconds() / S_PER_HR
+            dt1 = self.seg_duration(seg2).total_seconds() / S_PER_HR
             max_oh = min(self.max_overlap_hours, 
                          self.max_overlap_fraction * dt0,
                          self.max_overlap_fraction * dt1)
             oh = self.compute_msg_delta_hours(msg0._asdict(), msg1._asdict()) 
-            overlap_metric = 1 - oh / max_oh
+            return self.overlap_weight * oh / max_oh
         else:
-            overlap_metric = 1
+            return 0
 
 
 
+    def compute_cost(self, seg1, seg2):
+        sig_cost = self.signature_cost(seg1, seg2)
+        overlap_cost = self.overlap_cost(seg1, seg2)
 
-        hours = self.compute_msg_delta_hours(msg0._asdict(), msg1._asdict())
-        assert hours >= 0
+        hours = self.seg_time_delta(seg1, seg2).total_seconds() / S_PER_HR
+        msg1 = seg1.last_msg_of_day
+        msg2 = seg2.first_msg_of_day
+        if hours < 0:
+            # Overlap is already penalized, so swap seg1 and seg2
+            msg1, msg2 = msg2, msg1
+            hours = -hours
         penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
-
-        discrepancy = self.compute_discrepancy(msg0._asdict(), msg1._asdict(), penalized_hours)
-        penalized_padded_hours = math.hypot(penalized_hours, self.buffer_hours)
+        discrepancy = self.compute_discrepancy(msg1._asdict(), msg2._asdict(), penalized_hours)
         padded_hours = math.hypot(hours, self.buffer_hours)
 
-
-        if tgt.id == seg.id:
-            disc_metric = 1
-        else:
-            if hard_fail and discrepancy > self.max_discrepancy:
-                logger.info('failed discrepancy test')
-                logger.info("discrepancy %s, max_discrepancy", 
-                             discrepancy, self.max_discrepancy)
-                raise BadMatch()   
-            disc_metric = 1 - discrepancy / self.max_discrepancy
+        disc_cost = self.discrepancy_weight * discrepancy / self.max_discrepancy
 
         speed = discrepancy / padded_hours
-        speed_metric = 1 - speed / ((1 - tolerance) * self.max_average_knots)
-        if hard_fail and speed_metric < 0:
-            logger.info('failed speed test')
-            logger.info("discrepancy %s, effective_hours: %s, speed:  %s, max_speed: %s", 
-                         discrepancy, padded_hours, speed, self.max_average_knots)
-            raise BadMatch()
+        speed_cost = self.speed_weight * speed  / self.max_average_knots
+
+        time_cost = self.time_metric_weight * (1 - self.time_metric_scale_hours / 
+                        (self.time_metric_scale_hours + hours))
 
 
-        time_metric = self.time_metric_scale_hours / (self.time_metric_scale_hours + hours) 
-        # TODO: time_metric
+        return ( 
+                 sig_cost +
+                 disc_cost +
+                 speed_cost +
+                 time_cost +
+                 overlap_cost
+                 )
 
-        id1 = tgt.id
-        id2 = seg.id
-        same_seg = (id1 == id2)
-
-        return ( self.signature_weight * sig_metric +
-                 self.discrepancy_weight * disc_metric +
-                 self.speed_weight * speed_metric +
-                 self.time_metric_weight * time_metric +
-                 self.overlap_weight * overlap_metric + 
-                 self.same_seg_weight * same_seg)
-
-
-    def compute_metric(self, track, seg):
-        track_counts = self.track_counts
-        n_tracks = len(track_counts)
-        tolerance = self._tolerance(self.signature_count, n_tracks)
-        ndx = self.track_index(track, seg, tolerance)
-        assert ndx > 0, "should never be inserting before start of track ({})".format(ndx)
-        track_id = track[0].aug_id
-        reference = max(track_counts.values())
-        count = track_counts.get(track_id, 0) # TODO: do something sensible for hypothoses
-        count_metric = self.max_count_weight * count / (reference + self.buffer_count)
-        if ndx == len(track):
-            return ndx, self._compute_metric(track[ndx-1], seg) + count_metric
-        else:
-            return ndx, 0.5 * (self._compute_metric(track[ndx-1], seg) + 
-                               self._compute_metric(seg, track[ndx])) + count_metric
 
     @staticmethod
-    def signatures_count(segs, sig_abs=1, sig_frac=0.05):
+    def signatures_count(segs, sig_abs=10, sig_frac=0.05):
         """Check if this vessel has multiple ids based on the signature
         """
         keys = ['shipnames', 'callsigns', 'imos']
@@ -381,223 +319,65 @@ class Stitcher(DiscrepancyCalculator):
         return track_sigs
 
 
-    def active_tracks(self, start_date, tracks, lookback=30):
-        end_range = start_date - DT.timedelta(days=1)
-        start_range = start_date - DT.timedelta(days=lookback)
-        active = []
-        for track in tracks:
-            count = [x for x in track if start_range <= x.timestamp.date() <= end_range]
-
-
-    # def create_tracks(self, segs):
-    def create_tracks(self, start_date, tracks, track_sigs, segs):
-        # Trim tracks to start_date
-        # Check that segs do not extend before start_date
-        # Scan tracks and count number of tracks with > active_track_threshold (100 pts?) over active_track_window (30 days?)
-        # 
-        self.signature_count = max(self.signatures_count(segs), 1)
-        # For now just have two cases eventually, recalculate if
-        # we later decide there are multiple signatures based on speed
-        # also, perhaps be less agressive when we have more tracks than
-        # signatures.
-        # print('signature_count', signature_count)
-        segs = self.filter_and_sort(segs, self.min_seg_size)
-        self.signatures = signatures = self._compute_signatures(segs)
-
-        signatures.update(track_sigs)
-        for track in tracks:
-            track_id = track[0].aug_id
-            for seg in track:
-                seg_id = seg.aug_id
-                signatures[seg_id] = signatures[track_id]
-
-        # Now remove all segments that occur before today:
-        segs = [x for x in segs if x.timestamp.date() >= start_date.date()]
-
-        seg_source = iter(segs)
-        active_segs = []
-        while True:
-            log('currently %s tracks', len(tracks))
-            self.track_counts = track_counts = {}
-            for track in tracks:
-                track_id = track[0].aug_id
-                sig = signatures[track_id]
-                # TODO: This is an average count, could revamp to use real message count
-                count = sum(sig[0].values()) #  Brittle :-()
-                track_counts[track_id] = count
-
-            track_ids_by_count= sorted(track_counts, key=lambda x: track_counts[x], reverse=True)
-            active_tracks_ids = set(sorted(track_counts, key=lambda x: track_counts[x], 
-                                           reverse=True)[:self.max_active_tracks])
-
-            while len(active_segs) < self.max_lookahead:
-                try:
-                    active_segs.append(next(seg_source))
-                except StopIteration:
-                    if len(active_segs) == 0:
-                        logger.info("Created %s tracks from %s segments", len(tracks), len(segs))
-                        for track in tracks:
-                            track_id = track[0].aug_id
-                            ndx = track_ids_by_count.index(track_id)
-                            yield track, ndx, 'active'
-                        return
-                    break
-
-            # Inactive tracks are never resurrected, so emit now.
-            active_tracks = []
-            for track in tracks:
-                track_id = track[0].aug_id
-                ndx = track_ids_by_count.index(track_id)
-                if track_id in active_tracks_ids:
-                    active_tracks.append(track)
-                else:
-                    yield track, ndx, 'inactive'
-            tracks = active_tracks
-            best_track_info = None
-            best_metric = -inf
-            segs_with_match = set()
-
-            for seg in active_segs:
-                for track in tracks:
-                    track_id = track[0].aug_id
-                    try:
-                        ndx, metric = self.compute_metric(track, seg)
-                    except Overlap: 
-                        continue
-                    except BadMatch:
-                        continue
-                    segs_with_match.add(seg.aug_id)
-                    if metric >= best_metric:
-                        assert metric is not None
-                        logger.debug('new best metric: %s', metric)
-                        best_metric = metric 
-                        best_track_info = track, ndx, seg
-            if best_track_info is not None: 
-                best_track, ndx, best_seg = best_track_info
-                match_ndx = active_segs.index(best_seg)
-                assert active_segs.pop(match_ndx) == best_seg
-                new_sigs = []
-                for s1, s2 in zip(signatures[best_seg.aug_id], 
-                                  signatures[best_track[0].aug_id]):
-                    new_sig = {}
-                    for k in set(s1.keys()) | set(s2.keys()):
-                        new_sig[k] = s1.get(k, 0) + s2.get(k, 0) 
-                    new_sigs.append(new_sig)
-                best_track.insert(ndx, best_seg)
-                for tgt in best_track:
-                    signatures[tgt.aug_id] = new_sigs
-                # If seg[0] did not match due to overlap or speed, turn it into it's own track
-                # This is so that it's a candidate to add to for other tracks and since it
-                # is unlikely be added to any existing track (technically, it could get added
-                # if it failed due to speed when another segment gets added, but it's unlikely)
-                if match_ndx != 0 and active_segs[0].aug_id not in segs_with_match:
-                    seg = active_segs.pop(0)
-                    if seg.msg_count >= self.min_seed_size:
-                        logger.info('adding new track')
-                        tracks.append([seg])
-            else:
-                while active_segs:
-                    seg = active_segs.pop(0)
-                    if seg.msg_count >= self.min_seed_size:
-                        logger.info('adding new track')
-                        tracks.append([seg])
-                        break
-
-    # Extra experimental below here
-
-
-
     def update_hypotheses(self, hypotheses, segment):
-        # TODO: replace seg_ids, with segments implemented as namedtuples
         updated = []
-        for track_list in hypotheses:
+        for h in hypotheses:
+            track_list = self.prune_tracks(h['tracks'])
+            track_count = 0
             for i, track in enumerate(track_list):
+                if not track.is_active:
+                    continue
                 new_list = list(track_list)
-                new_list[i] = track._replace(segments=track.segments + (segment,))
-                updated.append(new_list)
+                if track.segments:
+                    s_since_track = (segment.first_msg_of_day.timestamp - 
+                                 track.segments[-1].last_msg_of_day.timestamp).total_seconds()
+                else:
+                    s_since_track = (segment.first_msg_of_day.timestamp - 
+                                 track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
+                days_since_track = s_since_track / S_PER_DAY
+                decayed_count = track.count * self.msg_count_decacy_per_day ** days_since_track
+                new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
+                                             count=track.count + segment.msg_count,
+                                             decayed_count=decayed_count + segment.msg_count)
+                if track.segments:
+                    cost = h['cost'] + self.find_cost(track.segments[-1], segment)
+                elif track.prefix:
+                    cost = h['cost'] + self.find_cost(track.prefix[-1], segment)
+                else:
+                    # This occurs at startup so we give this the base track cost
+                    cost = h['cost'] + self.base_track_cost
+                updated.append({'cost' : cost, 'tracks' : new_list})
+                if track.segments:
+                    s_since_track = (segment.first_msg_of_day.timestamp - 
+                                 track.segments[-1].last_msg_of_day.timestamp).total_seconds()
+                else:
+                    s_since_track = (segment.first_msg_of_day.timestamp - 
+                                 track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
+                days_since_track = s_since_track / S_PER_HR
+                track_count += self.track_count_decay_per_day ** days_since_track
             new_list = list(track_list)
-            new_list.append(Track(id=segment.id, prefix=[], segments=(segment,)))
-            updated.append(new_list)
-        return updated
+            new_list.append(Track(id=segment.aug_id, prefix=[], 
+                                  segments=(segment,), count=segment.msg_count,
+                                  decayed_count=segment.msg_count,
+                                  is_active=True))
+            tolerance = self._tolerance(self.signature_count, track_count)
+            new_track_cost = self.base_track_cost #/ tolerance
+            updated.append({'cost' : h['cost'] + new_track_cost, 'tracks' : new_list})
+        return updated  
 
     _seg_joining_costs = {}
 
-    @property
-    def base_track_cost(self):
-        return ( self.signature_weight +
-                 self.discrepancy_weight +
-                 self.time_metric_weight +
-                 self.same_seg_weight +
-                 self.speed_weight + 
-                 self.overlap_weight
-                )    
-
-    # def compute_cost(self, seg0, seg1):
-        # Implement directly
-
-    def compute_cost(self, seg0, seg1):
-        return self.base_track_cost - self._compute_metric(seg0, seg1, hard_fail=False)
-
     def find_cost(self, seg0, seg1):
-        key = (seg0, seg1)
+        key = (seg0.aug_id, seg1.aug_id)
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
         return self._seg_joining_costs[key]
 
-    def compute_track_count(self, track):
-        cnt = 0
-        for seg in track.prefix:
-            cnt += seg.msg_count
-        for seg in track.segments:
-            cnt += seg.msg_count
-        return cnt
-
-    def track_cost(self, track, max_count):
-
-        cost = 0.5 * self.base_track_cost 
-
-        if track.prefix:
-            seg0 = track.prefix[-1]
-            segments = track.segments
-        elif track.segments:
-            seg0 = track.segments[0]
-            segments = track.segments[1:]
-        else:
-            return cost
-
-        for seg1 in segments:
-            cost += self.find_cost(seg0, seg1)
-            seg0 = seg1
-        return cost
-
-    def hypothesis_cost(self, hypothesis, max_count):
-
-        track_counts = [self.compute_track_count(track) for track in hypothesis]
-        countsum2 = sum(track_counts) ** 2
-        veclen2 = sum(x**2 for x in track_counts)
-        length_cost = 0#self.max_count_weight * (1 - veclen2 / countsum2)
-
-        # # TODO: think this could be made to range 0-1 instead of almost 1
-        # count_metric = self.max_count_weight * count / (max_track_count + self.buffer_count)
-        # count_cost = self.max_count_weight - count_metric
-
-        return sum(self.track_cost(x, max_count) for x in hypothesis) + length_cost
-
     def prune_hypotheses(self, hypotheses_list, n):
-
-        max_track_count = max(max(self.compute_track_count(track) for track in hypothesis)
-            for hypothesis in hypotheses_list)
-
-        # TODO: want to favor long tracks over short tracks, so incremental cost of adding 
-        # elements goes down Maybe charge Sum(ar^k) = a / (1 - r), but fix for truncation.
-        # For N terms (0 to N - 1) =  a / (1 - r) - ar**N / (1 - r) = a * (1 + r**N) / (1 - r)
-
-        if len(hypotheses_list) > n:
-            costs = [self.hypothesis_cost(x, max_track_count) for x in hypotheses_list]
-            ndxs = list(range(len(hypotheses_list)))
-            ndxs.sort(key=lambda i: costs[i])
-            hypotheses_list = [hypotheses_list[i] for i in ndxs[:n]]
-        return hypotheses_list
+        def count_cost(h):
+            return self.count_weight * sum(x.count ** 0.5 for x in h['tracks'])
+        hypotheses_list.sort(key=lambda x: x['cost'] + count_cost(x))
+        return hypotheses_list[:n]
 
     def condense_hypotheses(self, hypotheses_list):
         """
@@ -606,102 +386,127 @@ class Stitcher(DiscrepancyCalculator):
         if len(hypotheses_list) == 0:
             return hypotheses_list
 
-        prefixes = {}
+        # Check that prefixes are consistent and collect track_ids
         base_prefixes = {}
-        for track in hypotheses_list[0]:
-            prefixes[track.id] = set(enumerate(track.segments))
-            base_prefixes[track.id] = track.prefix
+        track_ids = set()
+        for hypothesis in hypotheses_list:
+            for track in hypothesis['tracks']:
+                track_ids.add(track.id)
+                if track.id not in base_prefixes:
+                    base_prefixes[track.id] = track.prefix
+                assert track.prefix == base_prefixes[track.id], (
+                        [x.aug_id for x in track.prefix], 
+                        [x.aug_id for x in base_prefixes[track.id]])
+
+
+        potential_prefixes = {}
+
+        ids_seen = set()
+        for track in hypotheses_list[0]['tracks']:
+            ids_seen.add(track.id)
+            potential_prefixes[track.id] = set(enumerate(track.segments))
+        for track_id in (track_ids - ids_seen):
+            potential_prefixes[track_id] = set()
 
         for hypothesis in hypotheses_list[1:]:
-            for track in hypothesis:
-                if track.id not in prefixes:
-                    prefixes[track.id] = set()
-                prefixes[track.id] = prefixes[track.id] & set(enumerate(track.segments))
-                assert track.prefix == base_prefixes[track.id]
+            ids_seen = set()
+            for track in hypothesis['tracks']:
+                ids_seen.add(track.id)
+                potential_prefixes[track.id] = potential_prefixes[track.id] & set(enumerate(track.segments))
+            for track_id in (track_ids - ids_seen):
+                potential_prefixes[track_id] = set()
 
         prefix_indices = {}
 
-        for id_, seg_set in prefixes.items():
+        for id_, seg_set in potential_prefixes.items():
             segs_list = sorted(seg_set)
-            for i, (ndx, seg) in enumerate(segs_list):
-                if i != ndx:
-                    prefix_indices[id_] = i
-                    break
+            if segs_list and segs_list[0][0] != 0:
+                prefix_indices[id_] = 0
             else:
-                prefix_indices[id_] = len(segs_list)
+                for i, (ndx, seg) in enumerate(segs_list):
+                    if i != ndx:
+                        prefix_indices[id_] = i
+                        break
+                else:
+                    prefix_indices[id_] = len(segs_list)
+            assert [x[0] for x in segs_list[:prefix_indices[id_]]] == list(range(prefix_indices[id_]))
 
-        new_hypotheses_list = []
         for hypothesis in hypotheses_list:
-            new_hypothesis = []
-            for track in hypothesis:
+            new_tracks = []
+            for track in hypothesis['tracks']:
                 ndx = prefix_indices[track.id]
-                new_hypothesis.append(Track(track.id, 
-                                            tuple(track.prefix) + tuple(track.segments[:ndx]),
-                                            track.segments[ndx:]))
-            new_hypotheses_list.append(new_hypothesis)
+                assert len(track.segments) >= ndx
+                new_tracks.append(track._replace(
+                    prefix = tuple(track.prefix) + tuple(track.segments[:ndx]),
+                    segments = track.segments[ndx:]
+                    ))
+            hypothesis['tracks'] = new_tracks
 
-        return new_hypotheses_list
+        return hypotheses_list
+
+    def prune_tracks(self, tracks):
+        active_tracks = [x for x in tracks if x.is_active]
+        if len(active_tracks) > self.max_active_tracks:
+            active_tracks.sort(key = lambda x: x.decayed_count, reverse=True)
+            inactive_tracks = [x for x in tracks if not x.is_active]
+            pruned_tracks = inactive_tracks + active_tracks[:self.max_active_tracks]
+            for track in active_tracks[self.max_active_tracks:]:
+                pruned_tracks.append(track._replace(is_active=False))
+            pruned_tracks = tuple(pruned_tracks)
+        else:
+            pruned_tracks = tracks
+        return pruned_tracks
 
 
-    def create_tracks_stub(self, start_date, tracks, track_sigs, segs):
-         # Trim tracks to start_date
-        # Check that segs do not extend before start_date
-        # Scan tracks and count number of tracks with > active_track_threshold (100 pts?) over active_track_window (30 days?)
-        # 
+    def cook_tracks(self, raw_tracks):
+        tracks = []
+        for raw in raw_tracks:
+            count = 0
+            decayed_count = 0
+            last_dtime = None
+            for seg in raw:
+                count += seg.msg_count
+                if last_dtime is not None:
+                    s_since_track = (seg.first_msg_of_day.timestamp - 
+                                     last_dtime).total_seconds() 
+                    days_since_track = s_since_track / S_PER_HR
+                else:
+                    days_since_track = 0
+                decayed_count = decayed_count * self.msg_count_decacy_per_day ** days_since_track
+                count += seg.msg_count
+                decayed_count += seg.msg_count
+            tracks.append(Track(raw[0].aug_id, [], tuple(raw), count, decayed_count, 
+                                is_active=True))
+        return tracks
+
+    def create_tracks(self, start_date, raw_tracks, track_sigs, segs):
         self.signature_count = max(self.signatures_count(segs), 1)
-        # For now just have two cases eventually, recalculate if
-        # we later decide there are multiple signatures based on speed
-        # also, perhaps be less agressive when we have more tracks than
-        # signatures.
-        # print('signature_count', signature_count)
+
         segs = self.filter_and_sort(segs, self.min_seg_size)
-        self.signatures = signatures = self._compute_signatures(segs)
-
-        signatures.update(track_sigs)
-        for track in tracks:
-            track_id = track[0].aug_id
-            for seg in track:
-                seg_id = seg.aug_id
-                signatures[seg_id] = signatures[track_id]
-
+        self.signatures  = self._compute_signatures(segs)
         # Now remove all segments that occur before today:
         segs = [x for x in segs if x.timestamp.date() >= start_date.date()]
 
-        seg_source = iter(segs)
-        active_segs = []
-
-        self.track_counts = track_counts = {}
-
         # New below here
-        max_hypotheses = 64
 
-        assert tracks == [] # TODO relax this and construct initial hypotheses 
-        hypotheses = [[]]
-        for seg in segs:
+        hypotheses = [{'cost' : 0, 'tracks' : self.cook_tracks(raw_tracks)}]
+
+        for i, seg in enumerate(segs):
+            if not self.seg_duration(seg).total_seconds() > 0:
+                continue
             hypotheses = self.update_hypotheses(hypotheses, seg)
-            hypotheses = self.prune_hypotheses(hypotheses, max_hypotheses)
-            hypotheses = self.condense_hypotheses(hypotheses)
-        final_hypothesis = self.prune_hypotheses(hypotheses, 1)[0]
+            if i % self.condense_interval == 0:
+                hypotheses = self.condense_hypotheses(hypotheses)
+            hypotheses = self.prune_hypotheses(hypotheses, self.max_hypotheses)
+        [final_hypothesis] = self.prune_hypotheses(hypotheses, 1)
 
-        return final_hypothesis
+        tracks = list(final_hypothesis['tracks'])
+        tracks.sort(key=lambda x: x.decayed_count, reverse=True)
 
-    @staticmethod
-    def add_track_ids_2(msgs, tracks):
-        # Use the seg_id of the first seg in the track as the track id.
-        msgs = msgs.to_dict('records')
-        id_map = {}
-        for track in tracks:
-            track_id = track.id
-            for seg in track.prefix:
-                id_map[seg.aug_id] = track_id
-            for seg in track.segments:
-                id_map[seg.aug_id] = track_id
-        for msg in msgs:
-            try:
-                msg['track_id'] = id_map.get(Stitcher.aug_seg_id(msg), None)
-            except:
-                print(msg)
-                raise
+        for rank, track in enumerate(tracks):
+            # This is for backwards compatibility and testing.
+            # TODO: return track instances instead
+            simple_track = list(track.prefix) + list(track.segments)
+            yield simple_track, rank, track.is_active
 
-        import pandas as pd
-        return pd.DataFrame(msgs)
+

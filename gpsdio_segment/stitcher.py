@@ -298,25 +298,25 @@ class Stitcher(DiscrepancyCalculator):
         return max(counts)
 
 
-    def find_track_signatures(self, start_date, tracks, segs, lookback=30):
-        end_range = start_date - DT.timedelta(days=1)
-        start_range = start_date - DT.timedelta(days=lookback)
-        segs = [x for x in segs if start_range <= x.timestamp <= end_range]
-        seg_sigs = self._compute_signatures(segs)
-        track_sigs = {}
-        for track in tracks:
-            track_id = track[0].aug_id
-            sigs = [{}, {}, {}, {}]
-            for seg in track:
-                seg_id = seg.aug_id
-                if seg_id in seg_sigs:
-                    track_sigs
-                    for i, (s1, s2) in enumerate(zip(seg_sigs[seg_id], sigs)):
-                        for k in set(s1.keys()) | set(s2.keys()):
-                            sigs[i][k] = s1.get(k, 0) + s2.get(k, 0) 
-            track_sigs[track_id] = sigs
+    # def find_track_signatures(self, start_date, tracks, segs, lookback=30):
+    #     end_range = start_date - DT.timedelta(days=1)
+    #     start_range = start_date - DT.timedelta(days=lookback)
+    #     segs = [x for x in segs if start_range <= x.timestamp <= end_range]
+    #     seg_sigs = self._compute_signatures(segs)
+    #     track_sigs = {}
+    #     for track in tracks:
+    #         track_id = track[0].aug_id
+    #         sigs = [{}, {}, {}, {}]
+    #         for seg in track:
+    #             seg_id = seg.aug_id
+    #             if seg_id in seg_sigs:
+    #                 track_sigs
+    #                 for i, (s1, s2) in enumerate(zip(seg_sigs[seg_id], sigs)):
+    #                     for k in set(s1.keys()) | set(s2.keys()):
+    #                         sigs[i][k] = s1.get(k, 0) + s2.get(k, 0) 
+    #         track_sigs[track_id] = sigs
 
-        return track_sigs
+    #     return track_sigs
 
 
     def update_hypotheses(self, hypotheses, segment):
@@ -328,13 +328,9 @@ class Stitcher(DiscrepancyCalculator):
                 if not track.is_active:
                     continue
                 new_list = list(track_list)
-                if track.segments:
-                    s_since_track = (segment.first_msg_of_day.timestamp - 
-                                 track.segments[-1].last_msg_of_day.timestamp).total_seconds()
-                else:
-                    s_since_track = (segment.first_msg_of_day.timestamp - 
-                                 track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
-                days_since_track = s_since_track / S_PER_DAY
+                last_seg = track.segments[-1] if track.segments else track.prefix[-1]
+                days_since_track = (segment.first_msg_of_day.timestamp - 
+                                    last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
                 decayed_count = track.count * self.msg_count_decacy_per_day ** days_since_track
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
                                              count=track.count + segment.msg_count,
@@ -458,41 +454,42 @@ class Stitcher(DiscrepancyCalculator):
         return pruned_tracks
 
 
-    def cook_tracks(self, raw_tracks):
-        tracks = []
-        for raw in raw_tracks:
-            count = 0
-            decayed_count = 0
-            last_dtime = None
-            for seg in raw:
-                # Another reason it would be better to pass around track objects TODO:
-                if seg.timestamp is None:
-                    continue # Placeholder
-                count += seg.msg_count
-                if last_dtime is not None:
-                    s_since_track = (seg.first_msg_of_day.timestamp - 
-                                     last_dtime).total_seconds() 
-                    days_since_track = s_since_track / S_PER_HR
-                else:
-                    days_since_track = 0
-                decayed_count = decayed_count * self.msg_count_decacy_per_day ** days_since_track
-                count += seg.msg_count
-                decayed_count += seg.msg_count
-            tracks.append(Track(raw[0].aug_id, [], tuple(raw), count, decayed_count, 
-                                is_active=True))
-        return tracks
+    # def cook_tracks(self, raw_tracks):
+    #     tracks = []
+    #     for raw in raw_tracks:
+    #         count = 0
+    #         decayed_count = 0
+    #         last_dtime = None
+    #         for seg in raw:
+    #             # Another reason it would be better to pass around track objects TODO:
+    #             if seg.timestamp is None:
+    #                 continue # Placeholder
+    #             count += seg.msg_count
+    #             if last_dtime is not None:
+    #                 s_since_track = (seg.first_msg_of_day.timestamp - 
+    #                                  last_dtime).total_seconds() 
+    #                 days_since_track = s_since_track / S_PER_HR
+    #             else:
+    #                 days_since_track = 0
+    #             decayed_count = decayed_count * self.msg_count_decacy_per_day ** days_since_track
+    #             count += seg.msg_count
+    #             decayed_count += seg.msg_count
+    #         tracks.append(Track(raw[0].aug_id, [], tuple(raw), count, decayed_count, 
+    #                             last_msg_timestamp=
+    #                             is_active=True))
+    #     return tracks
 
-    def create_tracks(self, start_date, raw_tracks, track_sigs, segs):
+    def create_tracks(self, start_date, tracks, track_sigs, segs):
         self.signature_count = max(self.signatures_count(segs), 1)
 
         segs = self.filter_and_sort(segs, self.min_seg_size)
         self.signatures  = self._compute_signatures(segs)
         # Now remove all segments that occur before today:
-        segs = [x for x in segs if x.timestamp and x.timestamp.date() >= start_date.date()]
+        segs = [x for x in segs if x.timestamp.date() >= start_date.date()]
 
         # New below here
 
-        hypotheses = [{'cost' : 0, 'tracks' : self.cook_tracks(raw_tracks)}]
+        hypotheses = [{'cost' : 0, 'tracks' : tracks}]
 
         for i, seg in enumerate(segs):
             if not self.seg_duration(seg).total_seconds() > 0:
@@ -507,9 +504,6 @@ class Stitcher(DiscrepancyCalculator):
         tracks.sort(key=lambda x: x.decayed_count, reverse=True)
 
         for rank, track in enumerate(tracks):
-            # This is for backwards compatibility and testing.
-            # TODO: return track instances instead
-            simple_track = list(track.prefix) + list(track.segments)
-            yield simple_track, rank, track.is_active
+            yield track, rank
 
 

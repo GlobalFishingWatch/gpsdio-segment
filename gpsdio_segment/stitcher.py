@@ -165,7 +165,8 @@ class Stitcher(DiscrepancyCalculator):
 
     def signature_cost(self, seg1, seg2):
         signatures = self.signatures
-        if seg1.id == seg2.id:
+        # TODO: we want to use track signatures not seg signatures
+        if seg1.id == seg2.id or seg1.aug_id not in signatures:
             # These two chunks are from the same segment, so 
             # say they match
             return 0.0

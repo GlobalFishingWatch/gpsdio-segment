@@ -10,7 +10,10 @@ logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active'])
+Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
+                             'signature'])
+
+Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
 
 
 log = logger.debug
@@ -102,12 +105,12 @@ class Stitcher(DiscrepancyCalculator):
 
     def _compute_signatures(self, segs):
         def get_sig(seg):
-            return [
+            return Signature(
                 dict(seg.transponders),
                 dict(seg.shipnames),
                 dict(seg.callsigns),
                 dict(seg.imos)
-            ]
+            )
         return {s.aug_id : get_sig(s) for s in segs}
     
     def filter_and_sort(self, segs, min_seg_size=1):
@@ -163,16 +166,17 @@ class Stitcher(DiscrepancyCalculator):
                 seg.first_msg_of_day.timestamp)
 
 
-    def signature_cost(self, seg1, seg2):
-        signatures = self.signatures
-        # TODO: we want to use track signatures not seg signatures
-        if seg1.id == seg2.id or seg1.aug_id not in signatures:
-            # These two chunks are from the same segment, so 
-            # say they match
-            return 0.0
+    def signature_cost(self, track, seg):
+        # signatures = self.signatures
+        # # TODO: we want to use track signatures not seg signatures
+        # if seg1.id == seg2.id or seg1.aug_id not in signatures:
+        #     # These two chunks are from the same segment, so 
+        #     # say they match
+        #     return 0.0
 
-        sig1 = signatures[seg1.aug_id][:2]
-        sig2 = signatures[seg2.aug_id][:2]
+        sig1 = track.signature[:2]
+
+        sig2 = self.signatures[seg.aug_id][:2]
         # A perfect match of transponder type is not very specific since there only two types,
         # So we cap the specificity if the match is positive
         max_pos_specificities = [0.5, 0.99]
@@ -242,7 +246,6 @@ class Stitcher(DiscrepancyCalculator):
 
 
     def compute_cost(self, seg1, seg2):
-        sig_cost = self.signature_cost(seg1, seg2)
         overlap_cost = self.overlap_cost(seg1, seg2)
 
         hours = self.seg_time_delta(seg1, seg2).total_seconds() / S_PER_HR
@@ -266,7 +269,6 @@ class Stitcher(DiscrepancyCalculator):
 
 
         return ( 
-                 sig_cost +
                  disc_cost +
                  speed_cost +
                  time_cost +
@@ -332,14 +334,22 @@ class Stitcher(DiscrepancyCalculator):
                 last_seg = track.segments[-1] if track.segments else track.prefix[-1]
                 days_since_track = (segment.first_msg_of_day.timestamp - 
                                     last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
-                decayed_count = track.count * self.msg_count_decacy_per_day ** days_since_track
+                decay =  self.msg_count_decacy_per_day ** days_since_track
+                decayed_count = track.count * decay
+                for j, sigkey in enumerate(Signature._fields):
+                    sigcomp = track.signature[j]
+                    for k in sigcomp:
+                        sigcomp[k] *= decay
+                    for k, v in getattr(segment, sigkey):
+                        sigcomp[k] = sigcomp.get(k, 0) + v
+
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
                                              count=track.count + segment.msg_count,
                                              decayed_count=decayed_count + segment.msg_count)
                 if track.segments:
-                    cost = h['cost'] + self.find_cost(track.segments[-1], segment)
+                    cost = h['cost'] + self.find_cost(track, segment)
                 elif track.prefix:
-                    cost = h['cost'] + self.find_cost(track.prefix[-1], segment)
+                    cost = h['cost'] + self.find_cost(track, segment)
                 else:
                     # This occurs at startup so we give this the base track cost
                     cost = h['cost'] + self.base_track_cost
@@ -356,7 +366,7 @@ class Stitcher(DiscrepancyCalculator):
             new_list.append(Track(id=segment.aug_id, prefix=[], 
                                   segments=(segment,), count=segment.msg_count,
                                   decayed_count=segment.msg_count,
-                                  is_active=True))
+                                  is_active=True, signature=Signature({}, {}, {}, {})))
             tolerance = self._tolerance(self.signature_count, track_count)
             new_track_cost = self.base_track_cost #/ tolerance
             updated.append({'cost' : h['cost'] + new_track_cost, 'tracks' : new_list})
@@ -364,10 +374,12 @@ class Stitcher(DiscrepancyCalculator):
 
     _seg_joining_costs = {}
 
-    def find_cost(self, seg0, seg1):
+    def find_cost(self, track, seg1):
+        seg0 = track.segments[-1] if track.segments else track.prefix[-1]
         key = (seg0.aug_id, seg1.aug_id)
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
+        sig_cost = self.signature_cost(track, seg1)
         return self._seg_joining_costs[key]
 
     def prune_hypotheses(self, hypotheses_list, n):

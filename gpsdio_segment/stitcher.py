@@ -438,7 +438,7 @@ class Stitcher(DiscrepancyCalculator):
         return pruned_tracks
 
 
-    def create_tracks(self, start_date, tracks, track_sigs, segs):
+    def create_tracks(self, start_date, tracks, segs):
         segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
         self.signatures = self._compute_signatures(segs)
         self.composite_signature = self._composite_signature(self.signatures, tracks)

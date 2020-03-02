@@ -1,5 +1,5 @@
 from __future__ import division, print_function, absolute_import
-from collections import namedtuple
+from collections import namedtuple, Counter
 import datetime as DT
 import logging
 import math
@@ -59,14 +59,17 @@ class Stitcher(DiscrepancyCalculator):
     # TODO: weight should be incorporated into costs
     count_weight = 0.1
     signature_weight = 1.0
-    discrepancy_weight = 1.0
+    discrepancy_weight = 2.0
     overlap_weight = 1.0
     speed_weight = 1.0
     time_metric_weight = 1.0
 
     track_count_decay_per_day = 0.9
     msg_count_decacy_per_day = 0.99
-    
+
+    sig_specificity_fraction = 0.1
+    sig_specificity_abs = 10
+
     def __init__(self, **kwargs):
         for k in kwargs:
             # TODO: when interface stable, fix keys as in core.py
@@ -112,14 +115,48 @@ class Stitcher(DiscrepancyCalculator):
                 dict(seg.imos)
             )
         return {s.aug_id : get_sig(s) for s in segs}
+
+    def _composite_signature(self, seg_sigs, tracks):
+        composite = {}
+        for i, key in enumerate(Signature._fields):
+            counts = Counter()
+            for sig in seg_sigs.values():
+                counts.update(sig[i])
+            for track in tracks:
+                counts.update(track.signature[i])
+            composite[key] = counts
+        return Signature(**composite)
+
+    def _compute_specificities(self, composite_signature):
+        specificities = {}
+        for i, key in enumerate(composite_signature._fields):
+            vals = sorted(composite_signature[i].values())
+            if len(vals) < 2:
+                specificities[key] = 0
+            else:
+                total = sum(vals)
+                scale = max(self.sig_specificity_abs, self.sig_specificity_fraction * total)
+                x = vals[-2] / scale
+                # Set the specificity based on the prevalence of the *second* most common
+                # class.  If there are two classes with significant occurrences, then this
+                # means something. If there is only one class with significant occurrences,
+                # Then the characteristics matching doesn't mean much.
+                # (Keep thinking about this there's likely a better definition, possibly
+                # involving stddev of characteristics withing a segment.)
+                specificities[key] = x / (1 + x)
+        return specificities
+
+
+
     
-    def filter_and_sort(self, segs, min_seg_size=1):
+    def filter_and_sort(self, segs, min_seg_size, start_date):
         def is_null(x):
             return x is None or str(x) == 'NaT'
         def has_messages(s):
             return not(is_null(s.last_msg_of_day.timestamp) and
                        is_null(s.first_msg_of_day.timestamp))
-        segs = [x for x in segs if has_messages(x)]
+        segs = [x for x in segs if has_messages(x) and x.timestamp.date() >= start_date.date()]
+
         segs.sort(key=lambda x: (x.timestamp, x.first_msg_of_day.timestamp))
         keys = ['shipnames', 'callsigns', 'imos', 'transponders']
         identities = {}
@@ -145,41 +182,22 @@ class Stitcher(DiscrepancyCalculator):
                     seg_sig.append({'value' : value, 'count' : count / days[seg_id]})
                 seg = seg._replace(**{k : seg_sig})
 
-
         return [seg for seg in segs if sizes[seg.id] > min_seg_size]
-
 
     @staticmethod
     def seg_time_delta(seg0, seg1):
         return seg1.first_msg_of_day.timestamp - seg0.last_msg_of_day.timestamp
-
-    def _tolerance(self, signature_count, n_tracks):
-        # Tolerance *for new tracks*, so when this is lower we should be less
-        # likely to form new tracks
-        alpha = n_tracks / max(signature_count, 1)
-        return math.exp(1 - alpha)
-
 
     @staticmethod
     def seg_duration(seg):
         return (seg.last_msg_of_day.timestamp - 
                 seg.first_msg_of_day.timestamp)
 
-
     def signature_cost(self, track, seg):
-        # signatures = self.signatures
-        # # TODO: we want to use track signatures not seg signatures
-        # if seg1.id == seg2.id or seg1.aug_id not in signatures:
-        #     # These two chunks are from the same segment, so 
-        #     # say they match
-        #     return 0.0
-
         sig1 = track.signature[:2]
-
         sig2 = self.signatures[seg.aug_id][:2]
-        # A perfect match of transponder type is not very specific since there only two types,
-        # So we cap the specificity if the match is positive
-        max_pos_specificities = [0.5, 0.99]
+        # Cap positive specificities based on global occurrences of different sig values.
+        max_pos_specificities = [self.max_specificities[k] for k in Signature._fields[:2]]
 
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):
@@ -261,6 +279,7 @@ class Stitcher(DiscrepancyCalculator):
 
         disc_cost = self.discrepancy_weight * discrepancy / self.max_discrepancy
 
+        # For speed we use an hard cutoff.
         speed = discrepancy / padded_hours
         speed_cost = self.speed_weight * speed  / self.max_average_knots
 
@@ -275,51 +294,6 @@ class Stitcher(DiscrepancyCalculator):
                  overlap_cost
                  )
 
-
-    @staticmethod
-    def signatures_count(segs, sig_abs=10, sig_frac=0.05):
-        """Check if this vessel has multiple ids based on the signature
-        """
-        keys = ['shipnames', 'callsigns', 'imos']
-        identities = {k : {} for k in keys}
-        sizes = {}
-        days = {}
-        for seg in segs:
-            for k in keys:
-                for (v, cnt) in getattr(seg, k):
-                    identities[k][v] = identities[k].get(v, 0) + cnt
-        counts = []
-        for k in keys:
-            total = 0
-            for lbl, cnt in identities[k].items():
-                total += cnt
-            idents = 0
-            for lbl, cnt in identities[k].items():
-                if cnt > sig_abs and cnt > sig_frac * total:
-                    idents += 1
-            counts.append(idents)
-        return max(counts)
-
-
-    # def find_track_signatures(self, start_date, tracks, segs, lookback=30):
-    #     end_range = start_date - DT.timedelta(days=1)
-    #     start_range = start_date - DT.timedelta(days=lookback)
-    #     segs = [x for x in segs if start_range <= x.timestamp <= end_range]
-    #     seg_sigs = self._compute_signatures(segs)
-    #     track_sigs = {}
-    #     for track in tracks:
-    #         track_id = track[0].aug_id
-    #         sigs = [{}, {}, {}, {}]
-    #         for seg in track:
-    #             seg_id = seg.aug_id
-    #             if seg_id in seg_sigs:
-    #                 track_sigs
-    #                 for i, (s1, s2) in enumerate(zip(seg_sigs[seg_id], sigs)):
-    #                     for k in set(s1.keys()) | set(s2.keys()):
-    #                         sigs[i][k] = s1.get(k, 0) + s2.get(k, 0) 
-    #         track_sigs[track_id] = sigs
-
-    #     return track_sigs
 
 
     def update_hypotheses(self, hypotheses, segment):
@@ -336,12 +310,13 @@ class Stitcher(DiscrepancyCalculator):
                                     last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
                 decay =  self.msg_count_decacy_per_day ** days_since_track
                 decayed_count = track.count * decay
+                msg_count = segment.msg_count
                 for j, sigkey in enumerate(Signature._fields):
                     sigcomp = track.signature[j]
                     for k in sigcomp:
                         sigcomp[k] *= decay
                     for k, v in getattr(segment, sigkey):
-                        sigcomp[k] = sigcomp.get(k, 0) + v
+                        sigcomp[k] = sigcomp.get(k, 0) + v * msg_count
 
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
                                              count=track.count + segment.msg_count,
@@ -367,9 +342,7 @@ class Stitcher(DiscrepancyCalculator):
                                   segments=(segment,), count=segment.msg_count,
                                   decayed_count=segment.msg_count,
                                   is_active=True, signature=Signature({}, {}, {}, {})))
-            tolerance = self._tolerance(self.signature_count, track_count)
-            new_track_cost = self.base_track_cost #/ tolerance
-            updated.append({'cost' : h['cost'] + new_track_cost, 'tracks' : new_list})
+            updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
         return updated  
 
     _seg_joining_costs = {}
@@ -394,8 +367,6 @@ class Stitcher(DiscrepancyCalculator):
         """
         if len(hypotheses_list) == 0:
             return hypotheses_list
-
-        # Check that prefixes are consistent and collect track_ids
         base_prefixes = {}
         track_ids = set()
         for hypothesis in hypotheses_list:
@@ -467,40 +438,11 @@ class Stitcher(DiscrepancyCalculator):
         return pruned_tracks
 
 
-    # def cook_tracks(self, raw_tracks):
-    #     tracks = []
-    #     for raw in raw_tracks:
-    #         count = 0
-    #         decayed_count = 0
-    #         last_dtime = None
-    #         for seg in raw:
-    #             # Another reason it would be better to pass around track objects TODO:
-    #             if seg.timestamp is None:
-    #                 continue # Placeholder
-    #             count += seg.msg_count
-    #             if last_dtime is not None:
-    #                 s_since_track = (seg.first_msg_of_day.timestamp - 
-    #                                  last_dtime).total_seconds() 
-    #                 days_since_track = s_since_track / S_PER_HR
-    #             else:
-    #                 days_since_track = 0
-    #             decayed_count = decayed_count * self.msg_count_decacy_per_day ** days_since_track
-    #             count += seg.msg_count
-    #             decayed_count += seg.msg_count
-    #         tracks.append(Track(raw[0].aug_id, [], tuple(raw), count, decayed_count, 
-    #                             last_msg_timestamp=
-    #                             is_active=True))
-    #     return tracks
-
     def create_tracks(self, start_date, tracks, track_sigs, segs):
-        self.signature_count = max(self.signatures_count(segs), 1)
-
-        segs = self.filter_and_sort(segs, self.min_seg_size)
-        self.signatures  = self._compute_signatures(segs)
-        # Now remove all segments that occur before today:
-        segs = [x for x in segs if x.timestamp.date() >= start_date.date()]
-
-        # New below here
+        segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
+        self.signatures = self._compute_signatures(segs)
+        self.composite_signature = self._composite_signature(self.signatures, tracks)
+        self.max_specificities = self._compute_specificities(self.composite_signature)
 
         hypotheses = [{'cost' : 0, 'tracks' : tracks}]
 

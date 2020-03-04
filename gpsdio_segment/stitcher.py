@@ -202,8 +202,13 @@ class Stitcher(DiscrepancyCalculator):
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):
             if len(a) and len(b):
-                na = math.sqrt(sum([v**2 for v in a.values()]))
-                nb = math.sqrt(sum([v**2 for v in b.values()]))
+                # Protect against overflow
+                max_a = max(abs(x) for x in a.values())
+                a_scale = max(max_a, 1)
+                max_b = max(abs(x) for x in b.values()) 
+                b_scale = max(max_b, 1)
+                na = math.sqrt(sum([(v / a_scale)**2 for v in a.values()]))
+                nb = math.sqrt(sum([(v / b_scale)**2 for v in b.values()]))
                 if na and nb:
                     maxa = max(a.values()) / na
                     maxb = max(b.values()) / nb

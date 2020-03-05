@@ -204,14 +204,18 @@ class Stitcher(DiscrepancyCalculator):
             if len(a) and len(b):
                 # Protect against overflow
                 max_a = max(abs(x) for x in a.values())
-                a_scale = max(max_a, 1)
                 max_b = max(abs(x) for x in b.values()) 
-                b_scale = max(max_b, 1)
-                na = math.sqrt(sum([(v / a_scale)**2 for v in a.values()]))
-                nb = math.sqrt(sum([(v / b_scale)**2 for v in b.values()]))
-                if na and nb:
-                    maxa = max(a.values()) / na
-                    maxb = max(b.values()) / nb
+                if max_a > EPSILON and max_b > EPSILON:
+                    a_scale = max(max_a, 1)
+                    b_scale = max(max_b, 1)
+                    scaled_a = {k : v / a_scale for (k, v) in a.items()}
+                    scaled_b = {k : v / b_scale for (k, v) in b.items()}
+
+                    na = math.sqrt(sum([(v)**2 for v in scaled_a.values()])) 
+                    nb = math.sqrt(sum([(v)**2 for v in scaled_b.values()])) 
+                    # TODO: rename maxa maxb to something reflecting their relative nature
+                    maxa = max(scaled_a.values()) / na
+                    maxb = max(scaled_b.values()) / nb
                     cos = 0
                     for k in set(a) & set(b):
                         va = a[k] / na

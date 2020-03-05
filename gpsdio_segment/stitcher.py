@@ -213,6 +213,8 @@ class Stitcher(DiscrepancyCalculator):
 
                     na = math.sqrt(sum([(v)**2 for v in scaled_a.values()])) 
                     nb = math.sqrt(sum([(v)**2 for v in scaled_b.values()])) 
+                    if na < EPSILON or nb < EPSILON:
+                        continue
                     # TODO: rename maxa maxb to something reflecting their relative nature
                     maxa = max(scaled_a.values()) / na
                     maxb = max(scaled_b.values()) / nb

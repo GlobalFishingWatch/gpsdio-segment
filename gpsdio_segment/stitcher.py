@@ -223,7 +223,11 @@ class Stitcher(DiscrepancyCalculator):
                         va = a[k] / na
                         vb = b[k] / nb
                         cos += va * vb
-                    cos2 = 2 * cos ** 2 - 1
+                    try:
+                        cos2 = 2 * cos ** 2 - 1
+                    except:
+                        cos2 = 0
+                        logger.warning('cos2 computation failed using 0 ({}) ({})'.format(a, b))
                     num_dims = len(set(a) | set(b))
                     # Specificity is an ad hoc measure of how much information the
                     # vector provides. From 0, when all components (identities) are

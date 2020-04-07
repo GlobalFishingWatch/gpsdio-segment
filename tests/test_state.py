@@ -1,28 +1,25 @@
 import itertools
-
-from gpsdio_segment.core import SegmentState
-from gpsdio_segment.core import Segment
+from collections import Counter
+from datetime import datetime
+from gpsdio_segment.segment import Segment
+from gpsdio_segment.segment import SegmentState
 from gpsdio_segment.core import Segmentizer
-import gpsdio
 
+from support import read_json
 
 def test_SegmentState():
-    s = SegmentState()
-    assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
-    s.id = 'ABC'
-    s.mmsi = '123456789'
-    s.msgs = [{'mmsi': 123456789}, {'mmsi': 123456789}]
-    s.msg_count = 1
-    assert s.to_dict() == SegmentState.from_dict(s.to_dict()).to_dict()
+    s = SegmentState(id='ABC', ssvid='123456789', 
+        first_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
+        last_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
+        first_msg_of_day=None, last_msg_of_day=None,
+        msg_count=1, noise=False, closed=False)
+    assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 
 def test_Segment_state_save_load(msg_generator):
     id = 1
-    mmsi = 123456789
-    seg1 = Segment(id, mmsi)
-    state = seg1.state
-    assert state.id == id
-    assert state.mmsi == mmsi
+    ssvid = 123456789
+    seg1 = Segment(id, ssvid)
 
     seg1.add_msg(msg_generator.next_msg())
     seg1.add_msg(msg_generator.next_posit_msg())
@@ -30,78 +27,69 @@ def test_Segment_state_save_load(msg_generator):
     seg1.add_msg(msg_generator.next_time_posit_msg())
     state = seg1.state
     assert state.msg_count == 4
-    assert len(state.msgs) == 2
     seg1.add_msg(msg_generator.next_msg())
     state = seg1.state
 
     seg2 = Segment.from_state(state)
     assert seg2.id == id
-    assert seg2.mmsi == mmsi
+    assert seg2.ssvid == ssvid
     assert len(seg2) == 0
-    assert seg2._prev_state
+    assert seg2.prev_state
 
     assert seg2.last_msg == seg1.last_msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_posit_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == seg1.last_time_posit_msg
 
     msg = msg_generator.next_time_posit_msg()
     seg2.add_msg(msg)
     assert seg2.last_msg == msg
-    assert seg2.last_time_posit_msg == msg
 
     msg = msg_generator.next_msg()
     seg2.add_msg(msg)
 
     assert len(seg2) == 4
     state = seg2.state
-    assert len(state.msgs) == 3
     assert state.msg_count == 9
 
 
 def test_Segmentizer_state_save_load(tmpdir):
     outfile = str(tmpdir.mkdir('test_Segmentizer_state_save_load').join('segmented.json'))
 
-    with gpsdio.open('tests/data/416000000.json') as src:
-        segmentizer = Segmentizer(src, noise_dist=0)
+    with open('tests/data/416000000.json') as f:
+        src = read_json(f)
+        segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
         full_run_seg_states = [seg.state for seg in segs]
         full_run_msg_count = sum(len(seg) for seg in segs)
 
-    with gpsdio.open('tests/data/416000000.json') as src:
+    with open('tests/data/416000000.json') as f:
+        src = read_json(f, add_msgid=True)
         n = 800
-        segmentizer = Segmentizer(itertools.islice(src, n), noise_dist=0)
-        first_half_seg_states = [seg.state for seg in segmentizer]
-
+        segmentizer = Segmentizer(itertools.islice(src, n))
+        segs = list(segmentizer)
+        first_half_seg_states = [seg.state for seg in segs]
         assert n == sum([st.msg_count for st in first_half_seg_states])
+        n2 = sum([st.msg_count for st in first_half_seg_states if not st.closed])
 
-        segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src, noise_dist=0)
-        assert sum([seg._prev_state.msg_count for seg in segmentizer._segments.values()]) == n
-
-        segs = [seg for seg in segmentizer]
-        assert sum(len(seg) for seg in segs) == full_run_msg_count - n
+        segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
+        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
 
         second_half_seg_states = [seg.state for seg in segs]
 
-    assert sum([st.msg_count for st in full_run_seg_states]) == \
-        sum([st.msg_count for st in second_half_seg_states])
-
-    assert sorted([st.to_dict() for st in full_run_seg_states], key=lambda x: x['id']) == \
-        sorted([st.to_dict() for st in second_half_seg_states], key=lambda x: x['id'])
+        segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
+        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
 
 def test_Segmentizer_state_message_count_bug(msg_generator):
     id = 1
-    mmsi = 123456789
-    seg = Segment(id=1, mmsi=123456789)
-    seg.add_msg(msg_generator.next_msg())
+    ssvid = 123456789
+    seg = Segment(id=1, ssvid=123456789)
+    seg.add_msg(msg_generator.next_time_posit_msg())
     state = seg.state
     assert state.msg_count == 1
 

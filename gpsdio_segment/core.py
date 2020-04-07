@@ -439,7 +439,7 @@ class Segmentizer(DiscrepancyCalculator):
     def normalize_location(lat, lon, course, speed, heading):
         return (round(lat * 60000),
                 round(lon * 60000),
-                round(course * 10),
+                None if course is None else round(course * 10),
                 round(speed * 10),
                 None if (heading is None or math.isnan(heading)) else round(heading))
 

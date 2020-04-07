@@ -8,6 +8,14 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
+## 0.19
+
+### Changes
+
+* Change to a metric based primarily on "discrepancy" which is how far the vessel is from where we expect it to be based on its course and speed.
+* What we mean by expect is informed by the experiments in extracting probability clouds for AIS matching.
+* Many heuristics are applied based on extensive experimentation, but more experimentation would still be helpful.
+
 ## 0.18
 
 ### Changes

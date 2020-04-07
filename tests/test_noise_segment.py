@@ -9,30 +9,30 @@ from collections import Counter
 
 import pytest
 
-import gpsdio
 from gpsdio_segment.core import Segmentizer
-from gpsdio_segment.core import NoiseSegment
+from gpsdio_segment.segment import NoiseSegment
 
+from support import read_json
 
 def test_noise_segment():
 
-    with gpsdio.open('tests/data/338013000.json') as src:
-        # Run the whole thing - makes 31 segments, one of them real, the rest are singleton NoiseSegments
+    with open('tests/data/338013000.json') as f:
+        src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        assert len(segs) == 31
-        assert {len(seg) for seg in segs} == {1, 1223}
-        assert Counter([seg.__class__.__name__ for seg in segs]) == {'Segment': 1, 'NoiseSegment': 30}
-        assert Counter([seg.noise for seg in segs]) == {False: 1, True: 30}
+        assert Counter([seg.__class__.__name__ for seg in segs]) == {'ClosedSegment': 14, 
+            'Segment': 1, 'InfoSegment': 60, 'DiscardedSegment': 2}
 
-    with gpsdio.open('tests/data/338013000.json') as src:
+
+    with open('tests/data/338013000.json') as f:
+        src = read_json(f)
         # now run it one day at a time and store the segment states in between
         seg_states = {}
         seg_types = {}
         for day, msgs in it.groupby(src, key=lambda x: x['timestamp'].day):
             prev_states = seg_states.get(day - 1)
             if prev_states:
-                segmentizer = Segmentizer.from_seg_states(prev_states, msgs)
+                segmentizer = Segmentizer.from_seg_states(prev_states, list(msgs))
             else:
                 segmentizer = Segmentizer(msgs)
 
@@ -41,7 +41,9 @@ def test_noise_segment():
 
             seg_states[day] = [seg.state for seg in segs]
 
-        # 1 noise segment the first day that does not get passed back in on the second day
-        assert seg_types == {18: {'Segment': 1, 'NoiseSegment': 1},
-                             19: {'Segment': 1, 'NoiseSegment': 3},
-                             20: {'Segment': 1, 'NoiseSegment': 26}}
+        # some noise segments on the first day that does not get passed back in on the second day
+        assert seg_types == {
+                              18: {'InfoSegment': 14, 'Segment': 1, 'DiscardedSegment': 2},
+                              19: {'InfoSegment': 23, 'Segment': 1, 'ClosedSegment': 6},
+                              20: {'InfoSegment': 23, 'Segment': 1, 'ClosedSegment': 8}
+                             }

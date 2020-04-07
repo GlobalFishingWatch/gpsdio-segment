@@ -66,13 +66,7 @@ setup(
         ]
     },
     include_package_data=True,
-    install_requires=[
-        'gpsdio==0.0.7',
-        'click>=0.3',
-        'pyproj<2.0',
-        'newlinejson<1.0',
-        'python-levenshtein'
-    ],
+    install_requires=[],
     keywords='AIS GIS remote sensing',
     license="Apache 2.0",
     long_description=readme,

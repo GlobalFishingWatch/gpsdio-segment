@@ -8,6 +8,13 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
+## 0.20 - 2020-04-07
+
+### Added
+
+* [GlobalFishingWatch/gfw-eng-tasks#47](https://github.com/GlobalFishingWatch/gfw-eng-tasks/issues/47): Adds
+    guard code over `course` field when has None value when normalize message.
+
 ## 0.19
 
 ### Changes

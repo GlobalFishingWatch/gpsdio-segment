@@ -54,18 +54,17 @@ reload()
 query = """
 with 
 
--- Grab 100 random voyages
--- The where clause ensures that these  voyages are not be cut off at the 
--- beginning or end and are at least 12 hours long
+-- This query is moderately expensive, so if you are plotting multiple vessels, it's 
+-- best to grab them all at once using the in statement below than plotting them one at
+-- a time.
+
+-- Grab all voyages from '352894000' and '567391000'
 voyages as (
 select a.* except (track_id), track_id
-from `machine_learning_dev_ttl_120d.track_based_voyages_v20200414` a
+from `machine_learning_dev_ttl_120d.track_based_voyages_v20200414b` a
 cross join unnest(track_id) as track_id
-where trip_start_visit_id != 'NO_PREVIOUS_DATA'
-  and trip_end_visit_id != 'ACTIVE_VOYAGE'
-  and timestamp_diff(trip_end, trip_start, hour) > 12
+where ssvid in ('352894000', '567391000')
 order by farm_fingerprint(trip_id)
-limit 100
 ),
 
 -- Grab the `track id`s and `aug_seg_id`s from the track table so that we can plot only
@@ -80,10 +79,10 @@ track_id as (
 -- Grab the messages from big query and add an aug_seg_id field which is constructed from
 -- the seg_id and the date.
 source_w_aug_seg_ids as (
-    select *,
+    select ssvid, seg_id, timestamp, lat, lon, course, speed,
            concat(seg_id, '-', format_date('%F', date(timestamp))) aug_seg_id
     from `pipe_production_v20200203.messages_segmented_2018*`
-    where _TABLE_SUFFIX between "0101" and "0131"
+--    where _TABLE_SUFFIX between "0101" and "0131"
 ),
 
 -- Join the message source to voyages to the `track_id` table, matching
@@ -102,21 +101,38 @@ base as (
 
 
 -- Select just the fields we want and order be timestamp.
-select msgid, ssvid, type, seg_id, track_id, trip_id, trip_start, trip_end,
-        timestamp, lat, lon, speed, course, heading
+select ssvid, seg_id, track_id, trip_id, trip_start, trip_end,
+        timestamp, lat, lon, speed, course
 from base
 order by timestamp
 """
 pipeline_msgs = pd.read_gbq(query, project_id='world-fishing-827', dialect='standard')  
 
 reload()
-for trip_id in sorted(set(pipeline_msgs.trip_id)):
-    df = pipeline_msgs[pipeline_msgs.trip_id == trip_id]
+df_ssvid = pipeline_msgs[pipeline_msgs.ssvid == '352894000']
+print('plotting 10 of', len(set(df_ssvid.trip_id)), 'voyages')
+for trip_id in sorted(set(df_ssvid.trip_id))[:10]:
+    df = df_ssvid[df_ssvid.trip_id == trip_id]
     plt.figure(figsize=(14, 14))
     with pyseas.context(styles.panel):
         df0 = df.iloc[0]
-        plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, plots=[])
-        maps.add_scalebar()
+        plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, plots=[], )
+#         maps.add_scalebar(skip_when_extent_large=True)
+        plt.title('{}: {} – {}'.format(df0.ssvid, 
+                    df0.trip_start.isoformat()[:-6], df0.trip_end.isoformat()[:-6]))
+        plt.show()
+
+reload()
+df_ssvid = pipeline_msgs[pipeline_msgs.ssvid == '567391000']
+trip_ids = sorted(set(df_ssvid.trip_id))
+print('plotting', len(trip_ids[:10]), 'of', len(trip_ids), 'voyages')
+for trip_id in trip_ids[:10]:
+    df = df_ssvid[df_ssvid.trip_id == trip_id]
+    plt.figure(figsize=(14, 14))
+    with pyseas.context(styles.panel):
+        df0 = df.iloc[0]
+        plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, plots=[], )
+#         maps.add_scalebar(skip_when_extent_large=True)
         plt.title('{}: {} – {}'.format(df0.ssvid, 
                     df0.trip_start.isoformat()[:-6], df0.trip_end.isoformat()[:-6]))
         plt.show()
@@ -125,3 +141,103 @@ for trip_id in sorted(set(pipeline_msgs.trip_id)):
 # import rendered
 # rendered.publish_to_github('./TrackBasedVoyages.ipynb', 
 #                            'gpsdio-segment/notebooks', action='push')
+# -
+
+# ## Investigate  '352894000'
+#
+# According to Hannah, '352894000' should have may voyages in 2018, yet we are seeing only 2, one
+# at the end of the year and one at the beginning. 
+#
+# Step 1. Plot the track for '352894000' to see if it's a track issue.
+
+query = """
+with 
+
+-- Grab the `track id`s and `aug_seg_id`s from the track table so that we can plot only
+-- points on the tracks. `aug_seg_id`s are the normal seg_ids augmented with the date, so
+-- segments that extend across multiple days will have different aug_seg_ids for each day.
+track_id as (
+  select seg_id as aug_seg_id, track_id
+  from `gfw_tasks_1143_new_segmenter.tracks_v20200229d_20191231`
+  cross join unnest (seg_ids) as seg_id
+  where ssvid = '352894000'
+),
+
+-- Grab the messages from big query and add an aug_seg_id field which is constructed from
+-- the seg_id and the date.
+source_w_aug_seg_ids as (
+    select *,
+           concat(seg_id, '-', format_date('%F', date(timestamp))) aug_seg_id
+    from `pipe_production_v20200203.messages_segmented_2018*`
+),
+
+-- Join the message source to voyages to the `track_id` table, matching
+-- up messages to their `track_id` using `aug_seg_id`. Then join to
+-- `voyages` and trim by start and end times so that we have just the
+-- messages for each voyage mapped to `trip_id`
+base as (
+    select ssvid, seg_id, timestamp, lat, lon, course, speed, track_id, vessel_id
+    from source_w_aug_seg_ids a
+    join (select * from track_id)
+    using (aug_seg_id)
+    join
+    (select seg_id, vessel_id from `world-fishing-827.pipe_production_v20200203.segment_info`
+     group by seg_id, vessel_id)
+     using (seg_id)
+)
+
+
+-- Select just the fields we want and order be timestamp.
+select ssvid, seg_id, track_id, vessel_id,
+        timestamp, lat, lon, speed, course
+from base
+order by timestamp
+"""
+ssvid_352894000_track_msgs = pd.read_gbq(query, project_id='world-fishing-827', dialect='standard')  
+
+for tid in set(df.track_id):
+    n = (df.track_id == tid).sum()
+    print(tid, n)
+
+reload()
+df = ssvid_352894000_track_msgs
+plt.figure(figsize=(14, 14))
+with pyseas.context(styles.panel):
+    df0 = df.iloc[0]
+    info0 = plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, df.track_id)
+    maps.add_scalebar(skip_when_extent_large=True)
+    plt.title('{}'.format(df0.ssvid))
+    plt.savefig('/Users/timothyhochberg/Desktop/352894000_tracks_panel.png', dpi=300,
+               facecolor=plt.rcParams['pyseas.fig.background'])
+    plt.show()
+
+
+info.projection_info
+
+reload()
+df = ssvid_352894000_track_msgs#[ssvid_352894000_track_msgs.track_id == 
+                               # '352894000-2012-01-03T00:11:45.000000Z-2012-01-03']
+plt.figure(figsize=(14, 14))
+with pyseas.context(styles.panel):
+    df0 = df.iloc[0]
+    info1 = plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, df.track_id,
+                            projection_info=info1.projection_info, plots={})
+    maps.add_scalebar(skip_when_extent_large=True)
+    plt.title('{}'.format(df0.ssvid))
+    plt.savefig('/Users/timothyhochberg/Desktop/352894000_tracks_panel_indonesia.png', dpi=300,
+               facecolor=plt.rcParams['pyseas.fig.background'])
+    plt.show()
+
+reload()
+df = ssvid_352894000_track_msgs
+plt.figure(figsize=(14, 14))
+with pyseas.context(styles.panel):
+    df0 = df.iloc[0]
+    info0 = plot_tracks.plot_tracks_panel(df.timestamp, df.lon, df.lat, df.vessel_id)
+    maps.add_scalebar(skip_when_extent_large=True)
+    plt.title('{}'.format(df0.ssvid))
+    plt.savefig('/Users/timothyhochberg/Desktop/352894000_tracks_panel_vessel_id.png', dpi=300,
+               facecolor=plt.rcParams['pyseas.fig.background'])
+    plt.show()
+
+sorted(set(ssvid_352894000_track_msgs.vessel_id))

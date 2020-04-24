@@ -326,8 +326,8 @@ class Stitcher(DiscrepancyCalculator):
                                     last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
                 decay =  self.msg_count_decacy_per_day ** days_since_track
                 if decay < 0.5:
-                    logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.seg_id, segment.first_msg_of_day.timestamp, 
-                                last_seg.seg_id, last_seg.last_msg_of_day.timestamp)
+                    logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.id, segment.first_msg_of_day.timestamp, 
+                                last_seg.id, last_seg.last_msg_of_day.timestamp)
                 for j, sigkey in enumerate(Signature._fields):
                     sigcomp = track.signature[j]
                     for k in sigcomp:

@@ -328,7 +328,6 @@ class Stitcher(DiscrepancyCalculator):
                 if decay < 0.5:
                     logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.seg_id, segment.first_msg_of_day.timestamp, 
                                 last_seg.seg_id, last_seg.last_msg_of_day.timestamp)
-                daily_msg_count = segment.daily_msg_count
                 for j, sigkey in enumerate(Signature._fields):
                     sigcomp = track.signature[j]
                     for k in sigcomp:
@@ -337,8 +336,8 @@ class Stitcher(DiscrepancyCalculator):
                         sigcomp[k] = sigcomp.get(k, 0) + v 
 
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
-                                             count=track.count + daily_msg_count,
-                                             decayed_count=decay * track.count + daily_msg_count)
+                                             count=track.count + segment.daily_msg_count,
+                                             decayed_count=decay * track.count + segment.daily_msg_count)
                 if track.segments:
                     cost = h['cost'] + self.find_cost(track, segment)
                 elif track.prefix:
@@ -357,7 +356,8 @@ class Stitcher(DiscrepancyCalculator):
                 track_count += self.track_count_decay_per_day ** days_since_track
             new_list = list(track_list)
             new_list.append(Track(id=segment.aug_id, prefix=[], 
-                                  segments=(segment,), count=segment.daily_msg_count,
+                                  segments=(segment,), 
+                                  count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, signature=Signature({}, {}, {}, {})))
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})

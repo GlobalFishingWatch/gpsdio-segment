@@ -328,16 +328,20 @@ class Stitcher(DiscrepancyCalculator):
                 if decay < 0.5:
                     logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.id, segment.first_msg_of_day.timestamp, 
                                 last_seg.id, last_seg.last_msg_of_day.timestamp)
+                new_sig_dict = {}
                 for j, sigkey in enumerate(Signature._fields):
-                    sigcomp = track.signature[j]
+                    sigcomp = track.signature[j].copy()
                     for k in sigcomp:
                         sigcomp[k] *= decay
                     for k, v in getattr(segment, sigkey):
                         sigcomp[k] = sigcomp.get(k, 0) + v 
+                    new_sig_dict[sigkey] = sigcomp
+                new_sig = Signature(**new_sig_dict)
 
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
                                              count=track.count + segment.daily_msg_count,
-                                             decayed_count=decay * track.count + segment.daily_msg_count)
+                                             decayed_count=decay * track.count + segment.daily_msg_count,
+                                             signature=new_sig)
                 if track.segments:
                     cost = h['cost'] + self.find_cost(track, segment)
                 elif track.prefix:

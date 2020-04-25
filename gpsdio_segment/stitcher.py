@@ -375,7 +375,7 @@ class Stitcher(DiscrepancyCalculator):
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
         sig_cost = self.signature_cost(track, seg1)
-        return self._seg_joining_costs[key]
+        return self._seg_joining_costs[key] + sig_cost
 
     def prune_hypotheses(self, hypotheses_list, n):
         def count_cost(h):

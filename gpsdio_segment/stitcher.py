@@ -56,9 +56,8 @@ class Stitcher(DiscrepancyCalculator):
     base_track_cost = 1.0
 
     # Weights of various cost components
-    # TODO: weight should be incorporated into costs
     count_weight = 0.1
-    signature_weight = 1.0
+    signature_weight = 0.1
     discrepancy_weight = 2.0
     overlap_weight = 1.0
     speed_weight = 1.0

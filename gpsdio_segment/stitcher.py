@@ -57,9 +57,9 @@ class Stitcher(DiscrepancyCalculator):
 
     # Weights of various cost components
     count_weight = 0.1
-    signature_weight = 1e-4
+    signature_weight = 0.1
     discrepancy_weight = 2.0
-    overlap_weight = 1.0
+    overlap_weight = 0.01
     speed_weight = 1.0
     time_metric_weight = 1.0
 
@@ -95,9 +95,9 @@ class Stitcher(DiscrepancyCalculator):
         # TODO: eventually use objects where appropriate
         id_map = {}
         for track in tracks:
-            track_id = Stitcher.aug_seg_id(track[0])
-            for seg in track:
-                id_map[Stitcher.aug_seg_id(seg)] = track_id
+            track_id = track['track_id']
+            for seg_id in track['seg_ids']:
+                id_map[seg_id] = track_id
         for msg in msgs:
             try:
                 msg['track_id'] = id_map.get(Stitcher.aug_seg_id(msg), None)
@@ -125,28 +125,6 @@ class Stitcher(DiscrepancyCalculator):
                 counts.update(track.signature[i])
             composite[key] = counts
         return Signature(**composite)
-
-    def _compute_specificities(self, composite_signature):
-        specificities = {}
-        for i, key in enumerate(composite_signature._fields):
-            vals = sorted(composite_signature[i].values())
-            if len(vals) < 2:
-                specificities[key] = 0
-            else:
-                total = sum(vals)
-                scale = max(self.sig_specificity_abs, self.sig_specificity_fraction * total)
-                x = vals[-2] / scale
-                # Set the specificity based on the prevalence of the *second* most common
-                # class.  If there are two classes with significant occurrences, then this
-                # means something. If there is only one class with significant occurrences,
-                # Then the characteristics matching doesn't mean much.
-                # (Keep thinking about this there's likely a better definition, possibly
-                # involving stddev of characteristics withing a segment.)
-                specificities[key] = x / (1 + x)
-        return specificities
-
-
-
     
     def filter_and_sort(self, segs, min_seg_size, start_date):
         def is_null(x):
@@ -197,7 +175,9 @@ class Stitcher(DiscrepancyCalculator):
         sig1 = track.signature[:2]
         sig2 = self.signatures[seg.aug_id][:2]
         # Cap positive specificities based on global occurrences of different sig values.
-        max_pos_specificities = [self.max_specificities[k] for k in Signature._fields[:2]]
+        # transponder values can only have negative values, since there aren't enought
+        # options to be positively specific
+        max_pos_specificities = [0, 1]
 
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):
@@ -220,8 +200,8 @@ class Stitcher(DiscrepancyCalculator):
                     maxb = max(scaled_b.values()) / nb
                     cos = 0
                     for k in set(a) & set(b):
-                        va = a[k] / na
-                        vb = b[k] / nb
+                        va = scaled_a[k] / na
+                        vb = scaled_b[k] / nb
                         cos += va * vb
                     try:
                         cos2 = 2 * cos ** 2 - 1
@@ -246,13 +226,13 @@ class Stitcher(DiscrepancyCalculator):
                     continue
             else:
                 match.append((0, 0))
-        log('signature 1: %s', sig1)
-        log('signature 2: %s', sig2)
-        log('match_vector: %s', match)
 
-        denom = sum(x[1] for x in match) + EPSILON
-        # Raw metric is a value between -1 and 1
-        raw_metric = sum((x[0] * x[1]) for x in match) / denom
+
+        raw_metric = sum(x[0] * x[1] for x in match) / (sum(x[1] for x in match) + EPSILON)
+
+
+        # # Raw metric is a value between -1 and 1
+        # raw_metric = sum((x[0] * x[1]) for x in match) / len(match)
         # Return a value between 0 and 1
         return self.signature_weight * 0.5 * (1 - raw_metric)
       
@@ -324,9 +304,9 @@ class Stitcher(DiscrepancyCalculator):
                 days_since_track = (segment.first_msg_of_day.timestamp - 
                                     last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
                 decay =  self.msg_count_decacy_per_day ** days_since_track
-                if decay < 0.5:
-                    logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.id, segment.first_msg_of_day.timestamp, 
-                                last_seg.id, last_seg.last_msg_of_day.timestamp)
+                # if decay < 0.5:
+                #     logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.id, segment.first_msg_of_day.timestamp, 
+                #                 last_seg.id, last_seg.last_msg_of_day.timestamp)
                 new_sig_dict = {}
                 for j, sigkey in enumerate(Signature._fields):
                     sigcomp = track.signature[j].copy()
@@ -362,7 +342,10 @@ class Stitcher(DiscrepancyCalculator):
                                   segments=(segment,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
-                                  is_active=True, signature=Signature({}, {}, {}, {})))
+                                  is_active=True, 
+                                  signature=self.signatures[segment.aug_id]
+
+                            ))
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
         return updated  
 
@@ -375,8 +358,6 @@ class Stitcher(DiscrepancyCalculator):
             self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
         sig_cost = self.signature_cost(track, seg1)
         joining_cost = self._seg_joining_costs[key]
-        log('joining_cost: %s', joining_cost)
-        log('sig_cost: %s', sig_cost)
         return  joining_cost + sig_cost
 
     def prune_hypotheses(self, hypotheses_list, n):
@@ -466,7 +447,6 @@ class Stitcher(DiscrepancyCalculator):
         segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
         self.signatures = self._compute_signatures(segs)
         self.composite_signature = self._composite_signature(self.signatures, tracks)
-        self.max_specificities = self._compute_specificities(self.composite_signature)
 
         hypotheses = [{'cost' : 0, 'tracks' : tracks}]
 

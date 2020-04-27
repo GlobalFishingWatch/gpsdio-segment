@@ -8,7 +8,7 @@ from .discrepancy import DiscrepancyCalculator
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.debug)
+logger.setLevel(logging.DEBUG)
 
 Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
                              'signature'])

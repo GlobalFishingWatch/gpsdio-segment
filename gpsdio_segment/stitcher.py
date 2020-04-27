@@ -8,7 +8,7 @@ from .discrepancy import DiscrepancyCalculator
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.debug)
 
 Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
                              'signature'])
@@ -57,7 +57,7 @@ class Stitcher(DiscrepancyCalculator):
 
     # Weights of various cost components
     count_weight = 0.1
-    signature_weight = 0.01
+    signature_weight = 1e-4
     discrepancy_weight = 2.0
     overlap_weight = 1.0
     speed_weight = 1.0
@@ -374,7 +374,10 @@ class Stitcher(DiscrepancyCalculator):
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
         sig_cost = self.signature_cost(track, seg1)
-        return self._seg_joining_costs[key] + sig_cost
+        joining_cost = self._seg_joining_costs[key]
+        log('joining_cost: %s', joining_cost)
+        log('sig_cost: %s', sig_cost)
+        return  joining_cost + sig_cost
 
     def prune_hypotheses(self, hypotheses_list, n):
         def count_cost(h):

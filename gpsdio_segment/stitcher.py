@@ -172,12 +172,12 @@ class Stitcher(DiscrepancyCalculator):
                 seg.first_msg_of_day.timestamp)
 
     def signature_cost(self, track, seg):
-        sig1 = track.signature[:2]
-        sig2 = self.signatures[seg.aug_id][:2]
+        sig1 = track.signature
+        sig2 = self.signatures[seg.aug_id]
         # Cap positive specificities based on global occurrences of different sig values.
         # transponder values can only have negative values, since there aren't enought
         # options to be positively specific
-        max_pos_specificities = [0, 1]
+        max_pos_specificities = [0, 1, 1, 1]
 
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):

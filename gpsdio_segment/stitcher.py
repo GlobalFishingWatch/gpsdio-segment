@@ -11,7 +11,7 @@ logger = logging.getLogger(__file__)
 logger.setLevel(logging.DEBUG)
 
 Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
-                             'signature'])
+                             'signature', 'historical_signatures'])
 
 Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
 
@@ -63,8 +63,7 @@ class Stitcher(DiscrepancyCalculator):
     speed_weight = 1.0
     time_metric_weight = 1.0
 
-    track_count_decay_per_day = 0.9
-    msg_count_decacy_per_day = 0.99
+    decay_per_day = 0.99
 
     sig_specificity_fraction = 0.1
     sig_specificity_abs = 10
@@ -295,18 +294,18 @@ class Stitcher(DiscrepancyCalculator):
         updated = []
         for h in hypotheses:
             track_list = self.prune_tracks(h['tracks'])
-            track_count = 0
+            date = segment.last_msg_of_day.timestamp.date()
             for i, track in enumerate(track_list):
                 if not track.is_active:
                     continue
                 new_list = list(track_list)
                 last_seg = track.segments[-1] if track.segments else track.prefix[-1]
+                # Use first msg per day in both cases so we get decay when it's back to back
+                # segs. Could also use both last
                 days_since_track = (segment.first_msg_of_day.timestamp - 
-                                    last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
-                decay =  self.msg_count_decacy_per_day ** days_since_track
-                # if decay < 0.5:
-                #     logging.warning('decay is small, %s for seg_ids %s (%s) and %s (%s)', decay, segment.id, segment.first_msg_of_day.timestamp, 
-                #                 last_seg.id, last_seg.last_msg_of_day.timestamp)
+                                    last_seg.first_msg_of_day.timestamp).total_seconds() / S_PER_DAY
+                decay =  self.decay_per_day ** days_since_track
+
                 new_sig_dict = {}
                 for j, sigkey in enumerate(Signature._fields):
                     sigcomp = track.signature[j].copy()
@@ -317,10 +316,15 @@ class Stitcher(DiscrepancyCalculator):
                     new_sig_dict[sigkey] = sigcomp
                 new_sig = Signature(**new_sig_dict)
 
+                hist_sigs = track.historical_signatures.copy()
+                hist_sigs[date] = new_sig
+
                 new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
                                              count=track.count + segment.daily_msg_count,
                                              decayed_count=decay * track.count + segment.daily_msg_count,
-                                             signature=new_sig)
+                                             signature=new_sig,
+                                             historical_signatures=hist_sigs,
+                                             )
                 if track.segments:
                     cost = h['cost'] + self.find_cost(track, segment)
                 elif track.prefix:
@@ -336,15 +340,14 @@ class Stitcher(DiscrepancyCalculator):
                     s_since_track = (segment.first_msg_of_day.timestamp - 
                                  track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
                 days_since_track = s_since_track / S_PER_HR
-                track_count += self.track_count_decay_per_day ** days_since_track
             new_list = list(track_list)
             new_list.append(Track(id=segment.aug_id, prefix=[], 
                                   segments=(segment,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, 
-                                  signature=self.signatures[segment.aug_id]
-
+                                  signature=self.signatures[segment.aug_id],
+                                  historical_signatures={date : self.signatures[segment.aug_id]},
                             ))
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
         return updated  

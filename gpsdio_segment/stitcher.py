@@ -300,10 +300,10 @@ class Stitcher(DiscrepancyCalculator):
                     continue
                 new_list = list(track_list)
                 last_seg = track.segments[-1] if track.segments else track.prefix[-1]
-                # Use first msg per day in both cases so we get decay when it's back to back
-                # segs. Could also use both last
-                days_since_track = (segment.first_msg_of_day.timestamp - 
-                                    last_seg.first_msg_of_day.timestamp).total_seconds() / S_PER_DAY
+                # Use last msg per day in both cases so we get decay when it's back to back
+                # segs. We don't use first because we don't always have the first message available
+                days_since_track = (segment.last_msg_of_day.timestamp - 
+                                    last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
                 decay =  self.decay_per_day ** days_since_track
 
                 new_sig_dict = {}

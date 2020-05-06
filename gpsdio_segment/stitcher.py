@@ -11,7 +11,7 @@ logger = logging.getLogger(__file__)
 logger.setLevel(logging.DEBUG)
 
 Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
-                             'signature', 'historical_signatures'])
+                             'signature', 'tracks_by_date'])
 
 Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
 
@@ -316,15 +316,19 @@ class Stitcher(DiscrepancyCalculator):
                     new_sig_dict[sigkey] = sigcomp
                 new_sig = Signature(**new_sig_dict)
 
-                hist_sigs = track.historical_signatures.copy()
-                hist_sigs[date] = new_sig
+                tracks_by_date = track.tracks_by_date.copy()
 
-                new_list[i] = track._replace(segments=tuple(track.segments) + (segment,),
-                                             count=track.count + segment.daily_msg_count,
-                                             decayed_count=decay * track.count + segment.daily_msg_count,
-                                             signature=new_sig,
-                                             historical_signatures=hist_sigs,
-                                             )
+                new_track = track._replace(
+                         segments=tuple(track.segments) + (segment,),
+                         count=track.count + segment.daily_msg_count,
+                         decayed_count=decay * track.decayed_count + segment.daily_msg_count,
+                         signature=new_sig,
+                         tracks_by_date=tracks_by_date,
+                    )
+                tracks_by_date[date] = new_track
+
+                new_list[i] = new_track
+
                 if track.segments:
                     cost = h['cost'] + self.find_cost(track, segment)
                 elif track.prefix:
@@ -341,14 +345,17 @@ class Stitcher(DiscrepancyCalculator):
                                  track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
                 days_since_track = s_since_track / S_PER_HR
             new_list = list(track_list)
-            new_list.append(Track(id=segment.aug_id, prefix=[], 
+            tracks_by_date = {}
+            new_track = Track(id=segment.aug_id, prefix=[], 
                                   segments=(segment,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, 
                                   signature=self.signatures[segment.aug_id],
-                                  historical_signatures={date : self.signatures[segment.aug_id]},
-                            ))
+                                  tracks_by_date=tracks_by_date,
+                            )
+            tracks_by_date[date] = new_track
+            new_list.append(new_track)
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
         return updated  
 
@@ -463,7 +470,8 @@ class Stitcher(DiscrepancyCalculator):
         [final_hypothesis] = self.prune_hypotheses(hypotheses, 1)
 
         tracks = list(final_hypothesis['tracks'])
-        tracks.sort(key=lambda x: x.decayed_count, reverse=True)
+        # Include id in the sort so that it's stable in the event of ties.
+        tracks.sort(key=lambda x: (x.decayed_count, x.id), reverse=True)
 
         for rank, track in enumerate(tracks):
             yield track, rank

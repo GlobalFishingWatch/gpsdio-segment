@@ -11,7 +11,7 @@ logger = logging.getLogger(__file__)
 logger.setLevel(logging.DEBUG)
 
 Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
-                             'signature', 'tracks_by_date'])
+                             'signature', 'parent_track'])
 
 Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
 
@@ -316,18 +316,13 @@ class Stitcher(DiscrepancyCalculator):
                     new_sig_dict[sigkey] = sigcomp
                 new_sig = Signature(**new_sig_dict)
 
-                tracks_by_date = track.tracks_by_date.copy()
-
-                new_track = track._replace(
+                new_list[i] = track._replace(
                          segments=tuple(track.segments) + (segment,),
                          count=track.count + segment.daily_msg_count,
                          decayed_count=decay * track.decayed_count + segment.daily_msg_count,
                          signature=new_sig,
-                         tracks_by_date=tracks_by_date,
+                         parent_track=track,
                     )
-                tracks_by_date[date] = new_track
-
-                new_list[i] = new_track
 
                 if track.segments:
                     cost = h['cost'] + self.find_cost(track, segment)
@@ -346,16 +341,14 @@ class Stitcher(DiscrepancyCalculator):
                 days_since_track = s_since_track / S_PER_HR
             new_list = list(track_list)
             tracks_by_date = {}
-            new_track = Track(id=segment.aug_id, prefix=[], 
+            new_list.append(Track(id=segment.aug_id, prefix=[], 
                                   segments=(segment,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, 
                                   signature=self.signatures[segment.aug_id],
-                                  tracks_by_date=tracks_by_date,
-                            )
-            tracks_by_date[date] = new_track
-            new_list.append(new_track)
+                                  parent_track=None,
+                            ))
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
         return updated  
 

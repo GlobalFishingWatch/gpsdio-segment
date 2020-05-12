@@ -10,8 +10,8 @@ logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-Track = namedtuple('Track', ['id', 'prefix', 'segments', 'count', 'decayed_count', 'is_active',
-                             'signature', 'parent_track'])
+Track = namedtuple('Track', ['id', 'prefix', 'seg_ids', 'count', 'decayed_count', 'is_active',
+                             'signature', 'parent_track', 'last_msg'])
 
 Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
 
@@ -114,16 +114,6 @@ class Stitcher(DiscrepancyCalculator):
             )
         return {s.aug_id : get_sig(s) for s in segs}
 
-    def _composite_signature(self, seg_sigs, tracks):
-        composite = {}
-        for i, key in enumerate(Signature._fields):
-            counts = Counter()
-            for sig in seg_sigs.values():
-                counts.update(sig[i])
-            for track in tracks:
-                counts.update(track.signature[i])
-            composite[key] = counts
-        return Signature(**composite)
     
     def filter_and_sort(self, segs, min_seg_size, start_date):
         def is_null(x):
@@ -160,10 +150,6 @@ class Stitcher(DiscrepancyCalculator):
                 seg = seg._replace(**{k : seg_sig})
 
         return [seg for seg in segs if sizes[seg.id] > min_seg_size]
-
-    @staticmethod
-    def seg_time_delta(seg0, seg1):
-        return seg1.first_msg_of_day.timestamp - seg0.last_msg_of_day.timestamp
 
     @staticmethod
     def seg_duration(seg):
@@ -236,8 +222,8 @@ class Stitcher(DiscrepancyCalculator):
         return self.signature_weight * 0.5 * (1 - raw_metric)
       
 
-    def overlap_cost(self, seg1, seg2):
-        msg0 = seg1.last_msg_of_day
+    def overlap_cost(self, last_msg1, seg2):
+        msg0 = last_msg1
         msg1 = seg2.first_msg_of_day
         overlapped = msg0.timestamp > msg1.timestamp
         if overlapped:
@@ -245,10 +231,8 @@ class Stitcher(DiscrepancyCalculator):
             def dt(s):
                 return (s.last_msg_of_day.timestamp - 
                         s.first_msg_of_day.timestamp).total_seconds() / S_PER_HR
-            dt0 = self.seg_duration(seg1).total_seconds() / S_PER_HR
             dt1 = self.seg_duration(seg2).total_seconds() / S_PER_HR
             max_oh = min(self.max_overlap_hours, 
-                         self.max_overlap_fraction * dt0,
                          self.max_overlap_fraction * dt1)
             oh = self.compute_msg_delta_hours(msg0._asdict(), msg1._asdict()) 
             return self.overlap_weight * oh / max_oh
@@ -257,11 +241,11 @@ class Stitcher(DiscrepancyCalculator):
 
 
 
-    def compute_cost(self, seg1, seg2):
-        overlap_cost = self.overlap_cost(seg1, seg2)
+    def compute_cost(self, last_msg1, seg2):
+        overlap_cost = self.overlap_cost(last_msg1, seg2)
 
-        hours = self.seg_time_delta(seg1, seg2).total_seconds() / S_PER_HR
-        msg1 = seg1.last_msg_of_day
+        hours = (seg2.first_msg_of_day.timestamp - last_msg1.timestamp).total_seconds() / S_PER_HR
+        msg1 = last_msg1
         msg2 = seg2.first_msg_of_day
         if hours < 0:
             # Overlap is already penalized, so swap seg1 and seg2
@@ -299,11 +283,14 @@ class Stitcher(DiscrepancyCalculator):
                 if not track.is_active:
                     continue
                 new_list = list(track_list)
-                last_seg = track.segments[-1] if track.segments else track.prefix[-1]
                 # Use last msg per day in both cases so we get decay when it's back to back
                 # segs. We don't use first because we don't always have the first message available
+                last_msg = track.last_msg
                 days_since_track = (segment.last_msg_of_day.timestamp - 
-                                    last_seg.last_msg_of_day.timestamp).total_seconds() / S_PER_DAY
+                                    last_msg.timestamp).total_seconds() / S_PER_DAY
+                if segment.last_msg_of_day.timestamp > last_msg.timestamp:
+                    last_msg = segment.last_msg_of_day
+
                 decay =  self.decay_per_day ** days_since_track
 
                 new_sig_dict = {}
@@ -317,36 +304,28 @@ class Stitcher(DiscrepancyCalculator):
                 new_sig = Signature(**new_sig_dict)
 
                 new_list[i] = track._replace(
-                         segments=tuple(track.segments) + (segment,),
+                         seg_ids=tuple(track.seg_ids) + (segment.aug_id,),
                          count=track.count + segment.daily_msg_count,
                          decayed_count=decay * track.decayed_count + segment.daily_msg_count,
                          signature=new_sig,
+                         last_msg=last_msg,
                          parent_track=track,
                     )
 
-                if track.segments:
-                    cost = h['cost'] + self.find_cost(track, segment)
-                elif track.prefix:
+                if track.seg_ids or track.prefix:
                     cost = h['cost'] + self.find_cost(track, segment)
                 else:
-                    # This occurs at startup so we give this the base track cost
                     cost = h['cost'] + self.base_track_cost
                 updated.append({'cost' : cost, 'tracks' : new_list})
-                if track.segments:
-                    s_since_track = (segment.first_msg_of_day.timestamp - 
-                                 track.segments[-1].last_msg_of_day.timestamp).total_seconds()
-                else:
-                    s_since_track = (segment.first_msg_of_day.timestamp - 
-                                 track.prefix[-1].last_msg_of_day.timestamp).total_seconds()  
-                days_since_track = s_since_track / S_PER_HR
             new_list = list(track_list)
             tracks_by_date = {}
             new_list.append(Track(id=segment.aug_id, prefix=[], 
-                                  segments=(segment,), 
+                                  seg_ids=(segment.aug_id,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, 
                                   signature=self.signatures[segment.aug_id],
+                                  last_msg=segment.last_msg_of_day,
                                   parent_track=None,
                             ))
             updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
@@ -354,12 +333,14 @@ class Stitcher(DiscrepancyCalculator):
 
     _seg_joining_costs = {}
 
-    def find_cost(self, track, seg1):
-        seg0 = track.segments[-1] if track.segments else track.prefix[-1]
-        key = (seg0.aug_id, seg1.aug_id)
+    def find_cost(self, track, seg):
+        if track.seg_ids:
+            key = (track.seg_ids[-1], seg.aug_id)
+        else:
+            key = (track.prefix[-1], seg.aug_id)
         if key not in self._seg_joining_costs:
-            self._seg_joining_costs[key] = self.compute_cost(seg0, seg1)
-        sig_cost = self.signature_cost(track, seg1)
+            self._seg_joining_costs[key] = self.compute_cost(track.last_msg, seg)
+        sig_cost = self.signature_cost(track, seg)
         joining_cost = self._seg_joining_costs[key]
         return  joining_cost + sig_cost
 
@@ -392,7 +373,7 @@ class Stitcher(DiscrepancyCalculator):
         ids_seen = set()
         for track in hypotheses_list[0]['tracks']:
             ids_seen.add(track.id)
-            potential_prefixes[track.id] = set(enumerate(track.segments))
+            potential_prefixes[track.id] = set(enumerate(track.seg_ids))
         for track_id in (track_ids - ids_seen):
             potential_prefixes[track_id] = set()
 
@@ -400,7 +381,7 @@ class Stitcher(DiscrepancyCalculator):
             ids_seen = set()
             for track in hypothesis['tracks']:
                 ids_seen.add(track.id)
-                potential_prefixes[track.id] = potential_prefixes[track.id] & set(enumerate(track.segments))
+                potential_prefixes[track.id] = potential_prefixes[track.id] & set(enumerate(track.seg_ids))
             for track_id in (track_ids - ids_seen):
                 potential_prefixes[track_id] = set()
 
@@ -423,10 +404,10 @@ class Stitcher(DiscrepancyCalculator):
             new_tracks = []
             for track in hypothesis['tracks']:
                 ndx = prefix_indices[track.id]
-                assert len(track.segments) >= ndx
+                assert len(track.seg_ids) >= ndx
                 new_tracks.append(track._replace(
-                    prefix = tuple(track.prefix) + tuple(track.segments[:ndx]),
-                    segments = track.segments[ndx:]
+                    prefix = tuple(track.prefix) + tuple(track.seg_ids[:ndx]),
+                    seg_ids = track.seg_ids[ndx:]
                     ))
             hypothesis['tracks'] = new_tracks
 
@@ -449,7 +430,6 @@ class Stitcher(DiscrepancyCalculator):
     def create_tracks(self, start_date, tracks, segs):
         segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
         self.signatures = self._compute_signatures(segs)
-        self.composite_signature = self._composite_signature(self.signatures, tracks)
 
         hypotheses = [{'cost' : 0, 'tracks' : tracks}]
 

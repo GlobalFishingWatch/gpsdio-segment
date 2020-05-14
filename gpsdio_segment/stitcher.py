@@ -312,10 +312,7 @@ class Stitcher(DiscrepancyCalculator):
                          parent_track=track,
                     )
 
-                if track.seg_ids or track.prefix:
-                    cost = h['cost'] + self.find_cost(track, segment)
-                else:
-                    cost = h['cost'] + self.base_track_cost
+                cost = h['cost'] + self.find_cost(track, segment)
                 updated.append({'cost' : cost, 'tracks' : new_list})
             new_list = list(track_list)
             tracks_by_date = {}
@@ -443,7 +440,6 @@ class Stitcher(DiscrepancyCalculator):
         # Include id in the sort so that it's stable in the event of ties.
         tracks.sort(key=lambda x: (x.decayed_count, x.id), reverse=True)
 
-        for rank, track in enumerate(tracks):
-            yield track, rank
+        return tracks
 
 

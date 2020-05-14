@@ -49,7 +49,7 @@ class Stitcher(DiscrepancyCalculator):
     # Parameters used in computing costs
     buffer_count = 10
     max_discrepancy = 3000
-    time_metric_scale_hours = 7 * 24
+    time_metric_scale_hours = 30 * 24
     max_average_knots = 50 
     max_overlap_hours = 2.0
     max_overlap_fraction = max_overlap_hours / 24.0
@@ -58,7 +58,7 @@ class Stitcher(DiscrepancyCalculator):
     # Weights of various cost components
     count_weight = 0.1
     signature_weight = 0.1
-    discrepancy_weight = 2.0
+    discrepancy_weight = 1.5
     overlap_weight = 0.01
     speed_weight = 1.0
     time_metric_weight = 1.0

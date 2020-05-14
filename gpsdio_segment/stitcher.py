@@ -334,10 +334,7 @@ class Stitcher(DiscrepancyCalculator):
     _seg_joining_costs = {}
 
     def find_cost(self, track, seg):
-        if track.seg_ids:
-            key = (track.seg_ids[-1], seg.aug_id)
-        else:
-            key = (track.prefix[-1], seg.aug_id)
+        key = (track.last_msg, seg.aug_id)
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(track.last_msg, seg)
         sig_cost = self.signature_cost(track, seg)

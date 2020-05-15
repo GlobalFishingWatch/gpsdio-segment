@@ -123,7 +123,7 @@ class Stitcher(DiscrepancyCalculator):
                        is_null(s.first_msg_of_day.timestamp))
         segs = [x for x in segs if has_messages(x) and x.timestamp.date() >= start_date.date()]
 
-        segs.sort(key=lambda x: (x.timestamp, x.first_msg_of_day.timestamp))
+        segs.sort(key=lambda x: (x.timestamp, x.last_msg_of_day.timestamp))
         keys = ['shipnames', 'callsigns', 'imos', 'transponders']
         identities = {}
         sizes = {}

@@ -10,7 +10,7 @@ logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.WARNING)
 
-Track = namedtuple('Track', ['id', 'prefix', 'seg_ids', 'count', 'decayed_count', 'is_active',
+Track = namedtuple('Track', ['id', 'seg_ids', 'count', 'decayed_count', 'is_active',
                              'signature', 'parent_track', 'last_msg'])
 
 Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
@@ -36,7 +36,6 @@ class Stitcher(DiscrepancyCalculator):
     """
     
     # General parameters
-    condense_interval = 32
     max_hypotheses = 16
     min_seg_size = 3 # segments shorter than this are dropped
     max_active_tracks = 8
@@ -54,9 +53,10 @@ class Stitcher(DiscrepancyCalculator):
     max_overlap_hours = 2.0
     max_overlap_fraction = max_overlap_hours / 24.0
     base_track_cost = 1.0
+    base_count = 100.0
 
     # Weights of various cost components
-    count_weight = 0.1
+    count_weight = 10.0
     signature_weight = 0.1
     discrepancy_weight = 1.5
     overlap_weight = 0.01
@@ -104,15 +104,14 @@ class Stitcher(DiscrepancyCalculator):
                 print(msg)
                 raise
 
-    def _compute_signatures(self, segs):
-        def get_sig(seg):
-            return Signature(
-                dict(seg.transponders),
-                dict(seg.shipnames),
-                dict(seg.callsigns),
-                dict(seg.imos)
-            )
-        return {s.aug_id : get_sig(s) for s in segs}
+    @staticmethod
+    def get_seg_sig(seg):
+        return Signature(
+            dict(seg.transponders),
+            dict(seg.shipnames),
+            dict(seg.callsigns),
+            dict(seg.imos)
+        )
 
     
     def filter_and_sort(self, segs, min_seg_size, start_date):
@@ -121,35 +120,12 @@ class Stitcher(DiscrepancyCalculator):
         def has_messages(s):
             return not(is_null(s.last_msg_of_day.timestamp) and
                        is_null(s.first_msg_of_day.timestamp))
-        segs = [x for x in segs if has_messages(x) and x.timestamp.date() >= start_date.date()]
+        segs = [x for x in segs if has_messages(x) and 
+                                   x.timestamp.date() >= start_date.date() and
+                                   x.daily_msg_count  >= self.min_seg_size]
+        segs.sort(key=lambda x: (x.timestamp, x.last_msg_of_day.timestamp, x.id))
+        return segs
 
-        segs.sort(key=lambda x: (x.timestamp, x.last_msg_of_day.timestamp))
-        keys = ['shipnames', 'callsigns', 'imos', 'transponders']
-        identities = {}
-        sizes = {}
-        days = {}
-        for seg in segs:
-            seg_id = seg.id
-            # We filter by total length of segment, not daily length
-            sizes[seg_id] = max(seg.msg_count, sizes.get(seg_id, 0))
-            if seg_id not in identities:
-                identities[seg_id] = {k : {} for k in keys}
-                days[seg_id] = 0
-            days[seg_id] += 1
-            for k in keys:
-                for v, cnt in getattr(seg, k):
-                    identities[seg_id][k][v] = identities[seg_id][k].get(v, 0) + cnt
-
-        for seg in segs:
-            seg_id = seg.id
-            assert seg_id is not None
-            for k, sig in identities[seg_id].items():
-                seg_sig = []
-                for value, count in sig.items():
-                    seg_sig.append({'value' : value, 'count' : count / days[seg_id]})
-                seg = seg._replace(**{k : seg_sig})
-
-        return [seg for seg in segs if sizes[seg.id] > min_seg_size]
 
     @staticmethod
     def seg_duration(seg):
@@ -158,7 +134,7 @@ class Stitcher(DiscrepancyCalculator):
 
     def signature_cost(self, track, seg):
         sig1 = track.signature
-        sig2 = self.signatures[seg.aug_id]
+        sig2 = self.get_seg_sig(seg)
         # Cap positive specificities based on global occurrences of different sig values.
         # transponder values can only have negative values, since there aren't enought
         # options to be positively specific
@@ -215,7 +191,6 @@ class Stitcher(DiscrepancyCalculator):
 
         raw_metric = sum(x[0] * x[1] for x in match) / (sum(x[1] for x in match) + EPSILON)
 
-
         # # Raw metric is a value between -1 and 1
         # raw_metric = sum((x[0] * x[1]) for x in match) / len(match)
         # Return a value between 0 and 1
@@ -264,7 +239,6 @@ class Stitcher(DiscrepancyCalculator):
         time_cost = self.time_metric_weight * (1 - self.time_metric_scale_hours / 
                         (self.time_metric_scale_hours + hours))
 
-
         return ( 
                  disc_cost +
                  speed_cost +
@@ -275,14 +249,13 @@ class Stitcher(DiscrepancyCalculator):
 
 
     def update_hypotheses(self, hypotheses, segment):
-        updated = []
+        updated_hypotheses = []
         for h in hypotheses:
-            track_list = self.prune_tracks(h['tracks'])
             date = segment.last_msg_of_day.timestamp.date()
-            for i, track in enumerate(track_list):
+            for i, track in enumerate(h['tracks']):
                 if not track.is_active:
                     continue
-                new_list = list(track_list)
+                track_list = list(h['tracks'])
                 # Use last msg per day in both cases so we get decay when it's back to back
                 # segs. We don't use first because we don't always have the first message available
                 last_msg = track.last_msg
@@ -303,7 +276,7 @@ class Stitcher(DiscrepancyCalculator):
                     new_sig_dict[sigkey] = sigcomp
                 new_sig = Signature(**new_sig_dict)
 
-                new_list[i] = track._replace(
+                track_list[i] = track._replace(
                          seg_ids=tuple(track.seg_ids) + (segment.aug_id,),
                          count=track.count + segment.daily_msg_count,
                          decayed_count=decay * track.decayed_count + segment.daily_msg_count,
@@ -313,20 +286,20 @@ class Stitcher(DiscrepancyCalculator):
                     )
 
                 cost = h['cost'] + self.find_cost(track, segment)
-                updated.append({'cost' : cost, 'tracks' : new_list})
-            new_list = list(track_list)
-            tracks_by_date = {}
-            new_list.append(Track(id=segment.aug_id, prefix=[], 
+                updated_hypotheses.append({'cost' : cost, 'tracks' : track_list})
+            track_list = list(h['tracks'])
+            track_list.append(Track(id=segment.aug_id, 
                                   seg_ids=(segment.aug_id,), 
                                   count=segment.daily_msg_count,
                                   decayed_count=segment.daily_msg_count,
                                   is_active=True, 
-                                  signature=self.signatures[segment.aug_id],
+                                  signature=self.get_seg_sig(segment),
                                   last_msg=segment.last_msg_of_day,
                                   parent_track=None,
                             ))
-            updated.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : new_list})
-        return updated  
+            track_list = self.prune_tracks(track_list)
+            updated_hypotheses.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : track_list})
+        return updated_hypotheses  
 
     _seg_joining_costs = {}
 
@@ -334,83 +307,19 @@ class Stitcher(DiscrepancyCalculator):
         key = (track.last_msg, seg.aug_id)
         if key not in self._seg_joining_costs:
             self._seg_joining_costs[key] = self.compute_cost(track.last_msg, seg)
-        sig_cost = self.signature_cost(track, seg)
-        joining_cost = self._seg_joining_costs[key]
-        return  joining_cost + sig_cost
+        return  self._seg_joining_costs[key] + self.signature_cost(track, seg)
 
     def prune_hypotheses(self, hypotheses_list, n):
         def count_cost(h):
-            return self.count_weight * sum(x.count ** 0.5 for x in h['tracks'])
+            return (self.count_weight * sum(x.count ** 0.5 for x in h['tracks']) /
+                   (self.base_count + sum(x.count for x in h['tracks']))**0.5)
         hypotheses_list.sort(key=lambda x: x['cost'] + count_cost(x))
         return hypotheses_list[:n]
-
-    def condense_hypotheses(self, hypotheses_list):
-        """
-        If the same prefix occurs in all tracks it can be removed.
-        """
-        if len(hypotheses_list) == 0:
-            return hypotheses_list
-        base_prefixes = {}
-        track_ids = set()
-        for hypothesis in hypotheses_list:
-            for track in hypothesis['tracks']:
-                track_ids.add(track.id)
-                if track.id not in base_prefixes:
-                    base_prefixes[track.id] = track.prefix
-                assert track.prefix == base_prefixes[track.id], (
-                        [x.aug_id for x in track.prefix], 
-                        [x.aug_id for x in base_prefixes[track.id]])
-
-
-        potential_prefixes = {}
-
-        ids_seen = set()
-        for track in hypotheses_list[0]['tracks']:
-            ids_seen.add(track.id)
-            potential_prefixes[track.id] = set(enumerate(track.seg_ids))
-        for track_id in (track_ids - ids_seen):
-            potential_prefixes[track_id] = set()
-
-        for hypothesis in hypotheses_list[1:]:
-            ids_seen = set()
-            for track in hypothesis['tracks']:
-                ids_seen.add(track.id)
-                potential_prefixes[track.id] = potential_prefixes[track.id] & set(enumerate(track.seg_ids))
-            for track_id in (track_ids - ids_seen):
-                potential_prefixes[track_id] = set()
-
-        prefix_indices = {}
-
-        for id_, seg_set in potential_prefixes.items():
-            segs_list = sorted(seg_set)
-            if segs_list and segs_list[0][0] != 0:
-                prefix_indices[id_] = 0
-            else:
-                for i, (ndx, seg) in enumerate(segs_list):
-                    if i != ndx:
-                        prefix_indices[id_] = i
-                        break
-                else:
-                    prefix_indices[id_] = len(segs_list)
-            assert [x[0] for x in segs_list[:prefix_indices[id_]]] == list(range(prefix_indices[id_]))
-
-        for hypothesis in hypotheses_list:
-            new_tracks = []
-            for track in hypothesis['tracks']:
-                ndx = prefix_indices[track.id]
-                assert len(track.seg_ids) >= ndx
-                new_tracks.append(track._replace(
-                    prefix = tuple(track.prefix) + tuple(track.seg_ids[:ndx]),
-                    seg_ids = track.seg_ids[ndx:]
-                    ))
-            hypothesis['tracks'] = new_tracks
-
-        return hypotheses_list
 
     def prune_tracks(self, tracks):
         active_tracks = [x for x in tracks if x.is_active]
         if len(active_tracks) > self.max_active_tracks:
-            active_tracks.sort(key = lambda x: x.decayed_count, reverse=True)
+            active_tracks.sort(key = lambda x: (x.decayed_count, x.id), reverse=True)
             inactive_tracks = [x for x in tracks if not x.is_active]
             pruned_tracks = inactive_tracks + active_tracks[:self.max_active_tracks]
             for track in active_tracks[self.max_active_tracks:]:
@@ -423,22 +332,17 @@ class Stitcher(DiscrepancyCalculator):
 
     def create_tracks(self, start_date, tracks, segs):
         segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
-        self.signatures = self._compute_signatures(segs)
 
-        hypotheses = [{'cost' : 0, 'tracks' : tracks}]
+        hypotheses = [{'cost' : 0, 'tracks' : self.prune_tracks(tracks)}]
 
         for i, seg in enumerate(segs):
             if not self.seg_duration(seg).total_seconds() > 0:
                 continue
             hypotheses = self.update_hypotheses(hypotheses, seg)
-            if i % self.condense_interval == 0:
-                hypotheses = self.condense_hypotheses(hypotheses)
             hypotheses = self.prune_hypotheses(hypotheses, self.max_hypotheses)
         [final_hypothesis] = self.prune_hypotheses(hypotheses, 1)
 
         tracks = list(final_hypothesis['tracks'])
-        # Include id in the sort so that it's stable in the event of ties.
-        tracks.sort(key=lambda x: (x.decayed_count, x.id), reverse=True)
 
         return tracks
 

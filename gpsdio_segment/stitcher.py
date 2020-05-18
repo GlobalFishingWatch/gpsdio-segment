@@ -313,7 +313,7 @@ class Stitcher(DiscrepancyCalculator):
         def count_cost(h):
             return (self.count_weight * sum(x.count ** 0.5 for x in h['tracks']) /
                    (self.base_count + sum(x.count for x in h['tracks']))**0.5)
-        hypotheses_list = sorted(hypotheses_list, key=lambda x: x['cost']) #+ count_cost(x))
+        hypotheses_list = sorted(hypotheses_list, key=lambda x: x['cost']+ count_cost(x))
         return hypotheses_list[:n]
 
     def prune_tracks(self, tracks):
@@ -340,7 +340,6 @@ class Stitcher(DiscrepancyCalculator):
                 continue
             hypotheses = self.update_hypotheses(hypotheses, seg)
             hypotheses = self.prune_hypotheses(hypotheses, self.max_hypotheses)
-        print(sorted([x['cost'] for x in hypotheses]))
         [final_hypothesis] = self.prune_hypotheses(hypotheses, 1)
 
         return list(final_hypothesis['tracks'])

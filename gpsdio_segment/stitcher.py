@@ -36,9 +36,9 @@ class Stitcher(DiscrepancyCalculator):
     """
     
     # General parameters
-    max_hypotheses = 16
+    max_hypotheses = 20
     min_seg_size = 3 # segments shorter than this are dropped
-    max_active_tracks = 8
+    max_active_tracks = 10
 
     # Parameters controlling how effective hours are computed
     penalty_hours = 4
@@ -285,8 +285,8 @@ class Stitcher(DiscrepancyCalculator):
                          parent_track=track,
                     )
 
-                cost = h['cost'] + self.find_cost(track, segment)
-                updated_hypotheses.append({'cost' : cost, 'tracks' : track_list})
+                updated_hypotheses.append({'cost' : h['cost'] + self.find_cost(track, segment), 
+                                           'tracks' : tuple(track_list)})
             track_list = list(h['tracks'])
             track_list.append(Track(id=segment.aug_id, 
                                   seg_ids=(segment.aug_id,), 
@@ -297,8 +297,8 @@ class Stitcher(DiscrepancyCalculator):
                                   last_msg=segment.last_msg_of_day,
                                   parent_track=None,
                             ))
-            track_list = self.prune_tracks(track_list)
-            updated_hypotheses.append({'cost' : h['cost'] + self.base_track_cost, 'tracks' : track_list})
+            updated_hypotheses.append({'cost' : h['cost'] + self.base_track_cost, 
+                                      'tracks' :  self.prune_tracks(track_list)})
         return updated_hypotheses  
 
     _seg_joining_costs = {}
@@ -313,7 +313,7 @@ class Stitcher(DiscrepancyCalculator):
         def count_cost(h):
             return (self.count_weight * sum(x.count ** 0.5 for x in h['tracks']) /
                    (self.base_count + sum(x.count for x in h['tracks']))**0.5)
-        hypotheses_list.sort(key=lambda x: x['cost'] + count_cost(x))
+        hypotheses_list = sorted(hypotheses_list, key=lambda x: x['cost']) + count_cost(x))
         return hypotheses_list[:n]
 
     def prune_tracks(self, tracks):
@@ -326,11 +326,11 @@ class Stitcher(DiscrepancyCalculator):
                 pruned_tracks.append(track._replace(is_active=False))
             pruned_tracks = tuple(pruned_tracks)
         else:
-            pruned_tracks = tracks
+            pruned_tracks = tuple(tracks)
         return pruned_tracks
 
 
-    def create_tracks(self, start_date, tracks, segs):
+    def create_tracks(self, start_date, tracks, segs, look_ahead=1):
         segs = self.filter_and_sort(segs, self.min_seg_size, start_date)
 
         hypotheses = [{'cost' : 0, 'tracks' : self.prune_tracks(tracks)}]
@@ -340,10 +340,9 @@ class Stitcher(DiscrepancyCalculator):
                 continue
             hypotheses = self.update_hypotheses(hypotheses, seg)
             hypotheses = self.prune_hypotheses(hypotheses, self.max_hypotheses)
+        print(sorted([x['cost'] for x in hypotheses]))
         [final_hypothesis] = self.prune_hypotheses(hypotheses, 1)
 
-        tracks = list(final_hypothesis['tracks'])
-
-        return tracks
+        return list(final_hypothesis['tracks'])
 
 

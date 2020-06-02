@@ -108,6 +108,10 @@ class Segment(object):
             n += self.prev_state.msg_count
         return n
 
+    @property
+    def daily_msg_count(self):
+        return len(self.msgs)
+
     def get_all_reversed_msgs(self):
         source = self
         while source is not None:

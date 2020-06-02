@@ -190,6 +190,7 @@ class Segmentizer(DiscrepancyCalculator):
 
         # Internal objects
         self._segments = {}
+        self._used_seg_ids = set()
         self._ssvid = ssvid
         self._prev_timestamp = None
         self._discrepancy_alpha_0 = self.max_knots / self.penalty_speed
@@ -216,6 +217,7 @@ class Segmentizer(DiscrepancyCalculator):
                     continue
             seg = Segment.from_state(state)
             s._segments[seg.id] = seg
+            s._used_seg_ids.add(seg.id)
             if seg.last_msg:
                 ts = seg.last_msg['timestamp']
                 if s._prev_timestamp is None or ts > s._prev_timestamp:
@@ -247,7 +249,8 @@ class Segmentizer(DiscrepancyCalculator):
         ts = msg['timestamp']
         while True:
             seg_id = '{}-{:%Y-%m-%dT%H:%M:%S.%fZ}'.format(msg['ssvid'], ts)
-            if seg_id not in self._segments:
+            if seg_id not in self._used_seg_ids:
+                self._used_seg_ids.add(seg_id)
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 

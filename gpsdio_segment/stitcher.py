@@ -43,23 +43,23 @@ class Stitcher(DiscrepancyCalculator):
     # Parameters controlling how effective hours are computed
     penalty_hours = 4
     hours_exp = 0.5
-    buffer_hours = 1.0
+    buffer_hours = 0.1
 
     # Parameters used in computing costs
     buffer_count = 10
-    max_discrepancy = 3000
-    time_metric_scale_hours = 30 * 24
-    max_average_knots = 50 
-    max_overlap_hours = 2.0
+    max_discrepancy = 2000
+    time_metric_scale_hours = 14 * 24
+    max_average_knots = 30 
+    max_overlap_hours = 12.0
     max_overlap_fraction = max_overlap_hours / 24.0
-    base_track_cost = 1.0
-    base_count = 100.0
+    base_track_cost = 4.0
+    base_count = 20.0
 
     # Weights of various cost components
-    count_weight = 10.0
-    signature_weight = 0.1
-    discrepancy_weight = 1.5
-    overlap_weight = 0.01
+    count_weight = 1.0
+    signature_weight = 1.0
+    discrepancy_weight = 1.0
+    overlap_weight = 1.0
     speed_weight = 1.0
     time_metric_weight = 1.0
 
@@ -227,17 +227,16 @@ class Stitcher(DiscrepancyCalculator):
             msg1, msg2 = msg2, msg1
             hours = -hours
         penalized_hours = hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
-        discrepancy = self.compute_discrepancy(msg1._asdict(), msg2._asdict(), penalized_hours)
+        discrepancy, dist = self.compute_discrepancy_and_dist(
+                                msg1._asdict(), msg2._asdict(), penalized_hours)
         padded_hours = math.hypot(hours, self.buffer_hours)
 
         disc_cost = self.discrepancy_weight * discrepancy / self.max_discrepancy
 
-        # For speed we use an hard cutoff.
-        speed = discrepancy / padded_hours
+        speed = dist / padded_hours
         speed_cost = self.speed_weight * speed  / self.max_average_knots
 
-        time_cost = self.time_metric_weight * (1 - self.time_metric_scale_hours / 
-                        (self.time_metric_scale_hours + hours))
+        time_cost = self.time_metric_weight * (hours / self.time_metric_scale_hours)
 
         return ( 
                  disc_cost +

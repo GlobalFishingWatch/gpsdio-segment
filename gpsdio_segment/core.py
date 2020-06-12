@@ -476,7 +476,7 @@ class Segmentizer(DiscrepancyCalculator):
                 info[k1] = {k2 : ({}, {}, {}, {}, {}, {}, {})}
             elif k2 not in info[k1]:
                 info[k1][k2] = ({}, {}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, destinations, n_shipnames, n_callsigns, n_imos, n_destinations = info[k1][k2]
+            shipnames, callsigns, imos, destinations, n_shipnames, n_callsigns, n_imos = info[k1][k2]
             if shipname is not None:
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
                 n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1

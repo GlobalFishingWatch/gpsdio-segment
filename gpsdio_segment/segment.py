@@ -11,7 +11,7 @@ logger.setLevel(logging.INFO)
 SegmentState = namedtuple('SegmentState', 
     ['id', 'ssvid', 
      'first_msg', 'last_msg', 'first_msg_of_day',  'last_msg_of_day', 
-     'msg_count', 'noise', 'closed'])
+     'msg_count', 'daily_msg_count', 'noise', 'closed'])
 
 
 class Segment(object):
@@ -98,6 +98,7 @@ class Segment(object):
                             first_msg = self.first_msg,
                             last_msg = self.last_msg, 
                             msg_count = self.msg_count,
+                            daily_msg_count = self.daily_msg_count,
                             first_msg_of_day = self.first_msg_of_day,
                             last_msg_of_day = self.last_msg_of_day) 
 

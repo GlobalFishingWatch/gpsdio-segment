@@ -136,9 +136,9 @@ class Stitcher(DiscrepancyCalculator):
         sig1 = track.signature
         sig2 = self.get_seg_sig(seg)
         # Cap positive specificities based on global occurrences of different sig values.
-        # transponder values can only have negative values, since there aren't enought
+        # transponder values can only have negative values, since there aren't enough
         # options to be positively specific
-        max_pos_specificities = [0, 1, 1, 1]
+        max_pos_specificities = [0, 1, 1, 1, 1]
 
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):

@@ -13,7 +13,8 @@ logger.setLevel(logging.WARNING)
 Track = namedtuple('Track', ['id', 'seg_ids', 'count', 'decayed_count', 'is_active',
                              'signature', 'parent_track', 'last_msg'])
 
-Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos'])
+Signature = namedtuple('Signature', ['transponders', 'shipnames', 'callsigns', 'imos',
+                    'destinations', 'lengths', 'widths'])
 
 
 log = logger.debug
@@ -138,7 +139,7 @@ class Stitcher(DiscrepancyCalculator):
         # Cap positive specificities based on global occurrences of different sig values.
         # transponder values can only have negative values, since there aren't enough
         # options to be positively specific
-        max_pos_specificities = [0, 1, 1, 1, 1]
+        max_pos_specificities = [0, 1, 1, 1, 1, 1, 1]
 
         match = []
         for a, b, mps in zip(sig1, sig2, max_pos_specificities):

@@ -15,11 +15,13 @@ __author__ = 'Paul Woods'
 __email__ = 'paul@skytruth.org'
 __source__ = 'https://github.com/SkyTruth/gpsdio-segment'
 __license__ = """
-Copyright 2015-2017 SkyTruth
+Copyright 2015-2020 SkyTruth
 Authors:
 
 Kevin Wurster <kevin@skytruth.org>
 Paul Woods <paul@skytruth.org>
+Tim Hochberg <tim@globalfishingwatch.org>
+Andres Arana <andres@globalfishingwatch.org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

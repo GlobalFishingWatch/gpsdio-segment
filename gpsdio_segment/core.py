@@ -452,6 +452,8 @@ class Segmentizer(DiscrepancyCalculator):
         callsign = msg.get('callsign')
         imo = msg.get('imo')
         destination = msg.get('destination')
+        length = msg.get('length')
+        width = msg.get('width')
         n_shipname = msg.get('n_shipname')
         n_callsign = msg.get('n_callsign')
         n_imo = msg.get('n_imo')
@@ -473,10 +475,11 @@ class Segmentizer(DiscrepancyCalculator):
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
-                info[k1] = {k2 : ({}, {}, {}, {}, {}, {}, {})}
+                info[k1] = {k2 : ({}, {}, {}, {}, {}, {}, {}, {}, {})}
             elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, destinations, n_shipnames, n_callsigns, n_imos = info[k1][k2]
+                info[k1][k2] = ({}, {}, {}, {}, {}, {}, {}, {}, {})
+            (shipnames, callsigns, imos, destinations, lengths, widths, 
+                                    n_shipnames, n_callsigns, n_imos) = info[k1][k2]
             if shipname is not None:
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
                 n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
@@ -488,6 +491,10 @@ class Segmentizer(DiscrepancyCalculator):
                 n_imos[n_imo] = imos.get(n_imo, 0) + 1
             if destination is not None:
                 destinations[destination] = destinations.get(destination, 0) + 1
+            if length is not None:
+                lengths[length] = lengths.get(length, 0) + 1
+            if width is not None:
+                widths[width] = lengths.get(width, 0) + 1
 
     def add_info(self, msg):
         ts = msg['timestamp']
@@ -500,6 +507,8 @@ class Segmentizer(DiscrepancyCalculator):
         msg['callsigns'] = callsigns = {}
         msg['imos'] = imos = {}
         msg['destinations'] = destinations = {}
+        msg['lengths'] = lengths = {}
+        msg['widths'] = widths = {}
         msg['n_shipnames'] = n_shipnames = {}
         msg['n_callsigns'] = n_callsigns = {}
         msg['n_imos'] = n_imos = {}
@@ -513,11 +522,14 @@ class Segmentizer(DiscrepancyCalculator):
                 receiver = msg.get('receiver')
                 k2 = (transponder_type, receiver_type, source, receiver)
                 if k2 in self.cur_info[k1]:
-                    names, signs, nums, dests, n_names, n_signs, n_nums = self.cur_info[k1][k2]
+                    (names, signs, nums, dests, lens, wdths, 
+                                    n_names, n_signs, n_nums) = self.cur_info[k1][k2]
                     updatesum(shipnames, names)
                     updatesum(callsigns, signs)
                     updatesum(imos, nums)
                     updatesum(destinations, dests)
+                    updatesum(lengths, lens)
+                    updatesum(widths, wdths)
                     updatesum(n_shipnames, n_names)
                     updatesum(n_callsigns, n_signs)
                     updatesum(n_imos, n_nums)

@@ -108,12 +108,14 @@ class Stitcher(DiscrepancyCalculator):
     @staticmethod
     def get_seg_sig(seg):
         return Signature(
-            dict(seg.transponders),
-            dict(seg.shipnames),
-            dict(seg.callsigns),
-            dict(seg.imos)
+            transponders = dict(seg.transponders),
+            shipnames = dict(seg.shipnames),
+            callsigns = dict(seg.callsigns),
+            imos = dict(seg.imos),
+            destinations = dict(seg.destinations),
+            lengths = dict(seg.lengths),
+            widths = dict(seg.widths)
         )
-
     
     def filter_and_sort(self, segs, min_seg_size, start_date):
         def is_null(x):

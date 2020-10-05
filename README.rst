@@ -55,6 +55,14 @@ Developing
     $ pip install -e .\[dev\]
     $ py.test tests --cov gpsdio_segment --cov-report term-missing
 
+You can also use the docker environment if you don't want to use any dependency
+on your machine. Just install `docker <https://www.docker.com/>`_ and `docker
+compose <https://docs.docker.com/compose/`_ and then you can run development
+commands inside the container by running this:
+
+.. code-block:: console
+    $ sudo docker-compose run dev py.test tests
+
 
 Helpful Recipes
 ---------------

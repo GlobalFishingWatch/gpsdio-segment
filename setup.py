@@ -62,7 +62,9 @@ setup(
         'dev': [
             'pytest>=3.6',
             'pytest-cov',
-            'coverage'
+            'coverage',
+            'python-dateutil',
+            'pytz',
         ]
     },
     include_package_data=True,

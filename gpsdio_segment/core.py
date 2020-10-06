@@ -57,7 +57,7 @@ INFO_TYPES = {
     }
 
 
-INFO_PING_INTERVAL_MINS = 6
+INFO_PING_INTERVAL_MINS = 15
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -465,7 +465,7 @@ class Segmentizer(DiscrepancyCalculator):
         assert ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
-        k2 = (transponder_type, receiver_type, source, receiver)
+        k2 = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
@@ -504,7 +504,7 @@ class Segmentizer(DiscrepancyCalculator):
                 receiver_type = msg.get('receiver_type')
                 source = msg.get('source')
                 receiver = msg.get('receiver')
-                k2 = (transponder_type, receiver_type, source, receiver)
+                k2 = (transponder_type, receiver_type, source)
                 if k2 in self.cur_info[k1]:
                     names, signs, nums, n_names, n_signs, n_nums = self.cur_info[k1][k2]
                     updatesum(shipnames, names)

@@ -12,7 +12,7 @@ def test_SegmentState():
         first_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
         last_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
         first_msg_of_day=None, last_msg_of_day=None,
-        msg_count=1, noise=False, closed=False)
+        msg_count=1, noise=False, closed=False, daily_msg_count=11)
     assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 

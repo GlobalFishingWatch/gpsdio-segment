@@ -57,7 +57,7 @@ INFO_TYPES = {
     }
 
 
-INFO_PING_INTERVAL_MINS = 6
+INFO_PING_INTERVAL_MINS = 15
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -420,6 +420,7 @@ class Segmentizer(DiscrepancyCalculator):
         else:
             new_segment = cls(segment.id, segment.ssvid)
         for msg in segment.msgs:
+            self.add_info(msg)
             msg.pop('metric', None)
             if msg.pop('drop', False):
                 log(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
@@ -464,14 +465,13 @@ class Segmentizer(DiscrepancyCalculator):
             return
         receiver_type = msg.get('receiver_type')
         source = msg.get('source')
-        receiver = msg.get('receiver')
         ts = msg['timestamp']
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
         assert ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
-        k2 = (transponder_type, receiver_type, source, receiver)
+        k2 = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
@@ -519,8 +519,7 @@ class Segmentizer(DiscrepancyCalculator):
             for transponder_type in POSITION_TYPES.get(msg.get('type'), ()):
                 receiver_type = msg.get('receiver_type')
                 source = msg.get('source')
-                receiver = msg.get('receiver')
-                k2 = (transponder_type, receiver_type, source, receiver)
+                k2 = (transponder_type, receiver_type, source)
                 if k2 in self.cur_info[k1]:
                     (names, signs, nums, dests, lens, wdths, 
                                     n_names, n_signs, n_nums) = self.cur_info[k1][k2]
@@ -586,8 +585,6 @@ class Segmentizer(DiscrepancyCalculator):
                 continue
 
             assert msg_type is POSITION_MESSAGE
-
-            self.add_info(msg)
 
             loc = self.normalize_location(x, y, course, speed, heading)
             if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):

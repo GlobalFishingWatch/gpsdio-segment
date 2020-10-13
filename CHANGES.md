@@ -6,7 +6,22 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## 0.20.2 - 2020-10-13
+
+### Fixes
+
+* [PIPELINE-144](https://globalfishingwatch.atlassian.net/browse/PIPELINE-144):
+  Fixes the identity assignment logic so that identity messages appearing after
+  a batch of positional messages are not discarded.
+
+## 0.20.1 - 2020-10-06
+
+### Changes
+
+* [PIPELINE-139](https://globalfishingwatch.atlassian.net/browse/PIPELINE-139):
+  Removes the receiver from the identity cache because that field is completely
+  broken.
 
 ## 0.20 - 2020-04-07
 

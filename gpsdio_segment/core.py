@@ -417,6 +417,7 @@ class Segmentizer(DiscrepancyCalculator):
         else:
             new_segment = cls(segment.id, segment.ssvid)
         for msg in segment.msgs:
+            self.add_info(msg)
             msg.pop('metric', None)
             if msg.pop('drop', False):
                 log(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
@@ -566,8 +567,6 @@ class Segmentizer(DiscrepancyCalculator):
                 continue
 
             assert msg_type is POSITION_MESSAGE
-
-            self.add_info(msg)
 
             loc = self.normalize_location(x, y, course, speed, heading)
             if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):

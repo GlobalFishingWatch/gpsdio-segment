@@ -8,6 +8,23 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
+## 3.0 - 2020-11-12
+
+### (GlobalFishingWatch/gpsdio-segment#72)[https://github.com/GlobalFishingWatch/gpsdio-segment/pull/72]
+
+### Added
+
+* Keep track-destination as an additional signature element for stitcher and anchorages
+* Add daily message count in addition to cumulative message counts to support stitcher
+* Add VMS message types
+* Stitcher:  assemble 1-day (or shorter) pieces of segments into coherent tracks using multi hypotheses
+  approach.
+
+### Changed
+
+* Misc bug fixes
+* Fix Tests
+
 ## 0.20 - 2020-04-07
 
 ### Added

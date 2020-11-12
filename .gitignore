@@ -1,5 +1,7 @@
 # Local files we don't want to track
 untracked/
+*.ipynb
+.ipynb_checkpoints/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

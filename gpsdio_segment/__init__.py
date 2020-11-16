@@ -9,8 +9,7 @@ from gpsdio_segment.segment import BadSegment
 from gpsdio_segment.segment import Segment
 from gpsdio_segment.core import Segmentizer
 
-
-__version__ = '0.30-dev'
+__version__ = '3.0.0'
 __author__ = 'Paul Woods'
 __email__ = 'paul@skytruth.org'
 __source__ = 'https://github.com/SkyTruth/gpsdio-segment'

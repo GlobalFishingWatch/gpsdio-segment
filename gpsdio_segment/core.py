@@ -57,7 +57,7 @@ INFO_TYPES = {
     }
 
 
-INFO_PING_INTERVAL_MINS = 6
+INFO_PING_INTERVAL_MINS = 15
 
 # The values 52 and 102.3 are both almost always noise, and don't
 # reflect the vessel's actual speed. They need to be commented out.
@@ -190,6 +190,7 @@ class Segmentizer(DiscrepancyCalculator):
 
         # Internal objects
         self._segments = {}
+        self._used_seg_ids = set()
         self._ssvid = ssvid
         self._prev_timestamp = None
         self._discrepancy_alpha_0 = self.max_knots / self.penalty_speed
@@ -216,6 +217,7 @@ class Segmentizer(DiscrepancyCalculator):
                     continue
             seg = Segment.from_state(state)
             s._segments[seg.id] = seg
+            s._used_seg_ids.add(seg.id)
             if seg.last_msg:
                 ts = seg.last_msg['timestamp']
                 if s._prev_timestamp is None or ts > s._prev_timestamp:
@@ -247,7 +249,8 @@ class Segmentizer(DiscrepancyCalculator):
         ts = msg['timestamp']
         while True:
             seg_id = '{}-{:%Y-%m-%dT%H:%M:%S.%fZ}'.format(msg['ssvid'], ts)
-            if seg_id not in self._segments:
+            if seg_id not in self._used_seg_ids:
+                self._used_seg_ids.add(seg_id)
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
@@ -417,6 +420,7 @@ class Segmentizer(DiscrepancyCalculator):
         else:
             new_segment = cls(segment.id, segment.ssvid)
         for msg in segment.msgs:
+            self.add_info(msg)
             msg.pop('metric', None)
             if msg.pop('drop', False):
                 log(("Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}").format(
@@ -448,31 +452,34 @@ class Segmentizer(DiscrepancyCalculator):
         shipname = msg.get('shipname')
         callsign = msg.get('callsign')
         imo = msg.get('imo')
+        destination = msg.get('destination')
+        length = msg.get('length')
+        width = msg.get('width')
         n_shipname = msg.get('n_shipname')
         n_callsign = msg.get('n_callsign')
         n_imo = msg.get('n_imo')
-        if shipname is None and callsign is None and imo is None:
+        if shipname is None and callsign is None and imo is None and destination is None:
             return
         transponder_type = INFO_TYPES.get(msg.get('type'))
         if not transponder_type:
             return
         receiver_type = msg.get('receiver_type')
         source = msg.get('source')
-        receiver = msg.get('receiver')
         ts = msg['timestamp']
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
         assert ts.tzinfo.zone == 'UTC'
         rounded_ts = datetime.datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute,
                                         tzinfo=ts.tzinfo)
-        k2 = (transponder_type, receiver_type, source, receiver)
+        k2 = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
-                info[k1] = {k2 : ({}, {}, {}, {}, {}, {})}
+                info[k1] = {k2 : ({}, {}, {}, {}, {}, {}, {}, {}, {})}
             elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, n_shipnames, n_callsigns, n_imos = info[k1][k2]
+                info[k1][k2] = ({}, {}, {}, {}, {}, {}, {}, {}, {})
+            (shipnames, callsigns, imos, destinations, lengths, widths, 
+                                    n_shipnames, n_callsigns, n_imos) = info[k1][k2]
             if shipname is not None:
                 shipnames[shipname] = shipnames.get(shipname, 0) + 1
                 n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
@@ -482,6 +489,12 @@ class Segmentizer(DiscrepancyCalculator):
             if imo is not None:
                 imos[imo] = imos.get(imo, 0) + 1
                 n_imos[n_imo] = imos.get(n_imo, 0) + 1
+            if destination is not None:
+                destinations[destination] = destinations.get(destination, 0) + 1
+            if length is not None:
+                lengths[length] = lengths.get(length, 0) + 1
+            if width is not None:
+                widths[width] = lengths.get(width, 0) + 1
 
     def add_info(self, msg):
         ts = msg['timestamp']
@@ -493,6 +506,9 @@ class Segmentizer(DiscrepancyCalculator):
         msg['shipnames'] = shipnames = {}
         msg['callsigns'] = callsigns = {}
         msg['imos'] = imos = {}
+        msg['destinations'] = destinations = {}
+        msg['lengths'] = lengths = {}
+        msg['widths'] = widths = {}
         msg['n_shipnames'] = n_shipnames = {}
         msg['n_callsigns'] = n_callsigns = {}
         msg['n_imos'] = n_imos = {}
@@ -503,13 +519,16 @@ class Segmentizer(DiscrepancyCalculator):
             for transponder_type in POSITION_TYPES.get(msg.get('type'), ()):
                 receiver_type = msg.get('receiver_type')
                 source = msg.get('source')
-                receiver = msg.get('receiver')
-                k2 = (transponder_type, receiver_type, source, receiver)
+                k2 = (transponder_type, receiver_type, source)
                 if k2 in self.cur_info[k1]:
-                    names, signs, nums, n_names, n_signs, n_nums = self.cur_info[k1][k2]
+                    (names, signs, nums, dests, lens, wdths, 
+                                    n_names, n_signs, n_nums) = self.cur_info[k1][k2]
                     updatesum(shipnames, names)
                     updatesum(callsigns, signs)
                     updatesum(imos, nums)
+                    updatesum(destinations, dests)
+                    updatesum(lengths, lens)
+                    updatesum(widths, wdths)
                     updatesum(n_shipnames, n_names)
                     updatesum(n_callsigns, n_signs)
                     updatesum(n_imos, n_nums)
@@ -566,8 +585,6 @@ class Segmentizer(DiscrepancyCalculator):
                 continue
 
             assert msg_type is POSITION_MESSAGE
-
-            self.add_info(msg)
 
             loc = self.normalize_location(x, y, course, speed, heading)
             if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):

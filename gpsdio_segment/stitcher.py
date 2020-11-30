@@ -38,7 +38,7 @@ class Stitcher(DiscrepancyCalculator):
     
     # General parameters
     max_hypotheses = 20
-    min_seg_size = 3 # segments shorter than this are dropped
+    min_seg_size = 1 # segments shorter than this are dropped
     max_active_tracks = 10
 
     # Parameters controlling how effective hours are computed

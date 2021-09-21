@@ -1,17 +1,27 @@
-from __future__ import print_function, division
+from __future__ import division, print_function
 
-from collections import namedtuple
 import logging
+from collections import namedtuple
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
 
-SegmentState = namedtuple('SegmentState', 
-    ['id', 'ssvid', 
-     'first_msg', 'last_msg', 'first_msg_of_day',  'last_msg_of_day', 
-     'msg_count', 'noise', 'closed'])
+SegmentState = namedtuple(
+    "SegmentState",
+    [
+        "id",
+        "ssvid",
+        "first_msg",
+        "last_msg",
+        "first_msg_of_day",
+        "last_msg_of_day",
+        "msg_count",
+        "noise",
+        "closed",
+    ],
+)
 
 
 class Segment(object):
@@ -20,10 +30,11 @@ class Segment(object):
     Contains all the messages that have been deemed by the `Segmentizer()` to
     be continuous.
     """
-    __slots__ = ['id', 'ssvid', 'msgs', 'prev_state', 'prev_segment', 'msgs']
 
-    noise = False # This isn't a 'real' segment, so it isn't written to a table
-    closed = False # No more segments should be written to this segment
+    __slots__ = ["id", "ssvid", "msgs", "prev_state", "prev_segment", "msgs"]
+
+    noise = False  # This isn't a 'real' segment, so it isn't written to a table
+    closed = False  # No more segments should be written to this segment
 
     def __init__(self, id, ssvid):
 
@@ -66,8 +77,12 @@ class Segment(object):
 
     def __repr__(self):
         return "<{cname}(id={id}, ssvid={ssvid}) with {msg_cnt} msgs at {hsh}>".format(
-            cname=self.__class__.__name__, id=self.id, msg_cnt=len(self),
-            ssvid=self.ssvid, hsh=hash(self))
+            cname=self.__class__.__name__,
+            id=self.id,
+            msg_cnt=len(self),
+            ssvid=self.ssvid,
+            hsh=hash(self),
+        )
 
     def __iter__(self):
         return iter(self.msgs)
@@ -91,15 +106,17 @@ class Segment(object):
         -------
         SegmentState
         """
-        return SegmentState(id = self.id, 
-                            ssvid = self.ssvid, 
-                            noise = self.noise, 
-                            closed = self.closed, 
-                            first_msg = self.first_msg,
-                            last_msg = self.last_msg, 
-                            msg_count = self.msg_count,
-                            first_msg_of_day = self.first_msg_of_day,
-                            last_msg_of_day = self.last_msg_of_day) 
+        return SegmentState(
+            id=self.id,
+            ssvid=self.ssvid,
+            noise=self.noise,
+            closed=self.closed,
+            first_msg=self.first_msg,
+            last_msg=self.last_msg,
+            msg_count=self.msg_count,
+            first_msg_of_day=self.first_msg_of_day,
+            last_msg_of_day=self.last_msg_of_day,
+        )
 
     @property
     def msg_count(self):
@@ -112,7 +129,7 @@ class Segment(object):
         source = self
         while source is not None:
             for msg in source.msgs[::-1]:
-                if not msg.get('drop', False):
+                if not msg.get("drop", False):
                     yield msg
             source = source.prev_segment
 
@@ -123,7 +140,7 @@ class Segment(object):
         if self.msgs:
             return self.msgs[0]
         return None
-    
+
     @property
     def last_msg(self):
         if self.msgs:
@@ -148,21 +165,22 @@ class Segment(object):
         self.msgs.append(msg)
 
 
-
-
-
 class ClosedSegment(Segment):
     """
     Segment that has timed out or closed because of ambiguity
     so we don't want to feed it back into Segmentizer
     """
+
     closed = True
+
 
 class NoiseSegment(ClosedSegment):
     """
     Segment that doesn't represent a real 'segment' for some reason.
     """
+
     noise = True
+
 
 class BadSegment(NoiseSegment):
     """
@@ -172,16 +190,15 @@ class BadSegment(NoiseSegment):
     instance check.
     """
 
+
 class DiscardedSegment(NoiseSegment):
     """
-    Points that are discarded during post processing of segments are emitted as 
+    Points that are discarded during post processing of segments are emitted as
     Discarded segments.
     """
+
 
 class InfoSegment(NoiseSegment):
     """
     Info messages that aren't matched to segments.
     """
-
-
-

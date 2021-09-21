@@ -37,22 +37,22 @@ class DiscrepancyCalculator(object):
 
     @staticmethod
     def compute_msg_delta_hours(msg1, msg2):
-        ts1 = msg1['timestamp']
-        ts2 = msg2['timestamp']
+        ts1 = msg1["timestamp"]
+        ts2 = msg2["timestamp"]
         return DiscrepancyCalculator.compute_ts_delta_hours(ts1, ts2)
 
     @classmethod
     def _compute_expected_position(cls, msg, hours):
         epsilon = 1e-3
-        x = msg['lon']
-        y = msg['lat']
-        speed = msg['speed']
-        course = msg['course']
+        x = msg["lon"]
+        y = msg["lat"]
+        speed = msg["speed"]
+        course = msg["course"]
         if course > 359.95:
             assert speed <= cls.very_slow, (course, speed)
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
-        dist = speed * hours 
+        dist = speed * hours
         # Course is assumed to have `0` pointing north and positive
         # is clockwise as is reported by AIS. This in contrast with
         # the natural math based definition which has 0 pointing east
@@ -69,7 +69,7 @@ class DiscrepancyCalculator(object):
 
         """
         Compute the stats required to determine if two points are continuous.  Input
-        messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`, 
+        messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`,
         that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
 
         Returns
@@ -78,18 +78,19 @@ class DiscrepancyCalculator(object):
         """
 
         if hours is None:
-            hours = self.compute_msg_delta_hours(msg1, msg2,)
+            hours = self.compute_msg_delta_hours(
+                msg1,
+                msg2,
+            )
         assert hours >= 0
 
-        x1 = msg1['lon']
-        y1 = msg1['lat']
+        x1 = msg1["lon"]
+        y1 = msg1["lat"]
         assert x1 is not None and y1 is not None
-        x2 = msg2.get('lon')
-        y2 = msg2.get('lat')
+        x2 = msg2.get("lon")
+        y2 = msg2.get("lat")
 
-        if (x2 is None or y2 is None):
-            distance = None
-            speed = None
+        if x2 is None or y2 is None:
             discrepancy = None
         else:
             x2p, y2p = self._compute_expected_position(msg1, hours)
@@ -100,31 +101,33 @@ class DiscrepancyCalculator(object):
 
             nm_per_deg_lat = 60.0
             y = 0.5 * (y1 + y2)
-            epsilon = 1e-3
-            nm_per_deg_lon = nm_per_deg_lat  * math.cos(math.radians(y))
+            nm_per_deg_lon = nm_per_deg_lat * math.cos(math.radians(y))
             discrepancy1 = 0.5 * (
-                math.hypot(nm_per_deg_lon * wrap(x1p - x1) , 
-                           nm_per_deg_lat * (y1p - y1)) + 
-                math.hypot(nm_per_deg_lon * wrap(x2p - x2) , 
-                           nm_per_deg_lat * (y2p - y2)))
+                math.hypot(nm_per_deg_lon * wrap(x1p - x1), nm_per_deg_lat * (y1p - y1))
+                + math.hypot(
+                    nm_per_deg_lon * wrap(x2p - x2), nm_per_deg_lat * (y2p - y2)
+                )
+            )
 
             # Vessel just stayed put
-            dist = math.hypot(nm_per_deg_lat * (y2 - y1), 
-                              nm_per_deg_lon * wrap(x2 - x1))
+            dist = math.hypot(
+                nm_per_deg_lat * (y2 - y1), nm_per_deg_lon * wrap(x2 - x1)
+            )
             discrepancy2 = dist * self.shape_factor
 
             # Distance perp to line
-            rads21 = math.atan2(nm_per_deg_lat * (y2 - y1), 
-                                nm_per_deg_lon * wrap(x2 - x1))
-            delta21 = math.radians(90 - msg1['course']) - rads21
+            rads21 = math.atan2(
+                nm_per_deg_lat * (y2 - y1), nm_per_deg_lon * wrap(x2 - x1)
+            )
+            delta21 = math.radians(90 - msg1["course"]) - rads21
             tangential21 = math.cos(delta21) * dist
-            if 0 < tangential21 <= msg1['speed'] * hours:
+            if 0 < tangential21 <= msg1["speed"] * hours:
                 normal21 = abs(math.sin(delta21)) * dist
             else:
                 normal21 = inf
-            delta12 = math.radians(90 - msg2['course']) - rads21 
+            delta12 = math.radians(90 - msg2["course"]) - rads21
             tangential12 = math.cos(delta12) * dist
-            if 0 < tangential12 <= msg2['speed'] * hours:
+            if 0 < tangential12 <= msg2["speed"] * hours:
                 normal12 = abs(math.sin(delta12)) * dist
             else:
                 normal12 = inf

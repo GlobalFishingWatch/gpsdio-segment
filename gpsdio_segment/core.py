@@ -582,11 +582,13 @@ class Segmentizer(DiscrepancyCalculator):
             msg["callsigns"] = {}
             msg["imos"] = {}
 
+            # Check that message is valid (in order, correct ssvid, not already seen) REFACTOR
             timestamp = msg.get("timestamp")
             if timestamp is None:
                 raise ValueError("Message missing timestamp")
             if self._prev_timestamp is not None and timestamp < self._prev_timestamp:
                 raise ValueError("Input data is unsorted")
+            # TODO: shouldn't this come after the duplicate message check
             self._prev_timestamp = msg["timestamp"]
 
             msgid = msg.get("msgid")
@@ -603,11 +605,14 @@ class Segmentizer(DiscrepancyCalculator):
                 )
                 continue
 
+            # Extract the data used by the stitcher from the message
+            # TODO: rename, maybe merge with below
             x, y, course, speed, heading = self.extract_location(msg)
 
             msg_type = self._message_type(x, y, course, speed)
 
             if msg_type is BAD_MESSAGE:
+                # TODO: refactor _emit_bad_msg
                 yield self._create_segment(msg, cls=BadSegment)
                 logger.debug(
                     (
@@ -618,16 +623,18 @@ class Segmentizer(DiscrepancyCalculator):
                 continue
 
             # Type 19 messages, although rare, have both position and info, so
-            # store any info in POSITION or INFO messages
+            # store any info in POSITION _or_ INFO messages
             self.store_info(self.cur_info, msg)
 
             if msg_type is INFO_MESSAGE:
+                # TODO: refactor _emit_info_msg
                 yield self._create_segment(msg, cls=InfoSegment)
-                logger.debug("Skipping info message form ssvid: %s", msg["ssvid"])
+                logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
                 continue
 
             assert msg_type is POSITION_MESSAGE
 
+            # TODO: REFACTOR process_position_msg
             loc = self.normalize_location(x, y, course, speed, heading)
             if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):
                 # Multiple identical locations with non-zero speed almost certainly bogus
@@ -635,10 +642,11 @@ class Segmentizer(DiscrepancyCalculator):
             self.cur_locations[loc] = timestamp
 
             if len(self._segments) == 0:
-                log("adding new segment because no current segments")
+                log("adding new segment because there are no current segments")
                 for x in self._add_segment(msg):
                     yield x
             else:
+                # TODO: refactor finalize_old_msgs
                 # Finalize and remove any segments that have not had a positional message in `max_hours`
                 for segment in list(self._segments.values()):
                     if (
@@ -658,6 +666,7 @@ class Segmentizer(DiscrepancyCalculator):
                 elif best_match is IS_NOISE:
                     yield self._create_segment(msg, cls=BadSegment)
                 elif isinstance(best_match, list):
+                    # TODO: refactor process_multi_match
                     # This message could match multiple segments.
                     # So finalize and remove ambiguous segments so we can start fresh
                     # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
@@ -681,6 +690,7 @@ class Segmentizer(DiscrepancyCalculator):
                     msg["metric"] = best_match["metric"]
                     self._segments[id_].add_msg(msg)
 
+        # Yield all pending segments now that processing is completed
         for series, segment in list(self._segments.items()):
             for x in self.clean(self._segments.pop(segment.id), Segment):
                 yield x

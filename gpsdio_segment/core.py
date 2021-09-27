@@ -70,7 +70,7 @@ SAFE_SPEED = min([x for (x, y) in REPORTED_SPEED_EXCLUSION_RANGES])
 
 
 POSITION_MESSAGE = object()
-INFO_MESSAGE = object()
+INFO_ONLY_MESSAGE = object()
 BAD_MESSAGE = object()
 
 NO_MATCH = object()
@@ -109,7 +109,7 @@ class Segmentizer(DiscrepancyCalculator):
         prev_msgids=None,
         prev_locations=None,
         prev_info=None,
-        **kwargs
+        **kwargs,
     ):
 
         """
@@ -263,12 +263,14 @@ class Segmentizer(DiscrepancyCalculator):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _message_type(self, x, y, course, speed):
+    def _message_type(self, msg):
+        x, y, course, speed, heading = self.extract_location(msg)
+
         def is_null(v):
             return (v is None) or math.isnan(v)
 
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
-            return INFO_MESSAGE
+            return INFO_ONLY_MESSAGE
         if (
             x is not None
             and y is not None
@@ -305,7 +307,9 @@ class Segmentizer(DiscrepancyCalculator):
             for x in self.clean(self._segments.pop(stalest_seg_id), ClosedSegment):
                 yield x
 
-    def _add_segment(self, msg):
+    def _add_segment(self, msg, why=None):
+        if why is not None:
+            log(f"adding new segment because {why}")
         for excess_seg in self._remove_excess_segments():
             yield excess_seg
         seg = self._create_segment(msg)
@@ -490,6 +494,7 @@ class Segmentizer(DiscrepancyCalculator):
 
     @staticmethod
     def normalize_location(lat, lon, course, speed, heading):
+        # TODO: this can probably be removed since @andres is cleaning this up I think.
         return (
             round(lat * 60000),
             round(lon * 60000),
@@ -499,7 +504,7 @@ class Segmentizer(DiscrepancyCalculator):
         )
 
     @classmethod
-    def store_info(cls, info, msg):
+    def _store_info(cls, info, msg):
         shipname = msg.get("shipname")
         callsign = msg.get("callsign")
         imo = msg.get("imo")
@@ -571,9 +576,8 @@ class Segmentizer(DiscrepancyCalculator):
                     updatesum(n_callsigns, n_signs)
                     updatesum(n_imos, n_nums)
 
-    # TODO: refactor process
-    def process(self):  # noqa: C901
-        for msg in self.instream:
+    def _checked_stream(self, stream):
+        for msg in stream:
             if "type" not in msg:
                 raise ValueError("`msg` is missing required field `type`")
 
@@ -605,90 +609,100 @@ class Segmentizer(DiscrepancyCalculator):
                 )
                 continue
 
-            # Extract the data used by the stitcher from the message
-            # TODO: rename, maybe merge with below
-            x, y, course, speed, heading = self.extract_location(msg)
+            yield msg
 
-            msg_type = self._message_type(x, y, course, speed)
+    def _process_bad_msg(self, msg):
+        yield self._create_segment(msg, cls=BadSegment)
+        logger.debug(
+            (
+                f"Rejected bad message from ssvid: {msg['ssvid']!r} lat: {msg['lat']!r}  lon: {msg['lon']!r} "
+                f"timestamp: {msg['timestamp']!r} course: {msg['course']!r} speed: {msg['speed']!r}"
+            )
+        )
+
+    def _process_info_only_msg(self, msg):
+        yield self._create_segment(msg, cls=InfoSegment)
+        logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
+
+    def _already_seen_loc(self, loc):
+        # Multiple identical locations with non-zero speed are almost certainly bogus
+        x, y, course, speed, heading = loc
+        return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
+
+    def _process_ambiguous_match(self, msg, best_match):
+        # TODO: refactor process_multi_match
+        # This message could match multiple segments.
+        # So finalize and remove ambiguous segments so we can start fresh
+        for match in best_match:
+            yield from self.clean(
+                self._segments.pop(match["seg_id"]), cls=ClosedSegment
+            )
+        # Then add as new segment.
+        log(
+            "adding new segment because of ambiguity with {} segments".format(
+                len(best_match)
+            )
+        )
+        yield from self._add_segment(msg)
+
+    def _process_normal_match(self, msg, best_match):
+        id_ = best_match["seg_id"]
+        for msg_to_drop in best_match["msgs_to_drop"]:
+            msg_to_drop["drop"] = True
+        msg["metric"] = best_match["metric"]
+        self._segments[id_].add_msg(msg)
+        return
+        # Force this to be an iterator so it matches _process_ambiguous_match
+        yield None
+
+    def _finalize_old_msgs(self, msg):
+        # Finalize and remove any segments that have not had a positional message in `max_hours`
+        for segment in list(self._segments.values()):
+            if self.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
+                yield from self.clean(self._segments.pop(segment.id), cls=ClosedSegment)
+
+    def _process_position_msg(self, msg):
+        timestamp = msg.get("timestamp")
+        x, y, course, speed, heading = self.extract_location(msg)
+        loc = self.normalize_location(x, y, course, speed, heading)
+
+        if self._already_seen_loc(loc):
+            return
+
+        self.cur_locations[loc] = timestamp
+        if len(self._segments) == 0:
+            for x in self._add_segment(msg, why="there are no current segments"):
+                yield x
+        else:
+            yield from self._finalize_old_msgs(msg)
+            best_match = self._compute_best(msg)
+
+            if best_match is NO_MATCH:
+                yield from self._add_segment(msg, why="no match")
+            elif best_match is IS_NOISE:
+                yield self._create_segment(msg, cls=BadSegment)
+            elif isinstance(best_match, list):
+                yield from self._process_ambiguous_match(msg, best_match)
+            else:
+                yield from self._process_normal_match(msg, best_match)
+
+    def process(self):
+        for msg in self._checked_stream(self.instream):
+
+            msg_type = self._message_type(msg)
 
             if msg_type is BAD_MESSAGE:
-                # TODO: refactor _emit_bad_msg
-                yield self._create_segment(msg, cls=BadSegment)
-                logger.debug(
-                    (
-                        "Rejected bad message from ssvid: {ssvid!r} lat: {y!r}  lon: {x!r} "
-                        "timestamp: {timestamp!r} course: {course!r} speed: {speed!r}"
-                    ).format(**locals())
-                )
-                continue
-
-            # Type 19 messages, although rare, have both position and info, so
-            # store any info in POSITION _or_ INFO messages
-            self.store_info(self.cur_info, msg)
-
-            if msg_type is INFO_MESSAGE:
-                # TODO: refactor _emit_info_msg
-                yield self._create_segment(msg, cls=InfoSegment)
-                logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
-                continue
-
-            assert msg_type is POSITION_MESSAGE
-
-            # TODO: REFACTOR process_position_msg
-            loc = self.normalize_location(x, y, course, speed, heading)
-            if speed > 0 and (loc in self.prev_locations or loc in self.cur_locations):
-                # Multiple identical locations with non-zero speed almost certainly bogus
-                continue
-            self.cur_locations[loc] = timestamp
-
-            if len(self._segments) == 0:
-                log("adding new segment because there are no current segments")
-                for x in self._add_segment(msg):
-                    yield x
+                yield from self._process_bad_msg(msg)
+            elif msg_type is INFO_ONLY_MESSAGE:
+                self._store_info(self.cur_info, msg)
+                yield from self._process_info_only_msg(msg)
+            elif msg_type is POSITION_MESSAGE:
+                # Type 19 messages, although rare, have both position and info, so
+                # store any info found in POSITION messages.
+                self._store_info(self.cur_info, msg)
+                yield from self._process_position_msg(msg)
             else:
-                # TODO: refactor finalize_old_msgs
-                # Finalize and remove any segments that have not had a positional message in `max_hours`
-                for segment in list(self._segments.values()):
-                    if (
-                        self.compute_msg_delta_hours(segment.last_msg, msg)
-                        > self.max_hours
-                    ):
-                        for x in self.clean(
-                            self._segments.pop(segment.id), cls=ClosedSegment
-                        ):
-                            yield x
-
-                best_match = self._compute_best(msg)
-                if best_match is NO_MATCH:
-                    log("adding new segment because no match")
-                    for x in self._add_segment(msg):
-                        yield x
-                elif best_match is IS_NOISE:
-                    yield self._create_segment(msg, cls=BadSegment)
-                elif isinstance(best_match, list):
-                    # TODO: refactor process_multi_match
-                    # This message could match multiple segments.
-                    # So finalize and remove ambiguous segments so we can start fresh
-                    # TODO: once we are fully py3, this and similar can be cleaned up using `yield from`
-                    for match in best_match:
-                        for x in self.clean(
-                            self._segments.pop(match["seg_id"]), cls=ClosedSegment
-                        ):
-                            yield x
-                    # Then add as new segment.
-                    log(
-                        "adding new segment because of ambiguity with {} segments".format(
-                            len(best_match)
-                        )
-                    )
-                    for x in self._add_segment(msg):
-                        yield x
-                else:
-                    id_ = best_match["seg_id"]
-                    for msg_to_drop in best_match["msgs_to_drop"]:
-                        msg_to_drop["drop"] = True
-                    msg["metric"] = best_match["metric"]
-                    self._segments[id_].add_msg(msg)
+                raise ValueError(f"unknown msg type {msg_type}")
 
         # Yield all pending segments now that processing is completed
         for series, segment in list(self._segments.items()):

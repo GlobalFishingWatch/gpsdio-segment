@@ -25,10 +25,15 @@ from __future__ import division, print_function
 
 import datetime
 import logging
-import math
 
 from gpsdio_segment.discrepancy import DiscrepancyCalculator
-from gpsdio_segment.matcher import Matcher, NO_MATCH, IS_NOISE, POSITION_TYPES
+from gpsdio_segment.matcher import Matcher, NO_MATCH, IS_NOISE
+from gpsdio_segment.msg_processor import (
+    MsgProcessor,
+    INFO_ONLY_MESSAGE,
+    POSITION_MESSAGE,
+    BAD_MESSAGE,
+)
 from gpsdio_segment.segment import (
     BadSegment,
     ClosedSegment,
@@ -44,26 +49,6 @@ logger.setLevel(logging.WARNING)
 log = logger.info
 
 inf = float("inf")
-
-
-INFO_TYPES = {"AIS.5": "AIS-A", "AIS.19": "AIS-B", "AIS.24": "AIS-B", "VMS": "VMS"}
-
-
-INFO_PING_INTERVAL_MINS = 15
-
-# The values 52 and 102.3 are both almost always noise, and don't
-# reflect the vessel's actual speed. They need to be commented out.
-# The value 102.3 is reserved for "bad value." It looks like 51.2
-# is also almost always noise. The value 63 means unavailable for
-# type 27 messages so we exclude that as well. Because the values are floats,
-# and not always exactly 102.3 or 51.2, we give a range.
-REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25, 102.35)]
-SAFE_SPEED = min([x for (x, y) in REPORTED_SPEED_EXCLUSION_RANGES])
-
-
-POSITION_MESSAGE = object()
-INFO_ONLY_MESSAGE = object()
-BAD_MESSAGE = object()
 
 
 class Segmentizer(DiscrepancyCalculator):
@@ -120,19 +105,16 @@ class Segmentizer(DiscrepancyCalculator):
         self.max_hours = max_hours
         self.max_open_segments = max_open_segments
         self._matcher = Matcher(max_hours=max_hours, **kwargs)
-        self.prev_msgids = prev_msgids if prev_msgids else set()
-        self.cur_msgids = {}
-        self.prev_locations = prev_locations if prev_locations else set()
-        self.cur_locations = {}
-        self.cur_info = prev_info.copy() if prev_info else {}
+        self._msg_processor = MsgProcessor(
+            self._matcher.very_slow, ssvid, prev_msgids, prev_locations, prev_info
+        )
 
         # Exposed via properties
         self._instream = instream
+        self._ssvid = ssvid
 
         # Internal objects
         self._segments = {}
-        self._ssvid = ssvid
-        self._prev_timestamp = None
 
     def __repr__(self):
         return "<{cname}() max_knots={mspeed} max_hours={mhours} at {id_}>".format(
@@ -161,7 +143,8 @@ class Segmentizer(DiscrepancyCalculator):
             s._segments[seg.id] = seg
             if seg.last_msg:
                 ts = seg.last_msg["timestamp"]
-                if s._prev_timestamp is None or ts > s._prev_timestamp:
+                # TODO: clean up
+                if s._msg_processor._prev_timestamp is None or ts > s._prev_timestamp:
                     s._prev_timestamp = ts
         return s
 
@@ -177,6 +160,21 @@ class Segmentizer(DiscrepancyCalculator):
     def max_knots(self):
         # TODO: This is to preserve behavior during refactor, probably can be removed later
         return self._matcher.max_knots
+
+    @property
+    def cur_locations(self):
+        # TODO: This is to preserve behavior during refactor, probably can be removed later
+        return self._msg_processor.cur_locations
+
+    @property
+    def cur_msgids(self):
+        # TODO: This is to preserve behavior during refactor, probably can be removed later
+        return self._msg_processor.cur_msgids
+
+    @property
+    def cur_info(self):
+        # TODO: This is to preserve behavior during refactor, probably can be removed later
+        return self._msg_processor.info
 
     def _segment_unique_id(self, msg):
         """
@@ -194,34 +192,6 @@ class Segmentizer(DiscrepancyCalculator):
                 return seg_id
             ts += datetime.timedelta(milliseconds=1)
 
-    def _message_type(self, msg):
-        x, y, course, speed, heading = self.extract_location(msg)
-
-        def is_null(v):
-            return (v is None) or math.isnan(v)
-
-        if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
-            return INFO_ONLY_MESSAGE
-        if (
-            x is not None
-            and y is not None
-            and speed is not None
-            and course is not None
-            and -180.0 <= x <= 180.0
-            and -90.0 <= y <= 90.0
-            and course is not None
-            and speed is not None
-            and (
-                (speed <= self.very_slow and course > 359.95) or 0.0 <= course <= 359.95
-            )
-            and (  # 360 is invalid unless speed is very low.
-                speed < SAFE_SPEED
-                or not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES)
-            )
-        ):
-            return POSITION_MESSAGE
-        return BAD_MESSAGE
-
     def _create_segment(self, msg, cls=Segment):
         id_ = self._segment_unique_id(msg)
         seg = cls(id_, self.ssvid)
@@ -235,7 +205,7 @@ class Segmentizer(DiscrepancyCalculator):
             segs.sort(key=lambda x: x[1].last_msg["timestamp"])
             stalest_seg_id, _ = segs[0]
             log("Removing stale segment {}".format(stalest_seg_id))
-            for x in self.clean(self._segments.pop(stalest_seg_id), ClosedSegment):
+            for x in self._clean(self._segments.pop(stalest_seg_id), ClosedSegment):
                 yield x
 
     def _add_segment(self, msg, why=None):
@@ -246,16 +216,13 @@ class Segmentizer(DiscrepancyCalculator):
         seg = self._create_segment(msg)
         self._segments[seg.id] = seg
 
-    def __iter__(self):
-        return self.process()
-
-    def clean(self, segment, cls):
+    def _clean(self, segment, cls):
         if segment.has_prev_state:
             new_segment = cls.from_state(segment.prev_state)
         else:
             new_segment = cls(segment.id, segment.ssvid)
         for msg in segment.msgs:
-            self.add_info(msg)
+            self._msg_processor.add_info_to_msg(msg)
             msg.pop("metric", None)
             if msg.pop("drop", False):
                 log(
@@ -268,135 +235,6 @@ class Segmentizer(DiscrepancyCalculator):
             else:
                 new_segment.add_msg(msg)
         yield new_segment
-
-    @staticmethod
-    def extract_location(msg):
-        return (
-            msg.get("lon"),
-            msg.get("lat"),
-            msg.get("course"),
-            msg.get("speed"),
-            msg.get("heading"),
-        )
-
-    @staticmethod
-    def normalize_location(lat, lon, course, speed, heading):
-        # TODO: this can probably be removed since @andres is cleaning this up.
-        return (
-            round(lat * 60000),
-            round(lon * 60000),
-            None if course is None else round(course * 10),
-            round(speed * 10),
-            None if (heading is None or math.isnan(heading)) else round(heading),
-        )
-
-    @classmethod
-    def _store_info(cls, info, msg):
-        shipname = msg.get("shipname")
-        callsign = msg.get("callsign")
-        imo = msg.get("imo")
-        n_shipname = msg.get("n_shipname")
-        n_callsign = msg.get("n_callsign")
-        n_imo = msg.get("n_imo")
-        if shipname is None and callsign is None and imo is None:
-            return
-        transponder_type = INFO_TYPES.get(msg.get("type"))
-        if not transponder_type:
-            return
-        receiver_type = msg.get("receiver_type")
-        source = msg.get("source")
-        ts = msg["timestamp"]
-        # Using tzinfo as below is only stricly valid for UTC and naive time due to
-        # issues with DST (see http://pytz.sourceforge.net).
-        assert ts.tzinfo.zone == "UTC"
-        rounded_ts = datetime.datetime(
-            ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
-        )
-        k2 = (transponder_type, receiver_type, source)
-        for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
-            k1 = rounded_ts + datetime.timedelta(minutes=offset)
-            if k1 not in info:
-                info[k1] = {k2: ({}, {}, {}, {}, {}, {})}
-            elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, n_shipnames, n_callsigns, n_imos = info[k1][k2]
-            if shipname is not None:
-                shipnames[shipname] = shipnames.get(shipname, 0) + 1
-                n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
-            if callsign is not None:
-                callsigns[callsign] = callsigns.get(callsign, 0) + 1
-                n_callsigns[n_callsign] = callsigns.get(n_callsign, 0) + 1
-            if imo is not None:
-                imos[imo] = imos.get(imo, 0) + 1
-                n_imos[n_imo] = imos.get(n_imo, 0) + 1
-
-    def add_info(self, msg):
-        ts = msg["timestamp"]
-        # Using tzinfo as below is only stricly valid for UTC and naive time due to
-        # issues with DST (see http://pytz.sourceforge.net).
-        assert ts.tzinfo.zone == "UTC"
-        k1 = datetime.datetime(
-            ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
-        )
-        msg["shipnames"] = shipnames = {}
-        msg["callsigns"] = callsigns = {}
-        msg["imos"] = imos = {}
-        msg["n_shipnames"] = n_shipnames = {}
-        msg["n_callsigns"] = n_callsigns = {}
-        msg["n_imos"] = n_imos = {}
-
-        def updatesum(orig, new):
-            for k, v in new.items():
-                orig[k] = orig.get(k, 0) + v
-
-        if k1 in self.cur_info:
-            for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
-                receiver_type = msg.get("receiver_type")
-                source = msg.get("source")
-                k2 = (transponder_type, receiver_type, source)
-                if k2 in self.cur_info[k1]:
-                    names, signs, nums, n_names, n_signs, n_nums = self.cur_info[k1][k2]
-                    updatesum(shipnames, names)
-                    updatesum(callsigns, signs)
-                    updatesum(imos, nums)
-                    updatesum(n_shipnames, n_names)
-                    updatesum(n_callsigns, n_signs)
-                    updatesum(n_imos, n_nums)
-
-    def _checked_stream(self, stream):
-        for msg in stream:
-            if "type" not in msg:
-                raise ValueError("`msg` is missing required field `type`")
-
-            # Add empty info fields so they are always preset
-            msg["shipnames"] = {}
-            msg["callsigns"] = {}
-            msg["imos"] = {}
-
-            # Check that message is valid (in order, correct ssvid, not already seen) REFACTOR
-            timestamp = msg.get("timestamp")
-            if timestamp is None:
-                raise ValueError("Message missing timestamp")
-            if self._prev_timestamp is not None and timestamp < self._prev_timestamp:
-                raise ValueError("Input data is unsorted")
-            # TODO: shouldn't this come after the duplicate message check
-            self._prev_timestamp = msg["timestamp"]
-
-            msgid = msg.get("msgid")
-            if msgid in self.prev_msgids or msgid in self.cur_msgids:
-                continue
-            self.cur_msgids[msgid] = timestamp
-
-            ssvid = msg.get("ssvid")
-            if self.ssvid is None:
-                self._ssvid = ssvid
-            elif ssvid != self.ssvid:
-                logger.warning(
-                    "Skipping non-matching SSVID %r, expected %r", ssvid, self.ssvid
-                )
-                continue
-
-            yield msg
 
     def _process_bad_msg(self, msg):
         yield self._create_segment(msg, cls=BadSegment)
@@ -411,16 +249,11 @@ class Segmentizer(DiscrepancyCalculator):
         yield self._create_segment(msg, cls=InfoSegment)
         logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
 
-    def _already_seen_loc(self, loc):
-        # Multiple identical locations with non-zero speed are almost certainly bogus
-        x, y, course, speed, heading = loc
-        return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
-
     def _process_ambiguous_match(self, msg, best_match):
         # This message could match multiple segments.
         # So finalize and remove ambiguous segments so we can start fresh
         for match in best_match:
-            yield from self.clean(
+            yield from self._clean(
                 self._segments.pop(match["seg_id"]), cls=ClosedSegment
             )
         # Then add as new segment.
@@ -441,26 +274,21 @@ class Segmentizer(DiscrepancyCalculator):
         # Force this to be an iterator so it matches _process_ambiguous_match
         yield None
 
-    def _finalize_old_msgs(self, msg):
+    def _finalize_old_segments(self, msg):
         # Finalize and remove any segments that have not had a positional message in `max_hours`
         for segment in list(self._segments.values()):
             if self.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
-                yield from self.clean(self._segments.pop(segment.id), cls=ClosedSegment)
+                yield from self._clean(
+                    self._segments.pop(segment.id), cls=ClosedSegment
+                )
 
     def _process_position_msg(self, msg):
-        timestamp = msg.get("timestamp")
-        x, y, course, speed, heading = self.extract_location(msg)
-        loc = self.normalize_location(x, y, course, speed, heading)
 
-        if self._already_seen_loc(loc):
-            return
-
-        self.cur_locations[loc] = timestamp
         if len(self._segments) == 0:
             for x in self._add_segment(msg, why="there are no current segments"):
                 yield x
         else:
-            yield from self._finalize_old_msgs(msg)
+            yield from self._finalize_old_segments(msg)
             best_match = self._matcher.compute_best_match(msg, self._segments)
 
             if best_match is NO_MATCH:
@@ -473,24 +301,21 @@ class Segmentizer(DiscrepancyCalculator):
                 yield from self._process_normal_match(msg, best_match)
 
     def process(self):
-        for msg in self._checked_stream(self.instream):
-
-            msg_type = self._message_type(msg)
+        for msg_type, msg in self._msg_processor(self.instream):
 
             if msg_type is BAD_MESSAGE:
                 yield from self._process_bad_msg(msg)
             elif msg_type is INFO_ONLY_MESSAGE:
-                self._store_info(self.cur_info, msg)
                 yield from self._process_info_only_msg(msg)
             elif msg_type is POSITION_MESSAGE:
-                # Type 19 messages, although rare, have both position and info, so
-                # store any info found in POSITION messages.
-                self._store_info(self.cur_info, msg)
                 yield from self._process_position_msg(msg)
             else:
                 raise ValueError(f"unknown msg type {msg_type}")
 
         # Yield all pending segments now that processing is completed
         for series, segment in list(self._segments.items()):
-            for x in self.clean(self._segments.pop(segment.id), Segment):
+            for x in self._clean(self._segments.pop(segment.id), Segment):
                 yield x
+
+    def __iter__(self):
+        return self.process()

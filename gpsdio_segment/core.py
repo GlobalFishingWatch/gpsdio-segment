@@ -27,12 +27,12 @@ import datetime
 import logging
 
 from gpsdio_segment.discrepancy import DiscrepancyCalculator
-from gpsdio_segment.matcher import Matcher, NO_MATCH, IS_NOISE
+from gpsdio_segment.matcher import IS_NOISE, NO_MATCH, Matcher
 from gpsdio_segment.msg_processor import (
-    MsgProcessor,
+    BAD_MESSAGE,
     INFO_ONLY_MESSAGE,
     POSITION_MESSAGE,
-    BAD_MESSAGE,
+    MsgProcessor,
 )
 from gpsdio_segment.segment import (
     BadSegment,

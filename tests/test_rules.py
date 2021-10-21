@@ -7,6 +7,7 @@ from datetime import datetime
 from datetime import timedelta
 
 from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.discrepancy import DiscrepancyCalculator
 from support import utcify
 
 # deltas = [{'distance': 0, 'speed': 0, 'duration': 0}]
@@ -55,8 +56,8 @@ def test_good_speed_good_time():
     segments = list(segmenter)
 
     # Should produce a single segment with two points
-    hours = segmenter.compute_msg_delta_hours(p1, p2)
-    discrepancy = segmenter.compute_discrepancy(p1, p2)
+    hours = DiscrepancyCalculator.compute_msg_delta_hours(p1, p2)
+    discrepancy = segmenter._matcher.compute_discrepancy(p1, p2)
     assert discrepancy / hours <= segmenter.max_knots
     assert len(segments) == 1
     for seg in segments:

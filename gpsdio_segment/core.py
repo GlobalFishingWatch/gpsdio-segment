@@ -51,7 +51,7 @@ log = logger.info
 inf = float("inf")
 
 
-class Segmentizer(DiscrepancyCalculator):
+class Segmentizer:
 
     """
     Group positional messages into related segments based on speed and distance.
@@ -277,7 +277,7 @@ class Segmentizer(DiscrepancyCalculator):
     def _finalize_old_segments(self, msg):
         # Finalize and remove any segments that have not had a positional message in `max_hours`
         for segment in list(self._segments.values()):
-            if self.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
+            if DiscrepancyCalculator.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
                 yield from self._clean(
                     self._segments.pop(segment.id), cls=ClosedSegment
                 )

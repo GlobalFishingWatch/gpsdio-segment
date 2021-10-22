@@ -210,8 +210,7 @@ class Segmentizer:
     def _add_segment(self, msg, why=None):
         if why is not None:
             log(f"adding new segment because {why}")
-        for excess_seg in self._remove_excess_segments():
-            yield excess_seg
+        yield from self._remove_excess_segments()
         seg = self._create_segment(msg)
         self._segments[seg.id] = seg
 

@@ -205,8 +205,7 @@ class Segmentizer:
             segs.sort(key=lambda x: x[1].last_msg["timestamp"])
             stalest_seg_id, _ = segs[0]
             log("Removing stale segment {}".format(stalest_seg_id))
-            for x in self._clean(self._segments.pop(stalest_seg_id), ClosedSegment):
-                yield x
+            yield from self._clean(self._segments.pop(stalest_seg_id), ClosedSegment)
 
     def _add_segment(self, msg, why=None):
         if why is not None:
@@ -285,8 +284,7 @@ class Segmentizer:
     def _process_position_msg(self, msg):
 
         if len(self._segments) == 0:
-            for x in self._add_segment(msg, why="there are no current segments"):
-                yield x
+            yield from self._add_segment(msg, why="there are no current segments")
         else:
             yield from self._finalize_old_segments(msg)
             best_match = self._matcher.compute_best_match(msg, self._segments)
@@ -314,8 +312,7 @@ class Segmentizer:
 
         # Yield all pending segments now that processing is completed
         for series, segment in list(self._segments.items()):
-            for x in self._clean(self._segments.pop(segment.id), Segment):
-                yield x
+            yield from self._clean(self._segments.pop(segment.id), Segment)
 
     def __iter__(self):
         return self.process()

@@ -188,6 +188,7 @@ class MsgProcessor:
                 n_imos[n_imo] = imos.get(n_imo, 0) + 1
 
     def add_info_to_msg(self, msg):
+        """???"""
         ts = msg["timestamp"]
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).

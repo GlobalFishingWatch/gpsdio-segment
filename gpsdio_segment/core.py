@@ -184,7 +184,6 @@ class Segmentizer:
         -------
         str
         """
-
         ts = msg["timestamp"]
         while True:
             seg_id = "{}-{:%Y-%m-%dT%H:%M:%S.%fZ}".format(msg["ssvid"], ts)
@@ -193,28 +192,59 @@ class Segmentizer:
             ts += datetime.timedelta(milliseconds=1)
 
     def _create_segment(self, msg, cls=Segment):
+        """
+        Create a new segment of desired class type and add `msg` to the segment.
+
+        Returns
+        -------
+        Segment (specific type specified by `cls`)
+        """
         id_ = self._segment_unique_id(msg)
         seg = cls(id_, self.ssvid)
         seg.add_msg(msg)
         return seg
 
     def _remove_excess_segments(self):
+        """
+        If there are too many segments open, close out the oldest ones.
+
+        Yields
+        -------
+        ClosedSegment objects yielded by `_clean_segment()`
+        """
         while len(self._segments) >= self.max_open_segments:
             # Remove oldest segment
             segs = list(self._segments.items())
             segs.sort(key=lambda x: x[1].last_msg["timestamp"])
             stalest_seg_id, _ = segs[0]
             log("Removing stale segment {}".format(stalest_seg_id))
-            yield from self._clean(self._segments.pop(stalest_seg_id), ClosedSegment)
+            yield from self._clean_segment(self._segments.pop(stalest_seg_id), ClosedSegment)
 
     def _add_segment(self, msg, why=None):
+        """
+        Remove any excess segments to save space and then add a new segment to _segments.
+
+        Yields
+        ------
+        Yielded output of `_removed_excess_segments()`.
+        """
         if why is not None:
             log(f"adding new segment because {why}")
         yield from self._remove_excess_segments()
         seg = self._create_segment(msg)
         self._segments[seg.id] = seg
 
-    def _clean(self, segment, cls):
+    def _clean_segment(self, segment, cls):
+        """
+        Clean a segment and output it as the specified `cls`. Cleaning involves
+        adding necessary information to each message and dropping any messages 
+        that are designated to be dropped.
+
+        Yields
+        -------
+        * Segment (specific type specified by `cls`)
+        * DiscardedSegment for each dropped message
+        """
         if segment.has_prev_state:
             new_segment = cls.from_state(segment.prev_state)
         else:
@@ -235,6 +265,13 @@ class Segmentizer:
         yield new_segment
 
     def _process_bad_msg(self, msg):
+        """
+        Create a BadSegment from `msg`.
+
+        Yields
+        ------
+        BadSegment
+        """
         yield self._create_segment(msg, cls=BadSegment)
         logger.debug(
             (
@@ -244,17 +281,30 @@ class Segmentizer:
         )
 
     def _process_info_only_msg(self, msg):
+        """
+        Create an InfoSegment from `msg`.
+
+        Yields
+        ------
+        InfoSegment
+        """
         yield self._create_segment(msg, cls=InfoSegment)
         logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
 
     def _process_ambiguous_match(self, msg, best_match):
-        # This message could match multiple segments.
-        # So finalize and remove ambiguous segments so we can start fresh
+        """
+        Close each of the segments that matched the `msg` since the Matcher
+        could not decide on a single segment. Add a new segment for the `msg`.
+
+        Yields
+        ------
+        * ClosedSegment for each matched segment in `best_match`
+        * Yielded output of `_add_segment()`
+        """
         for match in best_match:
-            yield from self._clean(
+            yield from self._clean_segment(
                 self._segments.pop(match["seg_id"]), cls=ClosedSegment
             )
-        # Then add as new segment.
         log(
             "adding new segment because of ambiguity with {} segments".format(
                 len(best_match)
@@ -263,25 +313,45 @@ class Segmentizer:
         yield from self._add_segment(msg)
 
     def _process_normal_match(self, msg, best_match):
+        """
+        Mark messages that need to be dropped and add `msg` to the
+        matched segment.
+        """
         id_ = best_match["seg_id"]
         for msg_to_drop in best_match["msgs_to_drop"]:
             msg_to_drop["drop"] = True
         msg["metric"] = best_match["metric"]
         self._segments[id_].add_msg(msg)
         return
+        # ???
         # Force this to be an iterator so it matches _process_ambiguous_match
         yield None
 
     def _finalize_old_segments(self, msg):
-        # Finalize and remove any segments that have not had a positional message in `max_hours`
+        """
+        Close any segments tha have not had a position message in `self.max_hours`.
+
+        Yields
+        ------
+        * ClosedSegment for each stale segment
+        """
         for segment in list(self._segments.values()):
             if DiscrepancyCalculator.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
-                yield from self._clean(
+                yield from self._clean_segment(
                     self._segments.pop(segment.id), cls=ClosedSegment
                 )
 
     def _process_position_msg(self, msg):
+        """
+        If there are no segments currently, start a new segment with `msg`.
+        Else, close out stale segments and then get the segment match for
+        `msg` and handle appropriately.
 
+        Yields
+        ------
+        * ClosedSegment for any stale segments
+        * Yielded output from match processing
+        """
         if len(self._segments) == 0:
             yield from self._add_segment(msg, why="there are no current segments")
         else:
@@ -298,6 +368,17 @@ class Segmentizer:
                 yield from self._process_normal_match(msg, best_match)
 
     def process(self):
+        """
+        Process each message based on its type. Bad messages and info only
+        messages are immediately yielded as single message segments. Position
+        messages are sent to be matched to segments and processed accordingly.
+        When all messages have been processed, clean and yield all segments 
+        remaining in _segments.
+
+        Yields
+        ------
+        * All segments
+        """
         for msg_type, msg in self._msg_processor(self.instream):
 
             if msg_type is BAD_MESSAGE:
@@ -311,7 +392,7 @@ class Segmentizer:
 
         # Yield all pending segments now that processing is completed
         for series, segment in list(self._segments.items()):
-            yield from self._clean(self._segments.pop(segment.id), Segment)
+            yield from self._clean_segment(self._segments.pop(segment.id), Segment)
 
     def __iter__(self):
         return self.process()

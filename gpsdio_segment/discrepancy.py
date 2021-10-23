@@ -16,6 +16,7 @@ class DiscrepancyCalculator(object):
     # These messages are discarded.
     very_slow = 0.35
 
+    # ???
     shape_factor = 4.0
 
     def _update(self, key, values):
@@ -32,17 +33,33 @@ class DiscrepancyCalculator(object):
             raise ValueError('instance has no default value for "{}"'.format(key))
 
     @staticmethod
-    def compute_ts_delta_hours(ts1, ts2):
+    def _compute_ts_delta_hours(ts1, ts2):
+        """
+        Compute difference between two timestamps, in hours.
+        """
         return (ts2 - ts1).total_seconds() / 3600
 
     @staticmethod
     def compute_msg_delta_hours(msg1, msg2):
+        """
+        Compute difference between timestamps of two messages, in hours.
+        """
         ts1 = msg1["timestamp"]
         ts2 = msg2["timestamp"]
-        return DiscrepancyCalculator.compute_ts_delta_hours(ts1, ts2)
+        return DiscrepancyCalculator._compute_ts_delta_hours(ts1, ts2)
 
     @classmethod
     def _compute_expected_position(cls, msg, hours):
+        """
+        Compute where a vessel should be a certain amount of time 
+        (specified by `hours`) after a `msg`. Uses speed and course to
+        calculate how far and in which direction a vessel has traveled
+        and adds that to the previous known position.
+
+        Returns
+        -------
+        x,y position for the vessel
+        """
         epsilon = 1e-3
         x = msg["lon"]
         y = msg["lat"]
@@ -66,7 +83,6 @@ class DiscrepancyCalculator(object):
         return x + dx, y + dy
 
     def compute_discrepancy(self, msg1, msg2, hours=None):
-
         """
         Compute the stats required to determine if two points are continuous.  Input
         messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`,
@@ -76,7 +92,6 @@ class DiscrepancyCalculator(object):
         -------
         dict
         """
-
         if hours is None:
             hours = self.compute_msg_delta_hours(
                 msg1,

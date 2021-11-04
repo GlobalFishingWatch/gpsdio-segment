@@ -4,5 +4,5 @@ services:
     image: gfw/lib-gpsdio-segment
     build: .
     volumes:
-      - ".:/opt/project"
+      - .:/opt/project
 

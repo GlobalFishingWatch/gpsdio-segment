@@ -61,8 +61,9 @@ compose <https://docs.docker.com/compose/`_ and then you can run development
 commands inside the container by running this:
 
 .. code-block:: console
-    $ sudo docker-compose run dev py.test tests
+    $ [sudo] docker-compose run dev py.test tests
 
+Where `sudo` is used on Linux, but not on Mac.
 
 Helpful Recipes
 ---------------

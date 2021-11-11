@@ -27,7 +27,7 @@ SegmentState = namedtuple(
 class Segment(object):
 
     """
-    Contains all the messages that have been deemed by the `Segmentizer()` to
+    Contains all the messages that have been deemed by the `Segmenter()` to
     be continuous.
     """
 
@@ -43,7 +43,7 @@ class Segment(object):
         ----------
         id : str or int
             Unique identifier for this segment.  If not globally unique must
-            be unique within a given `Segmentizer()` run.
+            be unique within a given `Segmenter()` run.
         ssvid : int
             Source Specific ID (MMSI) contained within the segment.
         """
@@ -168,7 +168,7 @@ class Segment(object):
 class ClosedSegment(Segment):
     """
     Segment that has timed out or closed because of ambiguity
-    so we don't want to feed it back into Segmentizer
+    so we don't want to feed it back into Segmenter
     """
 
     closed = True

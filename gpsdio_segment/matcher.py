@@ -26,6 +26,8 @@ POSITION_TYPES = {
 
 class Matcher(DiscrepancyCalculator):
     """
+    Match messages to segments by comparing a message's position to
+    the expected next position for each segment.
 
     Parameters
     ----------
@@ -101,7 +103,18 @@ class Matcher(DiscrepancyCalculator):
     def transponder_types(msg):
         return POSITION_TYPES.get(msg.get("type"), set())
 
-    def segment_match(self, segment, msg):
+    def _compute_segment_match(self, segment, msg):
+        """
+        Calculate metric for how likely `msg` is the next position
+        for `segment`. Compare `msg` to mutliple messages at the
+        end of `segment` (determined by `lookback`) in case this 
+        `msg` matches significantly better than previous messages 
+        added to the segment. If so, mark these messages to be dropped.
+
+        Returns
+        -------
+        dict
+        """
         match = {
             "seg_id": segment.id,
             "msgs_to_drop": [],
@@ -111,7 +124,6 @@ class Matcher(DiscrepancyCalculator):
 
         # Get the stats for the last `lookback` positional messages
         candidates = []
-
         n = len(segment)
         msgs_to_drop = []
         metric = 0
@@ -122,6 +134,10 @@ class Matcher(DiscrepancyCalculator):
                 continue
             transponder_types |= self.transponder_types(prev_msg)
             hours = self.compute_msg_delta_hours(prev_msg, msg)
+            # Shorten the hours traveled relative to the length of travel
+            # as boats tend to go straight for shorter distances, but at
+            # longer distances, they may not go as straight or travel 
+            # the entire time
             penalized_hours = hours / (
                 1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)
             )
@@ -199,13 +215,20 @@ class Matcher(DiscrepancyCalculator):
         return match
 
     def compute_best_match(self, msg, segments):
-        # figure out which segment is the best match for the given message
+        """
+        Determine which segment(s) is the best match for a given message.
+
+        Return
+        ------
+        object
+            One of the following: NO_MATCH, IS_NOISE, list of dict, or dict
+        """
 
         segs = list(segments.values())
         best_match = NO_MATCH
 
         # get match metrics for all candidate segments
-        raw_matches = [self.segment_match(seg, msg) for seg in segs]
+        raw_matches = [self._compute_segment_match(seg, msg) for seg in segs]
         # If metric is none, then the segment is not a match candidate
         matches = [x for x in raw_matches if x["metric"] is not None]
 

@@ -210,7 +210,7 @@ class Segmentizer:
 
         Yields
         -------
-        ClosedSegment objects yielded by `_clean_segment()`
+        ClosedSegment
         """
         while len(self._segments) >= self.max_open_segments:
             # Remove oldest segment
@@ -226,7 +226,8 @@ class Segmentizer:
 
         Yields
         ------
-        Yielded output of `_removed_excess_segments()`.
+        ClosedSegment
+            Oldest segments closed out for memory reasons by `_removed_excess_segments()`.
         """
         if why is not None:
             log(f"adding new segment because {why}")
@@ -242,8 +243,9 @@ class Segmentizer:
 
         Yields
         -------
-        * Segment (specific type specified by `cls`)
-        * DiscardedSegment for each dropped message
+        Segment
+        DiscardedSegment 
+            Created for each messaged dropped from the clean segment
         """
         if segment.has_prev_state:
             new_segment = cls.from_state(segment.prev_state)
@@ -298,8 +300,10 @@ class Segmentizer:
 
         Yields
         ------
-        * ClosedSegment for each matched segment in `best_match`
-        * Yielded output of `_add_segment()`
+        ClosedSegment
+            For each matched segment
+        Segment
+            New segment started from `msg`
         """
         for match in best_match:
             yield from self._clean_segment(
@@ -322,10 +326,7 @@ class Segmentizer:
             msg_to_drop["drop"] = True
         msg["metric"] = best_match["metric"]
         self._segments[id_].add_msg(msg)
-        return
-        # ???
-        # Force this to be an iterator so it matches _process_ambiguous_match
-        yield None
+        return ()
 
     def _finalize_old_segments(self, msg):
         """
@@ -333,7 +334,7 @@ class Segmentizer:
 
         Yields
         ------
-        * ClosedSegment for each stale segment
+        ClosedSegment
         """
         for segment in list(self._segments.values()):
             if DiscrepancyCalculator.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
@@ -349,8 +350,10 @@ class Segmentizer:
 
         Yields
         ------
-        * ClosedSegment for any stale segments
-        * Yielded output from match processing
+        ClosedSegment
+            For all stale segments
+        Segment
+            Segments created during the matching process
         """
         if len(self._segments) == 0:
             yield from self._add_segment(msg, why="there are no current segments")
@@ -377,7 +380,7 @@ class Segmentizer:
 
         Yields
         ------
-        * All segments
+        Segment
         """
         for msg_type, msg in self._msg_processor(self.instream):
 

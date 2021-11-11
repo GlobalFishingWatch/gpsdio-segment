@@ -3,7 +3,7 @@ import math
 inf = float("inf")
 
 
-class DiscrepancyCalculator(object):
+class DiscrepancyCalculator:
     """Base class that supplies discrepancy calculator"""
 
     # When vessels are traveling slowly, the can't always determine their
@@ -16,7 +16,11 @@ class DiscrepancyCalculator(object):
     # These messages are discarded.
     very_slow = 0.35
 
-    # ???
+    # Used in type 2 and 3 discrepancy calculations to increase the estimates 
+    # making it harder to match those ways because based on how vessels move, 
+    # it's less likely that a vessel didn't move or that it's somewhere between 
+    # the start and the end. It's much more likely that the vessel is somewhere 
+    # close to the estimated end point, so we want to prioritize that estimate.
     shape_factor = 4.0
 
     def _update(self, key, values):
@@ -58,7 +62,7 @@ class DiscrepancyCalculator(object):
 
         Returns
         -------
-        x,y position for the vessel
+        (x, y)
         """
         epsilon = 1e-3
         x = msg["lon"]
@@ -87,10 +91,23 @@ class DiscrepancyCalculator(object):
         Compute the stats required to determine if two points are continuous.  Input
         messages must have a `lat`, `lon`, `course`, `speed` and `timestamp`,
         that are not `None` and `timestamp` must be an instance of `datetime.datetime()`.
+        Three different metrics of discrepancies between points are calculated and
+        the smallest one is returned. The discrepancies are:
+
+        Type 1: the average of the distance between each pair
+                of actual and expected positions
+        
+        Type 2: the distance difference if we assume the vessel
+                stayed put at its initial point, penalized by
+                multiplying by `shape_factor`
+        
+        Type 3: the distance perpendicular from the expected path
+                to the known point calculated for `msg1` to `msg2`
+                and vice versa and then averaged 
 
         Returns
         -------
-        dict
+        float
         """
         if hours is None:
             hours = self.compute_msg_delta_hours(
@@ -108,6 +125,8 @@ class DiscrepancyCalculator(object):
         if x2 is None or y2 is None:
             discrepancy = None
         else:
+            # Compute the expected position from both directions:
+            # forward from `msg1` and backward from `msg2`.
             x2p, y2p = self._compute_expected_position(msg1, hours)
             x1p, y1p = self._compute_expected_position(msg2, -hours)
 
@@ -117,6 +136,8 @@ class DiscrepancyCalculator(object):
             nm_per_deg_lat = 60.0
             y = 0.5 * (y1 + y2)
             nm_per_deg_lon = nm_per_deg_lat * math.cos(math.radians(y))
+
+            # Type 1 Discrepancy
             discrepancy1 = 0.5 * (
                 math.hypot(nm_per_deg_lon * wrap(x1p - x1), nm_per_deg_lat * (y1p - y1))
                 + math.hypot(
@@ -124,13 +145,13 @@ class DiscrepancyCalculator(object):
                 )
             )
 
-            # Vessel just stayed put
+            # Type 2 Discrepancy
             dist = math.hypot(
                 nm_per_deg_lat * (y2 - y1), nm_per_deg_lon * wrap(x2 - x1)
             )
             discrepancy2 = dist * self.shape_factor
 
-            # Distance perp to line
+            # Type 3 Discrepancy
             rads21 = math.atan2(
                 nm_per_deg_lat * (y2 - y1), nm_per_deg_lon * wrap(x2 - x1)
             )

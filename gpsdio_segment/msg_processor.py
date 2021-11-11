@@ -35,12 +35,31 @@ def is_null(v):
 
 
 class MsgProcessor:
-    def __init__(self, very_slow, ssvid, msg_ids, locations, info=None):
+    def __init__(self, very_slow, ssvid, prev_msgids, prev_locations, info=None):
+        """
+        Manages information from information only messages and processes messages
+        to determine message type.
+
+        Parameters
+        ----------
+        very_slow : float
+            See DiscrepancyCalculator for more information.
+        ssvid : int, optional
+            MMSI or other Source Specific ID to pull out of the stream and process.
+            If not given, the first valid ssvid is used.  All messages with a
+            different ssvid are thrown away.
+        prev_msgids : set, optional
+            Messages with msgids in this set are skipped as duplicates
+        prev_locations : set, optional
+            Location messages that match values in this set are skipped as duplicates.
+        info : set, optional
+            Set of info data from previous run that may be relevant to current run.
+        """
         self.very_slow = very_slow
         self.ssvid = ssvid
-        self.prev_msgids = msg_ids if msg_ids else {}
+        self.prev_msgids = prev_msgids if prev_msgids else {}
         self.cur_msgids = {}
-        self.prev_locations = locations if locations else set()
+        self.prev_locations = prev_locations if prev_locations else set()
         self.cur_locations = {}
         self._prev_timestamp = None
         self.info = info.copy() if info else {}
@@ -67,20 +86,15 @@ class MsgProcessor:
             None if (heading is None or math.isnan(heading)) else round(heading),
         )
 
-    def __call__(self, stream):
-        for msg in self.checked_stream(stream):
-            msg_type = self.message_type(msg)
-            if msg_type is not BAD_MESSAGE:
-                self._store_info(self.info, msg)
-            if msg_type is POSITION_MESSAGE:
-                timestamp = msg.get("timestamp")
-                loc = self.extract_normalized_location(msg)
-                if self.already_seen(loc):
-                    continue
-                self.cur_locations[loc] = timestamp
-            yield msg_type, msg
+    def _checked_stream(self, stream):
+        '''
+        Check messages in the message stream for proper timestamps,
+        duplicates, and matching SSVIDs.
 
-    def checked_stream(self, stream):
+        Yields
+        -------
+        dict
+        '''
         for msg in stream:
             if "type" not in msg:
                 raise ValueError("`msg` is missing required field `type`")
@@ -114,7 +128,15 @@ class MsgProcessor:
 
             yield msg
 
-    def message_type(self, msg):
+    def _message_type(self, msg):
+        '''
+        Determine message type based on position, course, and speed.
+        
+        Yields
+        -------
+        object
+            One of the following: POSITION_MESSAGE, INFO_ONLY_MESSAGE, or BAD_MESSAGE
+        '''
         x, y, course, speed, _ = self.extract_location(msg)
 
         def is_null(v):
@@ -142,13 +164,28 @@ class MsgProcessor:
             return POSITION_MESSAGE
         return BAD_MESSAGE
 
-    def already_seen(self, loc):
-        # Multiple identical locations with non-zero speed are almost certainly bogus
+    def _already_seen(self, loc):
+        '''
+        Return True if this location has non-zero speed and had previously been seen
+        as it does not make sense that the vessel has not changed location.
+
+        Yields
+        -------
+        boolean
+        '''
         x, y, course, speed, heading = loc
         return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
 
     @classmethod
     def _store_info(cls, info, msg):
+        '''
+        Links information from this message to timestamps within a certain range
+        before and after it's own timestamp, specified by `INFO_PING_INTERVAL_MINS`.
+        Timestamps are all rounded down to the minute.
+
+        This information will later be used to link position messages to identity
+        information that was received in close proximity.
+        '''
         shipname = msg.get("shipname")
         callsign = msg.get("callsign")
         imo = msg.get("imo")
@@ -188,7 +225,10 @@ class MsgProcessor:
                 n_imos[n_imo] = imos.get(n_imo, 0) + 1
 
     def add_info_to_msg(self, msg):
-        """???"""
+        """
+        Gets the identity information associated with the timestamp of the message, 
+        rounded down to the minute, and adds it to the message.
+        """
         ts = msg["timestamp"]
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
@@ -220,3 +260,16 @@ class MsgProcessor:
                     updatesum(n_shipnames, n_names)
                     updatesum(n_callsigns, n_signs)
                     updatesum(n_imos, n_nums)
+
+    def __call__(self, stream):
+        for msg in self._checked_stream(stream):
+            msg_type = self._message_type(msg)
+            if msg_type is not BAD_MESSAGE:
+                self._store_info(self.info, msg)
+            if msg_type is POSITION_MESSAGE:
+                timestamp = msg.get("timestamp")
+                loc = self.extract_normalized_location(msg)
+                if self._already_seen(loc):
+                    continue
+                self.cur_locations[loc] = timestamp
+            yield msg_type, msg

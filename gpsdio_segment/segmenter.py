@@ -218,7 +218,9 @@ class Segmenter:
             segs.sort(key=lambda x: x[1].last_msg["timestamp"])
             stalest_seg_id, _ = segs[0]
             log("Removing stale segment {}".format(stalest_seg_id))
-            yield from self._clean_segment(self._segments.pop(stalest_seg_id), ClosedSegment)
+            yield from self._clean_segment(
+                self._segments.pop(stalest_seg_id), ClosedSegment
+            )
 
     def _add_segment(self, msg, why=None):
         """
@@ -238,13 +240,13 @@ class Segmenter:
     def _clean_segment(self, segment, cls):
         """
         Clean a segment and output it as the specified `cls`. Cleaning involves
-        adding necessary information to each message and dropping any messages 
+        adding necessary information to each message and dropping any messages
         that are designated to be dropped.
 
         Yields
         -------
         Segment
-        DiscardedSegment 
+        DiscardedSegment
             Created for each messaged dropped from the clean segment
         """
         if segment.has_prev_state:
@@ -337,7 +339,10 @@ class Segmenter:
         ClosedSegment
         """
         for segment in list(self._segments.values()):
-            if DiscrepancyCalculator.compute_msg_delta_hours(segment.last_msg, msg) > self.max_hours:
+            if (
+                DiscrepancyCalculator.compute_msg_delta_hours(segment.last_msg, msg)
+                > self.max_hours
+            ):
                 yield from self._clean_segment(
                     self._segments.pop(segment.id), cls=ClosedSegment
                 )
@@ -375,7 +380,7 @@ class Segmenter:
         Process each message based on its type. Bad messages and info only
         messages are immediately yielded as single message segments. Position
         messages are sent to be matched to segments and processed accordingly.
-        When all messages have been processed, clean and yield all segments 
+        When all messages have been processed, clean and yield all segments
         remaining in _segments.
 
         Yields

@@ -87,14 +87,14 @@ class MsgProcessor:
         )
 
     def _checked_stream(self, stream):
-        '''
+        """
         Check messages in the message stream for proper timestamps,
         duplicates, and matching SSVIDs.
 
         Yields
         -------
         dict
-        '''
+        """
         for msg in stream:
             if "type" not in msg:
                 raise ValueError("`msg` is missing required field `type`")
@@ -129,14 +129,14 @@ class MsgProcessor:
             yield msg
 
     def _message_type(self, msg):
-        '''
+        """
         Determine message type based on position, course, and speed.
-        
+
         Yields
         -------
         object
             One of the following: POSITION_MESSAGE, INFO_ONLY_MESSAGE, or BAD_MESSAGE
-        '''
+        """
         x, y, course, speed, _ = self.extract_location(msg)
 
         def is_null(v):
@@ -165,27 +165,27 @@ class MsgProcessor:
         return BAD_MESSAGE
 
     def _already_seen(self, loc):
-        '''
+        """
         Return True if this location has non-zero speed and had previously been seen
         as it does not make sense that the vessel has not changed location.
 
         Yields
         -------
         boolean
-        '''
+        """
         x, y, course, speed, heading = loc
         return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
 
     @classmethod
     def _store_info(cls, info, msg):
-        '''
+        """
         Links information from this message to timestamps within a certain range
         before and after it's own timestamp, specified by `INFO_PING_INTERVAL_MINS`.
         Timestamps are all rounded down to the minute.
 
         This information will later be used to link position messages to identity
         information that was received in close proximity.
-        '''
+        """
         shipname = msg.get("shipname")
         callsign = msg.get("callsign")
         imo = msg.get("imo")
@@ -226,7 +226,7 @@ class MsgProcessor:
 
     def add_info_to_msg(self, msg):
         """
-        Gets the identity information associated with the timestamp of the message, 
+        Gets the identity information associated with the timestamp of the message,
         rounded down to the minute, and adds it to the message.
         """
         ts = msg["timestamp"]

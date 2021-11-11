@@ -107,8 +107,8 @@ class Matcher(DiscrepancyCalculator):
         """
         Calculate metric for how likely `msg` is the next position
         for `segment`. Compare `msg` to mutliple messages at the
-        end of `segment` (determined by `lookback`) in case this 
-        `msg` matches significantly better than previous messages 
+        end of `segment` (determined by `lookback`) in case this
+        `msg` matches significantly better than previous messages
         added to the segment. If so, mark these messages to be dropped.
 
         Returns
@@ -136,7 +136,7 @@ class Matcher(DiscrepancyCalculator):
             hours = self.compute_msg_delta_hours(prev_msg, msg)
             # Shorten the hours traveled relative to the length of travel
             # as boats tend to go straight for shorter distances, but at
-            # longer distances, they may not go as straight or travel 
+            # longer distances, they may not go as straight or travel
             # the entire time
             penalized_hours = hours / (
                 1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)

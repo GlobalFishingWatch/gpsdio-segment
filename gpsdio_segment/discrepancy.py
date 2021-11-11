@@ -16,10 +16,10 @@ class DiscrepancyCalculator:
     # These messages are discarded.
     very_slow = 0.35
 
-    # Used in type 2 and 3 discrepancy calculations to increase the estimates 
-    # making it harder to match those ways because based on how vessels move, 
-    # it's less likely that a vessel didn't move or that it's somewhere between 
-    # the start and the end. It's much more likely that the vessel is somewhere 
+    # Used in type 2 and 3 discrepancy calculations to increase the estimates
+    # making it harder to match those ways because based on how vessels move,
+    # it's less likely that a vessel didn't move or that it's somewhere between
+    # the start and the end. It's much more likely that the vessel is somewhere
     # close to the estimated end point, so we want to prioritize that estimate.
     shape_factor = 4.0
 
@@ -55,7 +55,7 @@ class DiscrepancyCalculator:
     @classmethod
     def _compute_expected_position(cls, msg, hours):
         """
-        Compute where a vessel should be a certain amount of time 
+        Compute where a vessel should be a certain amount of time
         (specified by `hours`) after a `msg`. Uses speed and course to
         calculate how far and in which direction a vessel has traveled
         and adds that to the previous known position.
@@ -96,14 +96,14 @@ class DiscrepancyCalculator:
 
         Type 1: the average of the distance between each pair
                 of actual and expected positions
-        
+
         Type 2: the distance difference if we assume the vessel
                 stayed put at its initial point, penalized by
                 multiplying by `shape_factor`
-        
+
         Type 3: the distance perpendicular from the expected path
                 to the known point calculated for `msg1` to `msg2`
-                and vice versa and then averaged 
+                and vice versa and then averaged
 
         Returns
         -------

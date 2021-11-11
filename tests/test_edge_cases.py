@@ -3,16 +3,14 @@ Tests for weird edge cases.
 """
 
 
-from datetime import datetime
-from datetime import timedelta
 from collections import Counter
+from datetime import datetime, timedelta
 
 import pytest
+from support import utcify
 
 from gpsdio_segment.core import Segmentizer
 from gpsdio_segment.msg_processor import MsgProcessor
-
-from support import utcify
 
 
 def test_first_is_non_posit():

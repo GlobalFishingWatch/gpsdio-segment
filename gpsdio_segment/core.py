@@ -20,30 +20,32 @@ The details of how this is performed is best explained by examining
 the logic in the function `matcher.compute_best`.
 """
 
-from gpsdio_segment.segmenter import Segmenter
-from gpsdio_segment.segmenter import DiscrepancyCalculator
-from gpsdio_segment.segmenter import IS_NOISE, NO_MATCH, Matcher
-from gpsdio_segment.segmenter import (
+from gpsdio_segment.segmenter import (  # noqa: F401
     BAD_MESSAGE,
     INFO_ONLY_MESSAGE,
+    IS_NOISE,
+    NO_MATCH,
     POSITION_MESSAGE,
-    MsgProcessor,
-)
-from gpsdio_segment.segmenter import (
     BadSegment,
     ClosedSegment,
     DiscardedSegment,
+    DiscrepancyCalculator,
     InfoSegment,
+    Matcher,
+    MsgProcessor,
     Segment,
+    Segmenter,
 )
 
+
 class Segmentizer(Segmenter):
-    '''
+    """
     Temporary pass-through class for backwards compatibility with the old
     class name `Segmentizer`. Moving forward, this class is now called
     `Segmenter` and is held in `segmenter.py`.
 
     TODO: Remove this once `pipe-segment` repo has been updated to use
     the `Segmenter` class, formerly `Segmentizer`, now held in `segmenter.py`.
-    '''
+    """
+
     pass

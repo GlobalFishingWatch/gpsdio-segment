@@ -39,7 +39,7 @@ Installing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ pip install gpsdio-segment/
 
 
@@ -48,7 +48,7 @@ Developing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ cd gpsdio-segment
     $ virtualenv venv
     $ source venv/bin/activate

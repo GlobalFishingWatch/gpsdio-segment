@@ -13,14 +13,14 @@
 #     name: python3
 # ---
 
-import pandas as pd
-import json
-import glob
 import sys
-sys.path.append('../tests')
-import test_expected, imp
 
-# Download 10 days of Orbcomm data from each track in the baby pipe ssvid 
+import pandas as pd
+import test_expected
+
+sys.path.append("../tests")
+
+# Download 10 days of Orbcomm data from each track in the baby pipe ssvid
 # and process into the format
 # that `test_extected` expects. This is used for regression testing the pipeline.
 
@@ -28,10 +28,10 @@ ssvid = pd.read_csv("../tests/data/baby_pipe_ssvids.csv")
 ssvid_str = ",".join(f'"{x}"' for x in ssvid.ssvid)
 
 query = f"""
-SELECT * 
+SELECT *
 FROM `pipe_ais_sources_v20201001.normalized_orbcomm_2021010*`
 WHERE ssvid IN ({ssvid_str})
-ORDER BY ssvid, timestamp
+ORDER BY ssvid, timestamp, msgid
 """
 tracks = pd.read_gbq(query, project_id="world-fishing-827")
 
@@ -39,5 +39,3 @@ for ssvid, track in test_expected.iterate_over_tracks(tracks):
     path = f"../tests/data/expected/regr_{ssvid}.json"
     test_expected.add_expected(track)
     test_expected.dump_messages_as_json(track, path)
-
-

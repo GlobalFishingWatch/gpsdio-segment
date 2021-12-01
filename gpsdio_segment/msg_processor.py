@@ -119,7 +119,7 @@ class MsgProcessor:
 
             ssvid = msg.get("ssvid")
             if self.ssvid is None:
-                self._ssvid = ssvid
+                self.ssvid = ssvid
             elif ssvid != self.ssvid:
                 logger.warning(
                     "Skipping non-matching SSVID %r, expected %r", ssvid, self.ssvid
@@ -151,8 +151,6 @@ class MsgProcessor:
             and course is not None
             and -180.0 <= x <= 180.0
             and -90.0 <= y <= 90.0
-            and course is not None
-            and speed is not None
             and (
                 (speed <= self.very_slow and course > 359.95) or 0.0 <= course <= 359.95
             )

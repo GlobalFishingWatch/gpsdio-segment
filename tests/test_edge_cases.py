@@ -6,7 +6,6 @@ Tests for weird edge cases.
 from collections import Counter
 from datetime import datetime, timedelta
 
-import pytest
 from support import utcify
 
 from gpsdio_segment.core import Segmentizer
@@ -15,34 +14,6 @@ from gpsdio_segment.msg_processor import MsgProcessor
 
 def test_first_is_non_posit():
     pass
-
-
-def test_unsorted():
-    before = {
-        "ssvid": 1,
-        "msgid": 1,
-        "timestamp": datetime.now(),
-        "type": "UNKNOWN",
-        "lat": 90,
-        "lon": 90,
-        "course": 0,
-        "speed": 1,
-    }
-    after = {
-        "ssvid": 1,
-        "msgid": 2,
-        "timestamp": datetime.now(),
-        "type": "UNKNOWN",
-        "lat": 90,
-        "lon": 90,
-        "course": 0,
-        "speed": 1,
-    }
-    messages = [after, before]
-    messages = [utcify(x) for x in messages]
-    with pytest.raises(ValueError) as excinfo:
-        list(Segmentizer(messages))
-    assert "unsorted" in str(excinfo.value)
 
 
 def test_same_point_same_time():

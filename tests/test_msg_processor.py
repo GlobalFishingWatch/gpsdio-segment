@@ -8,6 +8,7 @@ from gpsdio_segment.msg_processor import (
     BAD_MESSAGE,
     INFO_ONLY_MESSAGE,
     POSITION_MESSAGE,
+    REPORTED_SPEED_EXCLUSION_RANGES,
     MsgProcessor,
 )
 
@@ -171,18 +172,26 @@ def test_bad_messages():
             "course": 361,
             "speed": Matcher.very_slow + 1,
         },
-        # speed > SAFE_SPEED and ...?
-        # {
-        #     "ssvid": 30,
-        #     "msgid": 11,
-        #     "timestamp": datetime.now(),
-        #     "type": "UNKNOWN",
-        #     "lat": 90,
-        #     "lon": 90,
-        #     "course": 0,
-        #     "speed": 1,
-        # },
     ]
+
+    # speed >= SAFE_SPEED and speed is in one of the REPORTED_SPEED_EXCLUSION_RANGES
+    # Doing one check for each of the current ranges
+    # Don't need to actually check specifically for speed >= SAFE_SPEED as all
+    # ranges satisfy that condition since SAFE_SPEED is set as the lowest
+    # lower range in REPORTED_SPEED_EXCLUSION_RANGES
+    for i, (l, h) in enumerate(REPORTED_SPEED_EXCLUSION_RANGES):
+        messages.append(
+            {
+                "ssvid": 30,
+                "msgid": 11 + i,
+                "timestamp": datetime.now(),
+                "type": "UNKNOWN",
+                "lat": 90,
+                "lon": 90,
+                "course": 0,
+                "speed": (l + h) / 2,
+            }
+        )
     messages = [utcify(x) for x in messages]
     msg_processor = MsgProcessor(
         Matcher.very_slow, ssvid=30, prev_msgids=None, prev_locations=None

@@ -7,8 +7,6 @@ from __future__ import division
 
 import datetime
 
-import pytest
-
 import gpsdio_segment.core
 
 

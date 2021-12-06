@@ -3,45 +3,17 @@ Tests for weird edge cases.
 """
 
 
-from datetime import datetime
-from datetime import timedelta
 from collections import Counter
+from datetime import datetime, timedelta
 
-import pytest
+from support import utcify
 
 from gpsdio_segment.core import Segmentizer
 from gpsdio_segment.msg_processor import MsgProcessor
 
-from support import utcify
-
 
 def test_first_is_non_posit():
     pass
-
-
-def test_unsorted():
-    before = {
-        "ssvid": 1,
-        "msgid": 1,
-        "timestamp": datetime.now(),
-        "lat": 90,
-        "lon": 90,
-        "course": 0,
-        "speed": 1,
-    }
-    after = {
-        "ssvid": 1,
-        "msgid": 2,
-        "timestamp": datetime.now(),
-        "lat": 90,
-        "lon": 90,
-        "course": 0,
-        "speed": 1,
-    }
-    messages = [after, before]
-    messages = [utcify(x) for x in messages]
-    with pytest.raises(ValueError):
-        list(Segmentizer(messages))
 
 
 def test_same_point_same_time():
@@ -315,8 +287,9 @@ def test_first_message_out_of_bounds():
 
 def test_first_message_out_of_bounds_gt_24h():
     """
-    Out of bounds location as the first message after all previous segments have been cleared.
-    Should put the bad message in a BadSegment and continue with the next good message
+    Out of bounds location as the first message after all previous segments
+    have been cleared. Should put the bad message in a BadSegment and continue
+    with the next good message
     """
 
     messages = [

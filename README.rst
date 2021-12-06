@@ -2,11 +2,11 @@
 gpsdio-segment
 ==============
 
-.. image:: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment.svg?token=tu7qmzYG3ruJYdnto4aT
-    :target: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment
+https://github.com/GlobalFishingWatch/gpsdio-segment
 
+Segment a stream of messages into continuous tracks. 
 
-Segment a stream of messages into continuous tracks.
+For more information, see `module README <gpsdio_segment/README.md>`_.
 
 
 Usage
@@ -39,7 +39,7 @@ Installing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ pip install gpsdio-segment/
 
 
@@ -48,7 +48,7 @@ Developing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ cd gpsdio-segment
     $ virtualenv venv
     $ source venv/bin/activate

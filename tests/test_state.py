@@ -1,18 +1,24 @@
 import itertools
-from collections import Counter
 from datetime import datetime
-from gpsdio_segment.segment import Segment
-from gpsdio_segment.segment import SegmentState
-from gpsdio_segment.core import Segmentizer
 
 from support import read_json
 
+from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.segment import Segment, SegmentState
+
+
 def test_SegmentState():
-    s = SegmentState(id='ABC', ssvid='123456789', 
-        first_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
-        last_msg={'ssvid': 123456789, 'timestamps': datetime.now()},
-        first_msg_of_day=None, last_msg_of_day=None,
-        msg_count=1, noise=False, closed=False)
+    s = SegmentState(
+        id="ABC",
+        ssvid="123456789",
+        first_msg={"ssvid": 123456789, "timestamps": datetime.now()},
+        last_msg={"ssvid": 123456789, "timestamps": datetime.now()},
+        first_msg_of_day=None,
+        last_msg_of_day=None,
+        msg_count=1,
+        noise=False,
+        closed=False,
+    )
     assert s._asdict() == SegmentState(**s._asdict())._asdict()
 
 
@@ -59,16 +65,18 @@ def test_Segment_state_save_load(msg_generator):
 
 
 def test_Segmentizer_state_save_load(tmpdir):
-    outfile = str(tmpdir.mkdir('test_Segmentizer_state_save_load').join('segmented.json'))
+    # outfile = str(
+    #     tmpdir.mkdir("test_Segmentizer_state_save_load").join("segmented.json")
+    # )
 
-    with open('tests/data/416000000.json') as f:
+    with open("tests/data/416000000.json") as f:
         src = read_json(f)
         segmentizer = Segmentizer(src)
         segs = [seg for seg in segmentizer]
-        full_run_seg_states = [seg.state for seg in segs]
-        full_run_msg_count = sum(len(seg) for seg in segs)
+        # full_run_seg_states = [seg.state for seg in segs]
+        # full_run_msg_count = sum(len(seg) for seg in segs)
 
-    with open('tests/data/416000000.json') as f:
+    with open("tests/data/416000000.json") as f:
         src = read_json(f, add_msgid=True)
         n = 800
         segmentizer = Segmentizer(itertools.islice(src, n))
@@ -78,16 +86,21 @@ def test_Segmentizer_state_save_load(tmpdir):
         n2 = sum([st.msg_count for st in first_half_seg_states if not st.closed])
 
         segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
-        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
+        assert (
+            sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()])
+            == n2
+        )
 
-        second_half_seg_states = [seg.state for seg in segs]
+        # second_half_seg_states = [seg.state for seg in segs]
 
         segmentizer = Segmentizer.from_seg_states(first_half_seg_states, src)
-        assert sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()]) == n2
+        assert (
+            sum([seg.prev_state.msg_count for seg in segmentizer._segments.values()])
+            == n2
+        )
+
 
 def test_Segmentizer_state_message_count_bug(msg_generator):
-    id = 1
-    ssvid = 123456789
     seg = Segment(id=1, ssvid=123456789)
     seg.add_msg(msg_generator.next_time_posit_msg())
     state = seg.state

@@ -6,7 +6,7 @@ gpsdio-segment
     :target: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment
 
 
-Segment a stream of messages into continuous tracks.
+Segment a stream of messages into continuous tracks. For more information, see :doc:`this README`<gpsdio_segment/README.md>`.
 
 
 Usage

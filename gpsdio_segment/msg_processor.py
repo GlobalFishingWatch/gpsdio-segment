@@ -20,7 +20,6 @@ log = logger.info
 # type 27 messages so we exclude that as well. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
 REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25, 102.35)]
-SAFE_SPEED = min([x for (x, y) in REPORTED_SPEED_EXCLUSION_RANGES])
 
 POSITION_MESSAGE = object()
 INFO_ONLY_MESSAGE = object()
@@ -151,13 +150,10 @@ class MsgProcessor:
             and course is not None
             and -180.0 <= x <= 180.0
             and -90.0 <= y <= 90.0
-            and (
+            and (  # 360 is invalid unless speed is very low.
                 (speed <= self.very_slow and course > 359.95) or 0.0 <= course <= 359.95
             )
-            and (  # 360 is invalid unless speed is very low.
-                speed < SAFE_SPEED
-                or not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES)
-            )
+            and (not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))
         ):
             return POSITION_MESSAGE
         return BAD_MESSAGE

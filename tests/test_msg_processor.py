@@ -169,16 +169,13 @@ def test_bad_messages():
             "type": "UNKNOWN",
             "lat": 90,
             "lon": 90,
-            "course": 361,
+            "course": 360,
             "speed": Matcher.very_slow + 1,
         },
     ]
 
-    # speed >= SAFE_SPEED and speed is in one of the REPORTED_SPEED_EXCLUSION_RANGES
+    # speed is in one of the REPORTED_SPEED_EXCLUSION_RANGES
     # Doing one check for each of the current ranges
-    # Don't need to actually check specifically for speed >= SAFE_SPEED as all
-    # ranges satisfy that condition since SAFE_SPEED is set as the lowest
-    # lower range in REPORTED_SPEED_EXCLUSION_RANGES
     for i, (l, h) in enumerate(REPORTED_SPEED_EXCLUSION_RANGES):
         messages.append(
             {

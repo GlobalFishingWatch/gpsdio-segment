@@ -226,7 +226,7 @@ class MsgProcessor:
         ts = msg["timestamp"]
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
-        assert ts.tzinfo.zone == "UTC"
+        assert ts.tzinfo == datetime.timezone.utc or ts.tzinfo.zone == "UTC"
         k1 = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )

@@ -99,9 +99,7 @@ class MsgProcessor:
                 raise ValueError("`msg` is missing required field `type`")
 
             # Add empty info fields so they are always present
-            msg["shipnames"] = {}
-            msg["callsigns"] = {}
-            msg["imos"] = {}
+            msg["identities"] = {}
 
             timestamp = msg.get("timestamp")
             if timestamp is None:
@@ -180,13 +178,8 @@ class MsgProcessor:
         This information will later be used to link position messages to identity
         information that was received in close proximity.
         """
-        shipname = msg.get("shipname")
-        callsign = msg.get("callsign")
-        imo = msg.get("imo")
-        n_shipname = msg.get("n_shipname")
-        n_callsign = msg.get("n_callsign")
-        n_imo = msg.get("n_imo")
-        if shipname is None and callsign is None and imo is None:
+        identity = (msg.get("shipname"), msg.get("callsign"), msg.get("imo"))
+        if identity == (None, None, None):
             return
         transponder_type = INFO_TYPES.get(msg.get("type"))
         if not transponder_type:
@@ -207,16 +200,8 @@ class MsgProcessor:
                 info[k1] = {k2: ({}, {}, {}, {}, {}, {})}
             elif k2 not in info[k1]:
                 info[k1][k2] = ({}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, n_shipnames, n_callsigns, n_imos = info[k1][k2]
-            if shipname is not None:
-                shipnames[shipname] = shipnames.get(shipname, 0) + 1
-                n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
-            if callsign is not None:
-                callsigns[callsign] = callsigns.get(callsign, 0) + 1
-                n_callsigns[n_callsign] = callsigns.get(n_callsign, 0) + 1
-            if imo is not None:
-                imos[imo] = imos.get(imo, 0) + 1
-                n_imos[n_imo] = imos.get(n_imo, 0) + 1
+            idents = info[k1][k2]
+            idents[identity] = idents.get(identity, 0) + 1
 
     def add_info_to_msg(self, msg):
         """
@@ -230,12 +215,7 @@ class MsgProcessor:
         k1 = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
-        msg["shipnames"] = shipnames = {}
-        msg["callsigns"] = callsigns = {}
-        msg["imos"] = imos = {}
-        msg["n_shipnames"] = n_shipnames = {}
-        msg["n_callsigns"] = n_callsigns = {}
-        msg["n_imos"] = n_imos = {}
+        msg["identities"] = msg_idents = {}
 
         def updatesum(orig, new):
             for k, v in new.items():
@@ -247,13 +227,9 @@ class MsgProcessor:
                 source = msg.get("source")
                 k2 = (transponder_type, receiver_type, source)
                 if k2 in self.info[k1]:
-                    names, signs, nums, n_names, n_signs, n_nums = self.info[k1][k2]
-                    updatesum(shipnames, names)
-                    updatesum(callsigns, signs)
-                    updatesum(imos, nums)
-                    updatesum(n_shipnames, n_names)
-                    updatesum(n_callsigns, n_signs)
-                    updatesum(n_imos, n_nums)
+                    idents = self.info[k1][k2]
+                    for k, v in idents:
+                        msg_idents[k] = msg_idents.get(k, 0) + v
 
     def __call__(self, stream):
         for msg in self._checked_stream(stream):

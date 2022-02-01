@@ -241,7 +241,7 @@ class MsgProcessor:
                 k2 = (transponder_type, receiver_type, source)
                 if k2 in self.info[k1]:
                     idents = self.info[k1][k2]
-                    for k, v in idents:
+                    for k, v in idents.items():
                         msg_idents[k] = msg_idents.get(k, 0) + v
 
         for k, v in msg_idents.items():

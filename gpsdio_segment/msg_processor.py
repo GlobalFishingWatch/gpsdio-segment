@@ -1,3 +1,4 @@
+from collections import namedtuple
 import datetime
 import logging
 import math
@@ -27,6 +28,10 @@ BAD_MESSAGE = object()
 
 INFO_TYPES = {"AIS.5": "AIS-A", "AIS.19": "AIS-B", "AIS.24": "AIS-B", "VMS": "VMS"}
 INFO_PING_INTERVAL_MINS = 15
+
+Identity = namedtuple(
+    "Identity", ["shipname", "callsign", "imo", "transponder_type", "length", "width"]
+)
 
 
 def is_null(v):
@@ -178,10 +183,18 @@ class MsgProcessor:
         This information will later be used to link position messages to identity
         information that was received in close proximity.
         """
-        identity = (msg.get("shipname"), msg.get("callsign"), msg.get("imo"))
+        transponder_type = INFO_TYPES.get(msg.get("type"))
+        identity = Identity(
+            msg.get("shipname"),
+            msg.get("callsign"),
+            msg.get("imo"),
+            transponder_type,
+            msg["length"],
+            msg["width"],
+        )
+
         if identity == (None, None, None):
             return
-        transponder_type = INFO_TYPES.get(msg.get("type"))
         if not transponder_type:
             return
         receiver_type = msg.get("receiver_type")
@@ -197,9 +210,9 @@ class MsgProcessor:
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
             if k1 not in info:
-                info[k1] = {k2: ({}, {}, {}, {}, {}, {})}
+                info[k1] = {k2: {}}
             elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {}, {}, {}, {})
+                info[k1][k2] = {}
             idents = info[k1][k2]
             idents[identity] = idents.get(identity, 0) + 1
 
@@ -230,6 +243,9 @@ class MsgProcessor:
                     idents = self.info[k1][k2]
                     for k, v in idents:
                         msg_idents[k] = msg_idents.get(k, 0) + v
+
+        for k, v in msg_idents.items():
+            msg_idents[k] = msg_idents[k]._asdict()
 
     def __call__(self, stream):
         for msg in self._checked_stream(stream):

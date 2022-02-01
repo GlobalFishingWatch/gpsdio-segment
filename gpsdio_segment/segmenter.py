@@ -332,7 +332,7 @@ class Segmenter:
 
     def _finalize_old_segments(self, msg):
         """
-        Close any segments tha have not had a position message in `self.max_hours`.
+        Close any segments that have not had a position message in `self.max_hours`.
 
         Yields
         ------

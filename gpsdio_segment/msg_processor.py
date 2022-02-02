@@ -244,9 +244,6 @@ class MsgProcessor:
                     for k, v in idents.items():
                         msg_idents[k] = msg_idents.get(k, 0) + v
 
-        for k, v in msg_idents.items():
-            msg_idents[k] = msg_idents[k]._asdict()
-
     def __call__(self, stream):
         for msg in self._checked_stream(stream):
             msg_type = self._message_type(msg)

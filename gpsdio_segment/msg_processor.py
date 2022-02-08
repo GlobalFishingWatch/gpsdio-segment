@@ -33,6 +33,8 @@ Identity = namedtuple(
     "Identity", ["shipname", "callsign", "imo", "transponder_type", "length", "width"]
 )
 
+Destination = namedtuple("Destination", ["destination"])
+
 
 def is_null(v):
     return (v is None) or math.isnan(v)
@@ -185,7 +187,7 @@ class MsgProcessor:
             msg["length"],
             msg["width"],
         )
-        destination = msg.get("destination")
+        destination = Destination(msg.get("destination"))
 
         if not transponder_type:
             return

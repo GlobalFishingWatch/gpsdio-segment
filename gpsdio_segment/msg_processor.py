@@ -112,6 +112,9 @@ class MsgProcessor:
 
             msgid = msg.get("msgid")
             if msgid in self.cur_msgids:
+                logger.debug(
+                    f"Skipping duplicate msgid {msgid}",
+                )
                 continue
             self.cur_msgids[msgid] = timestamp
 
@@ -264,6 +267,7 @@ class MsgProcessor:
                 timestamp = msg.get("timestamp")
                 loc = self.extract_normalized_location(msg)
                 if self._already_seen(loc):
+                    logger.debug(f"Skipping already seen location {loc}")
                     continue
                 self.cur_locations[loc] = timestamp
             yield msg_type, msg

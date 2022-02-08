@@ -39,7 +39,7 @@ def is_null(v):
 
 
 class MsgProcessor:
-    def __init__(self, very_slow, ssvid, prev_msgids, prev_locations, info=None):
+    def __init__(self, very_slow, ssvid):
         """
         Manages information from information only messages and processes messages
         to determine message type.
@@ -52,21 +52,14 @@ class MsgProcessor:
             MMSI or other Source Specific ID to pull out of the stream and process.
             If not given, the first valid ssvid is used.  All messages with a
             different ssvid are thrown away.
-        prev_msgids : set, optional
-            Messages with msgids in this set are skipped as duplicates
-        prev_locations : set, optional
-            Location messages that match values in this set are skipped as duplicates.
-        info : set, optional
-            Set of info data from previous run that may be relevant to current run.
         """
         self.very_slow = very_slow
         self.ssvid = ssvid
-        self.prev_msgids = prev_msgids if prev_msgids else {}
         self.cur_msgids = {}
-        self.prev_locations = prev_locations if prev_locations else set()
         self.cur_locations = {}
         self._prev_timestamp = None
-        self.info = info.copy() if info else {}
+        self.identities = {}
+        self.destinations = {}
 
     @staticmethod
     def extract_location(msg):
@@ -105,6 +98,7 @@ class MsgProcessor:
 
             # Add empty info fields so they are always present
             msg["identities"] = {}
+            msg["destinations"] = {}
 
             timestamp = msg.get("timestamp")
             if timestamp is None:
@@ -115,7 +109,7 @@ class MsgProcessor:
             self._prev_timestamp = msg["timestamp"]
 
             msgid = msg.get("msgid")
-            if msgid in self.prev_msgids or msgid in self.cur_msgids:
+            if msgid in self.cur_msgids:
                 continue
             self.cur_msgids[msgid] = timestamp
 
@@ -171,10 +165,9 @@ class MsgProcessor:
         boolean
         """
         x, y, course, speed, heading = loc
-        return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
+        return speed > 0 and loc in self.cur_locations
 
-    @classmethod
-    def _store_info(cls, info, msg):
+    def _store_info(self, msg):
         """
         Links information from this message to timestamps within a certain range
         before and after it's own timestamp, specified by `INFO_PING_INTERVAL_MINS`.
@@ -192,9 +185,8 @@ class MsgProcessor:
             msg["length"],
             msg["width"],
         )
+        destination = msg.get("destination")
 
-        if identity == (None, None, None):
-            return
         if not transponder_type:
             return
         receiver_type = msg.get("receiver_type")
@@ -209,12 +201,19 @@ class MsgProcessor:
         k2 = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
             k1 = rounded_ts + datetime.timedelta(minutes=offset)
-            if k1 not in info:
-                info[k1] = {k2: {}}
-            elif k2 not in info[k1]:
-                info[k1][k2] = {}
-            idents = info[k1][k2]
+            if k1 not in self.identities:
+                self.identities[k1] = {k2: {}}
+            elif k2 not in self.identities[k1]:
+                self.identities[k1][k2] = {}
+            idents = self.identities[k1][k2]
             idents[identity] = idents.get(identity, 0) + 1
+            #
+            if k1 not in self.destinations:
+                self.destinations[k1] = {k2: {}}
+            elif k2 not in self.destinations[k1]:
+                self.destinations[k1][k2] = {}
+            dests = self.destinations[k1][k2]
+            dests[destination] = dests.get(destination, 0) + 1
 
     def add_info_to_msg(self, msg):
         """
@@ -228,27 +227,37 @@ class MsgProcessor:
         k1 = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
+        receiver_type = msg.get("receiver_type")
+        source = msg.get("source")
+
         msg["identities"] = msg_idents = {}
+        msg["destinations"] = msg_dests = {}
 
         def updatesum(orig, new):
             for k, v in new.items():
                 orig[k] = orig.get(k, 0) + v
 
-        if k1 in self.info:
+        if k1 in self.identities:
             for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
-                receiver_type = msg.get("receiver_type")
-                source = msg.get("source")
                 k2 = (transponder_type, receiver_type, source)
-                if k2 in self.info[k1]:
-                    idents = self.info[k1][k2]
+                if k2 in self.identities[k1]:
+                    idents = self.identities[k1][k2]
                     for k, v in idents.items():
                         msg_idents[k] = msg_idents.get(k, 0) + v
+
+        if k1 in self.destinations:
+            for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
+                k2 = (transponder_type, receiver_type, source)
+                if k2 in self.destinations[k1]:
+                    dests = self.destinations[k1][k2]
+                    for k, v in dests.items():
+                        msg_dests[k] = msg_dests.get(k, 0) + v
 
     def __call__(self, stream):
         for msg in self._checked_stream(stream):
             msg_type = self._message_type(msg)
             if msg_type is not BAD_MESSAGE:
-                self._store_info(self.info, msg)
+                self._store_info(msg)
             if msg_type is POSITION_MESSAGE:
                 timestamp = msg.get("timestamp")
                 loc = self.extract_normalized_location(msg)

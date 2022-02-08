@@ -61,9 +61,6 @@ class Segmenter:
         self,
         instream,
         ssvid=None,
-        prev_msgids=None,
-        prev_locations=None,
-        prev_info=None,
         max_hours=Matcher.max_hours,
         max_open_segments=20,
         **kwargs,
@@ -89,12 +86,6 @@ class Segmenter:
             MMSI or other Source Specific ID to pull out of the stream and process.
             If not given, the first valid ssvid is used.  All messages with a
             different ssvid are thrown away.
-        prev_msgids : set, optional
-            Messages with msgids in this set are skipped as duplicates
-        prev_locations : set, optional
-            Location messages that match values in this set are skipped as duplicates.
-        prev_info : set, optional
-            Set of info data from previous run that may be relevant to current run.
         max_hours : float, optional
             Maximum number of hours to allow between points in a segment.
         max_open_segments : int, optional
@@ -105,9 +96,7 @@ class Segmenter:
         self.max_hours = max_hours
         self.max_open_segments = max_open_segments
         self._matcher = Matcher(max_hours=max_hours, **kwargs)
-        self._msg_processor = MsgProcessor(
-            self._matcher.very_slow, ssvid, prev_msgids, prev_locations, prev_info
-        )
+        self._msg_processor = MsgProcessor(self._matcher.very_slow, ssvid)
 
         # Exposed via properties
         self._instream = instream

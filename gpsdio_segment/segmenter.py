@@ -44,7 +44,7 @@ from gpsdio_segment.segment import (
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG)
 
 log = logger.info
 
@@ -62,7 +62,7 @@ class Segmenter:
         instream,
         ssvid=None,
         max_hours=Matcher.max_hours,
-        max_open_segments=20,
+        max_open_segments=100,
         **kwargs,
     ):
 
@@ -255,6 +255,7 @@ class Segmenter:
                 continue
             else:
                 new_segment.add_msg(msg)
+        logging.debug("yielding cleaned segment with {len(new_segment.messages)}")
         yield new_segment
 
     def _process_bad_msg(self, msg):

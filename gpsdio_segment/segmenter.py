@@ -44,7 +44,7 @@ from gpsdio_segment.segment import (
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 
 log = logger.info
 

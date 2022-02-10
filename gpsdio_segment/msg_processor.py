@@ -187,8 +187,8 @@ class MsgProcessor:
             msg.get("callsign"),
             msg.get("imo"),
             transponder_type,
-            msg["length"],
-            msg["width"],
+            msg.get("length"),
+            msg.get("width"),
         )
         destination = Destination(msg.get("destination"))
 

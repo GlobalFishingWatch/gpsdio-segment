@@ -28,9 +28,7 @@ def test_info_only_message():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == 1
     msg_type, msg = processed_messages[0]
@@ -51,9 +49,7 @@ def test_position_message():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=20, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=20)
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == 1
     msg_type, msg = processed_messages[0]
@@ -190,9 +186,7 @@ def test_bad_messages():
             }
         )
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=30, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=30)
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == len(messages)
     for msg_type, msg in processed_messages:
@@ -213,9 +207,7 @@ def test_missing_type():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     with pytest.raises(ValueError) as excinfo:
         list(msg_processor(messages))
     assert "missing required field `type`" in str(excinfo.value)
@@ -234,9 +226,7 @@ def test_missing_timestamp():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     with pytest.raises(ValueError) as excinfo:
         list(msg_processor(messages))
     assert "missing timestamp" in str(excinfo.value)
@@ -265,9 +255,7 @@ def test_unsorted():
     }
     messages = [after, before]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     with pytest.raises(ValueError) as excinfo:
         list(msg_processor(messages))
     assert "unsorted" in str(excinfo.value)
@@ -297,9 +285,7 @@ def test_duplicate_msgid():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == 1
 
@@ -318,9 +304,7 @@ def test_set_ssvid_if_none():
         }
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=None, prev_msgids=None, prev_locations=None
-    )
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=None)
     processed_messages = list(
         msg_processor(messages)
     )  # Run this so MsgProcessor knows what to set SSVID to
@@ -352,10 +336,7 @@ def test_skip_incorrect_ssvid():
         },
     ]
     messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(
-        Matcher.very_slow, ssvid=10, prev_msgids=None, prev_locations=None
-    )
-    # Logs a warning but does not throw an exception.
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     # Simply ignores the message with the incorrect SSVID.
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == 1

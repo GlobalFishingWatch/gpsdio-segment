@@ -108,7 +108,9 @@ class Matcher(DiscrepancyCalculator):
         # as boats tend to go straight for shorter distances, but at
         # longer distances, they may not go as straight or travel
         # the entire time
-        return hours / (1 + (hours / self.penalty_hours) ** (1 - self.hours_exp))
+        return hours / (
+            1 + (max(hours, 0) / self.penalty_hours) ** (1 - self.hours_exp)
+        )
 
     def compute_metric(self, discrepancy, hours):
         padded_hours = math.hypot(hours, self.buffer_hours)

@@ -68,7 +68,7 @@ class Matcher(DiscrepancyCalculator):
     # of vessels.  There are enough knobs here that these are
     # likely still not optimal and more experimentation would likely
     # be helpful.
-    max_hours = 8
+    max_hours = 24
     penalty_hours = 4
     hours_exp = 0.5
     buffer_hours = 0.25

@@ -68,7 +68,7 @@ class Matcher(DiscrepancyCalculator):
     # of vessels.  There are enough knobs here that these are
     # likely still not optimal and more experimentation would likely
     # be helpful.
-    max_hours = 8
+    max_hours = 24
     penalty_hours = 4
     hours_exp = 0.5
     buffer_hours = 0.25
@@ -103,6 +103,23 @@ class Matcher(DiscrepancyCalculator):
     def transponder_types(msg):
         return POSITION_TYPES.get(msg.get("type"), set())
 
+    def compute_penalized_hours(self, hours):
+        # Shorten the hours traveled relative to the length of travel
+        # as boats tend to go straight for shorter distances, but at
+        # longer distances, they may not go as straight or travel
+        # the entire time
+        return hours / (
+            1 + (max(hours, 0) / self.penalty_hours) ** (1 - self.hours_exp)
+        )
+
+    def compute_metric(self, discrepancy, hours):
+        padded_hours = math.hypot(hours, self.buffer_hours)
+        max_allowed_discrepancy = padded_hours * self.max_knots
+        if discrepancy > max_allowed_discrepancy:
+            return 0
+        alpha = self._discrepancy_alpha_0 * discrepancy / max_allowed_discrepancy
+        return math.exp(-(alpha ** 2)) / padded_hours  # ** 2
+
     def _compute_segment_match(self, segment, msg):
         """
         Calculate metric for how likely `msg` is the next position
@@ -134,13 +151,7 @@ class Matcher(DiscrepancyCalculator):
                 continue
             transponder_types |= self.transponder_types(prev_msg)
             hours = self.compute_msg_delta_hours(prev_msg, msg)
-            # Shorten the hours traveled relative to the length of travel
-            # as boats tend to go straight for shorter distances, but at
-            # longer distances, they may not go as straight or travel
-            # the entire time
-            penalized_hours = hours / (
-                1 + (hours / self.penalty_hours) ** (1 - self.hours_exp)
-            )
+            penalized_hours = self.compute_penalized_hours(hours)
             discrepancy = self.compute_discrepancy(prev_msg, msg, penalized_hours)
             candidates.append(
                 (metric, msgs_to_drop[:], discrepancy, hours, penalized_hours)
@@ -171,15 +182,8 @@ class Matcher(DiscrepancyCalculator):
                 # Too long has passed, we can't match this segment
                 break
             else:
-                padded_hours = math.hypot(hours, self.buffer_hours)
-                max_allowed_discrepancy = padded_hours * self.max_knots
-                if discrepancy <= max_allowed_discrepancy:
-                    alpha = (
-                        self._discrepancy_alpha_0
-                        * discrepancy
-                        / max_allowed_discrepancy
-                    )
-                    metric = math.exp(-(alpha ** 2)) / padded_hours  # ** 2
+                metric = self.compute_metric(discrepancy, hours)
+                if metric > 0:
                     # Down weight cases where transceiver types don't match.
                     if not transponder_match:
                         metric *= self.transponder_mismatch_weight
@@ -205,12 +209,7 @@ class Matcher(DiscrepancyCalculator):
                         match["hours"] = hours
                         match["msgs_to_drop"] = msgs_to_drop
                 else:
-                    log(
-                        "can't match due to discrepancy: %s / %s = %s",
-                        discrepancy,
-                        padded_hours,
-                        discrepancy / padded_hours,
-                    )
+                    log("can't match due to discrepancy: {discrepancy} / {hours}")
 
         return match
 

@@ -1,3 +1,4 @@
+from collections import namedtuple
 import datetime
 import logging
 import math
@@ -28,13 +29,19 @@ BAD_MESSAGE = object()
 INFO_TYPES = {"AIS.5": "AIS-A", "AIS.19": "AIS-B", "AIS.24": "AIS-B", "VMS": "VMS"}
 INFO_PING_INTERVAL_MINS = 15
 
+Identity = namedtuple(
+    "Identity", ["shipname", "callsign", "imo", "transponder_type", "length", "width"]
+)
+
+Destination = namedtuple("Destination", ["destination"])
+
 
 def is_null(v):
     return (v is None) or math.isnan(v)
 
 
 class MsgProcessor:
-    def __init__(self, very_slow, ssvid, prev_msgids, prev_locations, info=None):
+    def __init__(self, very_slow, ssvid):
         """
         Manages information from information only messages and processes messages
         to determine message type.
@@ -47,21 +54,14 @@ class MsgProcessor:
             MMSI or other Source Specific ID to pull out of the stream and process.
             If not given, the first valid ssvid is used.  All messages with a
             different ssvid are thrown away.
-        prev_msgids : set, optional
-            Messages with msgids in this set are skipped as duplicates
-        prev_locations : set, optional
-            Location messages that match values in this set are skipped as duplicates.
-        info : set, optional
-            Set of info data from previous run that may be relevant to current run.
         """
         self.very_slow = very_slow
         self.ssvid = ssvid
-        self.prev_msgids = prev_msgids if prev_msgids else {}
         self.cur_msgids = {}
-        self.prev_locations = prev_locations if prev_locations else set()
         self.cur_locations = {}
         self._prev_timestamp = None
-        self.info = info.copy() if info else {}
+        self.identities = {}
+        self.destinations = {}
 
     @staticmethod
     def extract_location(msg):
@@ -99,9 +99,8 @@ class MsgProcessor:
                 raise ValueError("`msg` is missing required field `type`")
 
             # Add empty info fields so they are always present
-            msg["shipnames"] = {}
-            msg["callsigns"] = {}
-            msg["imos"] = {}
+            msg["identities"] = {}
+            msg["destinations"] = {}
 
             timestamp = msg.get("timestamp")
             if timestamp is None:
@@ -112,7 +111,10 @@ class MsgProcessor:
             self._prev_timestamp = msg["timestamp"]
 
             msgid = msg.get("msgid")
-            if msgid in self.prev_msgids or msgid in self.cur_msgids:
+            if msgid in self.cur_msgids:
+                logger.debug(
+                    f"Skipping duplicate msgid {msgid}",
+                )
                 continue
             self.cur_msgids[msgid] = timestamp
 
@@ -168,10 +170,9 @@ class MsgProcessor:
         boolean
         """
         x, y, course, speed, heading = loc
-        return speed > 0 and (loc in self.prev_locations or loc in self.cur_locations)
+        return speed > 0 and loc in self.cur_locations
 
-    @classmethod
-    def _store_info(cls, info, msg):
+    def _store_info(self, msg):
         """
         Links information from this message to timestamps within a certain range
         before and after it's own timestamp, specified by `INFO_PING_INTERVAL_MINS`.
@@ -180,15 +181,17 @@ class MsgProcessor:
         This information will later be used to link position messages to identity
         information that was received in close proximity.
         """
-        shipname = msg.get("shipname")
-        callsign = msg.get("callsign")
-        imo = msg.get("imo")
-        n_shipname = msg.get("n_shipname")
-        n_callsign = msg.get("n_callsign")
-        n_imo = msg.get("n_imo")
-        if shipname is None and callsign is None and imo is None:
-            return
         transponder_type = INFO_TYPES.get(msg.get("type"))
+        identity = Identity(
+            msg.get("shipname"),
+            msg.get("callsign"),
+            msg.get("imo"),
+            transponder_type,
+            msg.get("length"),
+            msg.get("width"),
+        )
+        destination = Destination(msg.get("destination"))
+
         if not transponder_type:
             return
         receiver_type = msg.get("receiver_type")
@@ -200,23 +203,22 @@ class MsgProcessor:
         rounded_ts = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
-        k2 = (transponder_type, receiver_type, source)
+        match_key = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
-            k1 = rounded_ts + datetime.timedelta(minutes=offset)
-            if k1 not in info:
-                info[k1] = {k2: ({}, {}, {}, {}, {}, {})}
-            elif k2 not in info[k1]:
-                info[k1][k2] = ({}, {}, {}, {}, {}, {})
-            shipnames, callsigns, imos, n_shipnames, n_callsigns, n_imos = info[k1][k2]
-            if shipname is not None:
-                shipnames[shipname] = shipnames.get(shipname, 0) + 1
-                n_shipnames[n_shipname] = n_shipnames.get(n_shipname, 0) + 1
-            if callsign is not None:
-                callsigns[callsign] = callsigns.get(callsign, 0) + 1
-                n_callsigns[n_callsign] = callsigns.get(n_callsign, 0) + 1
-            if imo is not None:
-                imos[imo] = imos.get(imo, 0) + 1
-                n_imos[n_imo] = imos.get(n_imo, 0) + 1
+            time_key = rounded_ts + datetime.timedelta(minutes=offset)
+            if time_key not in self.identities:
+                self.identities[time_key] = {match_key: {}}
+            elif match_key not in self.identities[time_key]:
+                self.identities[time_key][match_key] = {}
+            idents = self.identities[time_key][match_key]
+            idents[identity] = idents.get(identity, 0) + 1
+            #
+            if time_key not in self.destinations:
+                self.destinations[time_key] = {match_key: {}}
+            elif match_key not in self.destinations[time_key]:
+                self.destinations[time_key][match_key] = {}
+            dests = self.destinations[time_key][match_key]
+            dests[destination] = dests.get(destination, 0) + 1
 
     def add_info_to_msg(self, msg):
         """
@@ -227,43 +229,41 @@ class MsgProcessor:
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
         assert ts.tzinfo == datetime.timezone.utc or ts.tzinfo.zone == "UTC"
-        k1 = datetime.datetime(
+        time_key = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
-        msg["shipnames"] = shipnames = {}
-        msg["callsigns"] = callsigns = {}
-        msg["imos"] = imos = {}
-        msg["n_shipnames"] = n_shipnames = {}
-        msg["n_callsigns"] = n_callsigns = {}
-        msg["n_imos"] = n_imos = {}
+        receiver_type = msg.get("receiver_type")
+        source = msg.get("source")
 
-        def updatesum(orig, new):
-            for k, v in new.items():
-                orig[k] = orig.get(k, 0) + v
+        msg["identities"] = msg_idents = {}
+        msg["destinations"] = msg_dests = {}
 
-        if k1 in self.info:
+        if time_key in self.identities:
             for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
-                receiver_type = msg.get("receiver_type")
-                source = msg.get("source")
-                k2 = (transponder_type, receiver_type, source)
-                if k2 in self.info[k1]:
-                    names, signs, nums, n_names, n_signs, n_nums = self.info[k1][k2]
-                    updatesum(shipnames, names)
-                    updatesum(callsigns, signs)
-                    updatesum(imos, nums)
-                    updatesum(n_shipnames, n_names)
-                    updatesum(n_callsigns, n_signs)
-                    updatesum(n_imos, n_nums)
+                match_key = (transponder_type, receiver_type, source)
+                if match_key in self.identities[time_key]:
+                    idents = self.identities[time_key][match_key]
+                    for k, v in idents.items():
+                        msg_idents[k] = msg_idents.get(k, 0) + v
+
+        if time_key in self.destinations:
+            for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
+                match_key = (transponder_type, receiver_type, source)
+                if match_key in self.destinations[time_key]:
+                    dests = self.destinations[time_key][match_key]
+                    for k, v in dests.items():
+                        msg_dests[k] = msg_dests.get(k, 0) + v
 
     def __call__(self, stream):
         for msg in self._checked_stream(stream):
             msg_type = self._message_type(msg)
             if msg_type is not BAD_MESSAGE:
-                self._store_info(self.info, msg)
+                self._store_info(msg)
             if msg_type is POSITION_MESSAGE:
                 timestamp = msg.get("timestamp")
                 loc = self.extract_normalized_location(msg)
                 if self._already_seen(loc):
+                    logger.debug(f"Skipping already seen location {loc}")
                     continue
                 self.cur_locations[loc] = timestamp
             yield msg_type, msg

@@ -40,79 +40,79 @@ class _MsgGenerator(object):
         return msg
 
 
-def test_identity_before():
-    gen = _MsgGenerator()
-    messages = []
-    messages.append(gen.make_identity_message())
-    for i in range(20):
-        messages.append(gen.make_position_message())
+# def test_identity_before():
+#     gen = _MsgGenerator()
+#     messages = []
+#     messages.append(gen.make_identity_message())
+#     for i in range(20):
+#         messages.append(gen.make_position_message())
 
-    segments = [x for x in Segmentizer(messages) if not x.noise]
+#     segments = [x for x in Segmentizer(messages) if not x.noise]
 
-    assert len(segments) == 1
-    names = [x["shipnames"] for x in segments[0].msgs]
-    for i in range(3):
-        assert names[i] == {"boatymcboatface": 1}
-    for i in range(3, 20):
-        assert names[i] == {}
-
-
-def test_identity_after():
-    gen = _MsgGenerator()
-    messages = []
-    for i in range(20):
-        messages.append(gen.make_position_message())
-    messages.append(gen.make_identity_message())
-
-    segments = [x for x in Segmentizer(messages) if not x.noise]
-
-    assert len(segments) == 1
-    names = [x["shipnames"] for x in segments[0].msgs]
-    for i in range(17):
-        assert names[i] == {}
-    for i in range(17, 20):
-        assert names[i] == {"boatymcboatface": 1}
+#     assert len(segments) == 1
+#     names = [x["shipnames"] for x in segments[0].msgs]
+#     for i in range(3):
+#         assert names[i] == {"boatymcboatface": 1}
+#     for i in range(3, 20):
+#         assert names[i] == {}
 
 
-def test_multiple_identities():
-    gen = _MsgGenerator()
-    messages = []
-    for i in range(6):
-        messages.append(gen.make_position_message())
-    messages.append(gen.make_identity_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_identity_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_position_message())
-    messages.append(gen.make_identity_message("samiam"))
-    for i in range(6):
-        messages.append(gen.make_position_message())
+# def test_identity_after():
+#     gen = _MsgGenerator()
+#     messages = []
+#     for i in range(20):
+#         messages.append(gen.make_position_message())
+#     messages.append(gen.make_identity_message())
 
-    segments = [x for x in Segmentizer(messages) if not x.noise]
+#     segments = [x for x in Segmentizer(messages) if not x.noise]
 
-    assert len(segments) == 1
-    names = [x["shipnames"] for x in segments[0].msgs]
+#     assert len(segments) == 1
+#     names = [x["shipnames"] for x in segments[0].msgs]
+#     for i in range(17):
+#         assert names[i] == {}
+#     for i in range(17, 20):
+#         assert names[i] == {"boatymcboatface": 1}
 
-    assert names == [
-        {},
-        {},
-        {},
-        {"boatymcboatface": 1},
-        {"boatymcboatface": 1},
-        {"boatymcboatface": 1},
-        {"boatymcboatface": 2},
-        {"boatymcboatface": 2},
-        {"boatymcboatface": 2},
-        {"boatymcboatface": 1, "samiam": 1},
-        {"boatymcboatface": 1, "samiam": 1},
-        {"boatymcboatface": 1, "samiam": 1},
-        {"samiam": 1},
-        {"samiam": 1},
-        {"samiam": 1},
-        {},
-        {},
-        {},
-    ]
+
+# def test_multiple_identities():
+#     gen = _MsgGenerator()
+#     messages = []
+#     for i in range(6):
+#         messages.append(gen.make_position_message())
+#     messages.append(gen.make_identity_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_identity_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_position_message())
+#     messages.append(gen.make_identity_message("samiam"))
+#     for i in range(6):
+#         messages.append(gen.make_position_message())
+
+#     segments = [x for x in Segmentizer(messages) if not x.noise]
+
+#     assert len(segments) == 1
+#     names = [x["shipnames"] for x in segments[0].msgs]
+
+#     assert names == [
+#         {},
+#         {},
+#         {},
+#         {"boatymcboatface": 1},
+#         {"boatymcboatface": 1},
+#         {"boatymcboatface": 1},
+#         {"boatymcboatface": 2},
+#         {"boatymcboatface": 2},
+#         {"boatymcboatface": 2},
+#         {"boatymcboatface": 1, "samiam": 1},
+#         {"boatymcboatface": 1, "samiam": 1},
+#         {"boatymcboatface": 1, "samiam": 1},
+#         {"samiam": 1},
+#         {"samiam": 1},
+#         {"samiam": 1},
+#         {},
+#         {},
+#         {},
+#     ]

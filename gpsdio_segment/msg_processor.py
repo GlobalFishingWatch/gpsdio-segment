@@ -203,21 +203,21 @@ class MsgProcessor:
         rounded_ts = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
-        k2 = (transponder_type, receiver_type, source)
+        match_key = (transponder_type, receiver_type, source)
         for offset in range(-INFO_PING_INTERVAL_MINS, INFO_PING_INTERVAL_MINS + 1):
-            k1 = rounded_ts + datetime.timedelta(minutes=offset)
-            if k1 not in self.identities:
-                self.identities[k1] = {k2: {}}
-            elif k2 not in self.identities[k1]:
-                self.identities[k1][k2] = {}
-            idents = self.identities[k1][k2]
+            time_key = rounded_ts + datetime.timedelta(minutes=offset)
+            if time_key not in self.identities:
+                self.identities[time_key] = {match_key: {}}
+            elif match_key not in self.identities[time_key]:
+                self.identities[time_key][match_key] = {}
+            idents = self.identities[time_key][match_key]
             idents[identity] = idents.get(identity, 0) + 1
             #
-            if k1 not in self.destinations:
-                self.destinations[k1] = {k2: {}}
-            elif k2 not in self.destinations[k1]:
-                self.destinations[k1][k2] = {}
-            dests = self.destinations[k1][k2]
+            if time_key not in self.destinations:
+                self.destinations[time_key] = {match_key: {}}
+            elif match_key not in self.destinations[time_key]:
+                self.destinations[time_key][match_key] = {}
+            dests = self.destinations[time_key][match_key]
             dests[destination] = dests.get(destination, 0) + 1
 
     def add_info_to_msg(self, msg):
@@ -229,7 +229,7 @@ class MsgProcessor:
         # Using tzinfo as below is only stricly valid for UTC and naive time due to
         # issues with DST (see http://pytz.sourceforge.net).
         assert ts.tzinfo == datetime.timezone.utc or ts.tzinfo.zone == "UTC"
-        k1 = datetime.datetime(
+        time_key = datetime.datetime(
             ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=ts.tzinfo
         )
         receiver_type = msg.get("receiver_type")
@@ -238,23 +238,19 @@ class MsgProcessor:
         msg["identities"] = msg_idents = {}
         msg["destinations"] = msg_dests = {}
 
-        def updatesum(orig, new):
-            for k, v in new.items():
-                orig[k] = orig.get(k, 0) + v
-
-        if k1 in self.identities:
+        if time_key in self.identities:
             for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
-                k2 = (transponder_type, receiver_type, source)
-                if k2 in self.identities[k1]:
-                    idents = self.identities[k1][k2]
+                match_key = (transponder_type, receiver_type, source)
+                if match_key in self.identities[time_key]:
+                    idents = self.identities[time_key][match_key]
                     for k, v in idents.items():
                         msg_idents[k] = msg_idents.get(k, 0) + v
 
-        if k1 in self.destinations:
+        if time_key in self.destinations:
             for transponder_type in POSITION_TYPES.get(msg.get("type"), ()):
-                k2 = (transponder_type, receiver_type, source)
-                if k2 in self.destinations[k1]:
-                    dests = self.destinations[k1][k2]
+                match_key = (transponder_type, receiver_type, source)
+                if match_key in self.destinations[time_key]:
+                    dests = self.destinations[time_key][match_key]
                     for k, v in dests.items():
                         msg_dests[k] = msg_dests.get(k, 0) + v
 

@@ -1,8 +1,9 @@
 import glob
 import json
-from support import read_json
 import os
+
 import pytest
+from support import read_json
 
 from gpsdio_segment.core import Segmentizer
 
@@ -107,4 +108,20 @@ def add_expected(input_msgs):
     for msg in input_msgs:
         if "expected" not in msg:
             msg["expected"] = None
+        # Replace `identities` and `destinations` field with JSON serializable
+        # lists of dicts with item count added into the dict.
+        if msg["identities"]:
+            ids_serializable = []
+            for id_key, count in msg["identities"].items():
+                id_as_dict = id_key._asdict()
+                id_as_dict["count"] = count
+                ids_serializable.append(id_as_dict)
+            msg["identities"] = ids_serializable
+        if msg["destinations"]:
+            dests_serializable = []
+            for dest_key, count in msg["destinations"].items():
+                dest_as_dict = dest_key._asdict()
+                dest_as_dict["count"] = count
+                dests_serializable.append(dest_as_dict)
+            msg["destinations"] = dests_serializable
     return input_msgs

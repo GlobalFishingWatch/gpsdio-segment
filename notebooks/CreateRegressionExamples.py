@@ -15,17 +15,17 @@
 
 import sys
 
-import pandas as pd
-import test_expected
-
 sys.path.append("../tests")
+
+import pandas as pd  # noqa: E402
+import test_expected  # noqa: E402
 
 # Download 10 days of Orbcomm data from each track in the baby pipe ssvid
 # and process into the format
 # that `test_extected` expects. This is used for regression testing the pipeline.
 
-ssvid = pd.read_csv("../tests/data/baby_pipe_ssvids.csv")
-ssvid_str = ",".join(f'"{x}"' for x in ssvid.ssvid)
+ssvids = pd.read_csv("../tests/data/baby_pipe_ssvids.csv")
+ssvid_str = ",".join(f'"{x}"' for x in ssvids.ssvid)
 
 query = f"""
 SELECT *

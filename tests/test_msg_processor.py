@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import timedelta
 
 import pytest
 from support import utcify
@@ -246,7 +247,7 @@ def test_unsorted():
     after = {
         "ssvid": 10,
         "msgid": 2,
-        "timestamp": datetime.now(),
+        "timestamp": before["timestamp"] + timedelta(seconds=1),
         "type": "UNKNOWN",
         "lat": 90,
         "lon": 90,

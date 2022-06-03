@@ -24,7 +24,7 @@ the logic in the function `matcher.compute_best`.
 from __future__ import division, print_function
 
 import datetime
-from intertools import count
+from itertools import count
 import logging
 
 from gpsdio_segment.discrepancy import DiscrepancyCalculator

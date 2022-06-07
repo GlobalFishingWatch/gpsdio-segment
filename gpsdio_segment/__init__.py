@@ -8,16 +8,19 @@ Includes a CLI plugin for `gpsdio` to run the algorithm.
 from gpsdio_segment.core import Segmentizer  # noqa: F401
 from gpsdio_segment.segment import BadSegment, Segment  # noqa: F401
 
-__version__ = "0.20.2"
+__version__ = "3.0.0"
+
 __author__ = "Paul Woods"
 __email__ = "paul@skytruth.org"
 __source__ = "https://github.com/SkyTruth/gpsdio-segment"
 __license__ = """
-Copyright 2015-2017 SkyTruth
+Copyright 2015-2020 SkyTruth
 Authors:
 
 Kevin Wurster <kevin@skytruth.org>
 Paul Woods <paul@skytruth.org>
+Tim Hochberg <tim@globalfishingwatch.org>
+Andres Arana <andres@globalfishingwatch.org>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

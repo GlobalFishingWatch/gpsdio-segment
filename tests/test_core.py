@@ -7,8 +7,6 @@ from __future__ import division
 
 import datetime
 
-import pytest
-
 import gpsdio_segment.core
 
 
@@ -28,10 +26,10 @@ def test_segment_attrs():
     assert seg.last_msg is None
 
     # Add some data
-    msg1 = {'ssvid': 123456789, 'field': 100}
-    msg2 = {'ssvid': 123456789, 'field': 100000}
-    msg_with_point1 = {'ssvid': 123456789, 'lat': 1, 'lon': 1}
-    msg_with_point2 = {'ssvid': 123456789, 'lat': 10, 'lon': 10}
+    msg1 = {"ssvid": 123456789, "field": 100}
+    msg2 = {"ssvid": 123456789, "field": 100000}
+    msg_with_point1 = {"ssvid": 123456789, "lat": 1, "lon": 1}
+    msg_with_point2 = {"ssvid": 123456789, "lat": 10, "lon": 10}
 
     seg.add_msg(msg1)
     seg.add_msg(msg2)
@@ -54,15 +52,15 @@ def test_segment_attrs():
         assert e == a
     assert passed
 
-    assert '4' in repr(seg)
-    assert 'Segment' in repr(seg)
+    assert "4" in repr(seg)
+    assert "Segment" in repr(seg)
 
 
 def test_last_msg_combinations():
 
-    non_posit = {'ssvid': 1}
-    posit = {'ssvid': 1, 'lat': 2, 'lon': 3}
-    time_posit = {'ssvid': 1, 'lat': 2, 'lon': 3, 'timestamp': datetime.datetime.now()}
+    non_posit = {"ssvid": 1}
+    posit = {"ssvid": 1, "lat": 2, "lon": 3}
+    time_posit = {"ssvid": 1, "lat": 2, "lon": 3, "timestamp": datetime.datetime.now()}
 
     seg = gpsdio_segment.core.Segment(0, ssvid=1)
     assert seg.last_msg is None

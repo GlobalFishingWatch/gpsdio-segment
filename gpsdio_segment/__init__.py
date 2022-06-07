@@ -5,15 +5,14 @@ Includes a CLI plugin for `gpsdio` to run the algorithm.
 """
 
 
-from gpsdio_segment.segment import BadSegment
-from gpsdio_segment.segment import Segment
-from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.core import Segmentizer  # noqa: F401
+from gpsdio_segment.segment import BadSegment, Segment  # noqa: F401
 
-__version__ = '3.0.0'
+__version__ = "3.0.0"
 
-__author__ = 'Paul Woods'
-__email__ = 'paul@skytruth.org'
-__source__ = 'https://github.com/SkyTruth/gpsdio-segment'
+__author__ = "Paul Woods"
+__email__ = "paul@skytruth.org"
+__source__ = "https://github.com/SkyTruth/gpsdio-segment"
 __license__ = """
 Copyright 2015-2020 SkyTruth
 Authors:

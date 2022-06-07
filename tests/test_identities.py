@@ -1,7 +1,11 @@
 """Test application of identities"""
 from datetime import datetime, timedelta
-from gpsdio_segment.core import Segmentizer
+
 import pytz
+
+from gpsdio_segment.core import Segmentizer
+from gpsdio_segment.msg_processor import Identity
+
 
 class _MsgGenerator(object):
     def __init__(self, interval=timedelta(minutes=4)):
@@ -10,19 +14,31 @@ class _MsgGenerator(object):
         self._interval = interval
 
     def make_position_message(self):
-        msg = {'msgid' : self._msgid, 'ssvid': 1, 'lat': 0, 'lon': 0, 'type' : 'AIS.1',
-               'timestamp': self._timestamp, 'course' : 0, 'speed': 0}
+        msg = {
+            "msgid": self._msgid,
+            "ssvid": 1,
+            "lat": 0,
+            "lon": 0,
+            "type": "AIS.1",
+            "timestamp": self._timestamp,
+            "course": 0,
+            "speed": 0,
+        }
         self._timestamp += self._interval
         self._msgid += 1
         return msg
 
-    def make_identity_message(self, shipname='boatymcboatface'):
-        msg = {'msgid' : self._msgid, 'ssvid': 1, 'type' : 'AIS.5',
-               'timestamp': self._timestamp, 'shipname' : shipname}
+    def make_identity_message(self, shipname="boatymcboatface"):
+        msg = {
+            "msgid": self._msgid,
+            "ssvid": 1,
+            "type": "AIS.5",
+            "timestamp": self._timestamp,
+            "shipname": shipname,
+        }
         self._timestamp += self._interval
         self._msgid += 1
         return msg
-
 
 
 def test_identity_before():
@@ -35,13 +51,21 @@ def test_identity_before():
     segments = [x for x in Segmentizer(messages) if not x.noise]
 
     assert len(segments) == 1
-    names = [x['shipnames'] for x in segments[0].msgs]
-
-    print(names)
+    identities = [x["identities"] for x in segments[0].msgs]
     for i in range(3):
-        assert names[i] == {'boatymcboatface' : 1}
+        assert len(identities[i]) == 1
+        assert identities[i] == {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        }
     for i in range(3, 20):
-        assert names[i] == {}   
+        assert identities[i] == {}
 
 
 def test_identity_after():
@@ -54,11 +78,21 @@ def test_identity_after():
     segments = [x for x in Segmentizer(messages) if not x.noise]
 
     assert len(segments) == 1
-    names = [x['shipnames'] for x in segments[0].msgs]
+    identities = [x["identities"] for x in segments[0].msgs]
     for i in range(17):
-        assert names[i] == {}
+        assert identities[i] == {}
     for i in range(17, 20):
-        assert names[i] == {'boatymcboatface' : 1}
+        assert len(identities[i]) == 1
+        assert identities[i] == {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        }
 
 
 def test_multiple_identities():
@@ -74,22 +108,164 @@ def test_multiple_identities():
     messages.append(gen.make_position_message())
     messages.append(gen.make_position_message())
     messages.append(gen.make_position_message())
-    messages.append(gen.make_identity_message('samiam'))
+    messages.append(gen.make_identity_message("samiam"))
     for i in range(6):
         messages.append(gen.make_position_message())
 
     segments = [x for x in Segmentizer(messages) if not x.noise]
 
     assert len(segments) == 1
-    names = [x['shipnames'] for x in segments[0].msgs]
+    identities = [x["identities"] for x in segments[0].msgs]
 
-    assert names == [
-        {}, {}, {}, 
-        {'boatymcboatface': 1}, {'boatymcboatface': 1}, {'boatymcboatface': 1}, 
-        {'boatymcboatface': 2}, {'boatymcboatface': 2}, {'boatymcboatface': 2}, 
-        {'boatymcboatface': 1, 'samiam': 1}, {'boatymcboatface': 1, 'samiam': 1}, 
-            {'boatymcboatface': 1, 'samiam': 1}, 
-        {'samiam': 1}, {'samiam': 1}, {'samiam': 1}, 
-        {}, {}, {}
+    assert identities == [
+        {},
+        {},
+        {},
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 2
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 2
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 2
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+        },
+        {
+            Identity(
+                shipname="boatymcboatface",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1,
+        },
+        {
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {
+            Identity(
+                shipname="samiam",
+                callsign=None,
+                imo=None,
+                transponder_type="AIS-A",
+                length=None,
+                width=None,
+            ): 1
+        },
+        {},
+        {},
+        {},
     ]
-

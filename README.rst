@@ -2,11 +2,11 @@
 gpsdio-segment
 ==============
 
-.. image:: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment.svg?token=tu7qmzYG3ruJYdnto4aT
-    :target: https://magnum.travis-ci.com/SkyTruth/gpsdio-segment
+https://github.com/GlobalFishingWatch/gpsdio-segment
 
+Segment a stream of messages into continuous tracks. 
 
-Segment a stream of messages into continuous tracks.
+For more information, see `module README <gpsdio_segment/README.md>`_.
 
 
 Usage
@@ -39,7 +39,7 @@ Installing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ pip install gpsdio-segment/
 
 
@@ -48,13 +48,22 @@ Developing
 
 .. code-block:: console
 
-    $ git clone https://github.com/SkyTruth/gpsdio-segment
+    $ git clone https://github.com/GlobalFishingWatch/gpsdio-segment
     $ cd gpsdio-segment
     $ virtualenv venv
     $ source venv/bin/activate
     $ pip install -e .\[dev\]
     $ py.test tests --cov gpsdio_segment --cov-report term-missing
 
+You can also use the docker environment if you don't want to use any dependency
+on your machine. Just install `docker <https://www.docker.com/>`_ and `docker
+compose <https://docs.docker.com/compose/`_ and then you can run development
+commands inside the container by running this:
+
+.. code-block:: console
+    $ [sudo] docker-compose run dev py.test tests
+
+Where `sudo` is used on Linux, but not on Mac.
 
 Helpful Recipes
 ---------------

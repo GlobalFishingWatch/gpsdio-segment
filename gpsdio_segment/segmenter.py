@@ -24,6 +24,7 @@ the logic in the function `matcher.compute_best`.
 from __future__ import division, print_function
 
 import datetime
+from itertools import count
 import logging
 
 from gpsdio_segment.discrepancy import DiscrepancyCalculator
@@ -104,6 +105,7 @@ class Segmenter:
 
         # Internal objects
         self._segments = {}
+        self._used_ids = set()
 
     def __repr__(self):
         return "<{cname}() max_knots={mspeed} max_hours={mhours} at {id_}>".format(
@@ -167,18 +169,19 @@ class Segmenter:
 
     def _segment_unique_id(self, msg):
         """
-        Generate a unique ID for a segment from a message, ideally its first.
+        Generate a unique ID for a segment from a message, composed from its SSVID,
+        timestamp, and an index to make it unique in the relatively rare case that
+        two messages have the same timestamp.
 
         Returns
         -------
         str
         """
-        ts = msg["timestamp"]
-        while True:
-            seg_id = "{}-{:%Y-%m-%dT%H:%M:%S.%fZ}".format(msg["ssvid"], ts)
-            if seg_id not in self._segments:
+        for ndx in count(start=1):
+            seg_id = f'{msg["ssvid"]}-{msg["timestamp"]:%Y-%m-%dT%H:%M:%S.%fZ}-{ndx}'
+            if seg_id not in self._used_ids:
+                self._used_ids.add(seg_id)
                 return seg_id
-            ts += datetime.timedelta(milliseconds=1)
 
     def _create_segment(self, msg, cls=Segment):
         """

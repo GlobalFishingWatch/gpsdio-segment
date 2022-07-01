@@ -3,6 +3,11 @@ import math
 inf = float("inf")
 
 
+def safe_course(msg):
+    course = msg["course"]
+    return 0 if math.isnan(course) else course
+
+
 class DiscrepancyCalculator:
     """Base class that supplies discrepancy calculator"""
 
@@ -69,8 +74,9 @@ class DiscrepancyCalculator:
         y = msg["lat"]
         speed = msg["speed"]
         course = msg["course"]
-        if course > 359.95:
+        if math.isnan(course):
             assert speed <= cls.very_slow, (course, speed)
+            course = 0
             speed = 0
         # Speed is in knots, so `dist` is in nautical miles (nm)
         dist = speed * hours
@@ -155,13 +161,13 @@ class DiscrepancyCalculator:
             rads21 = math.atan2(
                 nm_per_deg_lat * (y2 - y1), nm_per_deg_lon * wrap(x2 - x1)
             )
-            delta21 = math.radians(90 - msg1["course"]) - rads21
+            delta21 = math.radians(90 - safe_course(msg1)) - rads21
             tangential21 = math.cos(delta21) * dist
             if 0 < tangential21 <= msg1["speed"] * hours:
                 normal21 = abs(math.sin(delta21)) * dist
             else:
                 normal21 = inf
-            delta12 = math.radians(90 - msg2["course"]) - rads21
+            delta12 = math.radians(90 - safe_course(msg2)) - rads21
             tangential12 = math.cos(delta12) * dist
             if 0 < tangential12 <= msg2["speed"] * hours:
                 normal12 = abs(math.sin(delta12)) * dist

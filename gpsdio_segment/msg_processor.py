@@ -145,7 +145,7 @@ class MsgProcessor:
             not is_null(x)
             and not is_null(y)
             and not is_null(speed)
-            and ((speed <= self.very_slow and is_null(course)) or not is_null(course))
+            and not (speed > self.very_slow and is_null(course))
         ):
             return POSITION_MESSAGE
         return BAD_MESSAGE

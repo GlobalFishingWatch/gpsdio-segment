@@ -1,7 +1,7 @@
-from collections import namedtuple
 import datetime
 import logging
 import math
+from collections import namedtuple
 
 from gpsdio_segment.matcher import POSITION_TYPES
 
@@ -20,7 +20,6 @@ log = logger.info
 # is also almost always noise. The value 63 means unavailable for
 # type 27 messages so we exclude that as well. Because the values are floats,
 # and not always exactly 102.3 or 51.2, we give a range.
-REPORTED_SPEED_EXCLUSION_RANGES = [(51.15, 51.25), (62.95, 63.05), (102.25, 102.35)]
 
 POSITION_MESSAGE = object()
 INFO_ONLY_MESSAGE = object()
@@ -149,13 +148,9 @@ class MsgProcessor:
             x is not None
             and y is not None
             and speed is not None
-            and course is not None
             and -180.0 <= x <= 180.0
             and -90.0 <= y <= 90.0
-            and (  # 360 is invalid unless speed is very low.
-                (speed <= self.very_slow and course > 359.95) or 0.0 <= course <= 359.95
-            )
-            and (not any(l < speed < h for (l, h) in REPORTED_SPEED_EXCLUSION_RANGES))
+            and ((speed <= self.very_slow and course is None) or course is not None)
         ):
             return POSITION_MESSAGE
         return BAD_MESSAGE

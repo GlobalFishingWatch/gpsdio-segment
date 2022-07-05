@@ -5,7 +5,7 @@ inf = float("inf")
 
 def safe_course(msg):
     course = msg["course"]
-    return 0 if math.isnan(course) else course
+    return 0 if course is None else course
 
 
 class DiscrepancyCalculator:

@@ -79,9 +79,9 @@ class MsgProcessor:
         return (
             round(lat * 60000),
             round(lon * 60000),
-            None if course is None else round(course * 10),
+            None if is_null(course) else round(course * 10),
             round(speed * 10),
-            None if (heading is None or math.isnan(heading)) else round(heading),
+            None if is_null(heading) else round(heading),
         )
 
     def _checked_stream(self, stream):
@@ -145,12 +145,10 @@ class MsgProcessor:
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
             return INFO_ONLY_MESSAGE
         if (
-            x is not None
-            and y is not None
-            and speed is not None
-            and -180.0 <= x <= 180.0
-            and -90.0 <= y <= 90.0
-            and ((speed <= self.very_slow and course is None) or course is not None)
+            not is_null(x)
+            and not is_null(y)
+            and not is_null(speed)
+            and ((speed <= self.very_slow and is_null(course)) or is_null(course))
         ):
             return POSITION_MESSAGE
         return BAD_MESSAGE

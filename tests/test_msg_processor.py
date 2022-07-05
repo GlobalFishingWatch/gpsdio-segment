@@ -1,17 +1,10 @@
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
-from support import utcify
-
 from gpsdio_segment.matcher import Matcher
-from gpsdio_segment.msg_processor import (
-    BAD_MESSAGE,
-    INFO_ONLY_MESSAGE,
-    POSITION_MESSAGE,
-    REPORTED_SPEED_EXCLUSION_RANGES,
-    MsgProcessor,
-)
+from gpsdio_segment.msg_processor import (INFO_ONLY_MESSAGE, POSITION_MESSAGE,
+                                          MsgProcessor)
+from support import utcify
 
 
 # Checks for MsgProcessor._message_type()
@@ -170,28 +163,6 @@ def test_bad_messages():
             "speed": Matcher.very_slow + 1,
         },
     ]
-
-    # speed is in one of the REPORTED_SPEED_EXCLUSION_RANGES
-    # Doing one check for each of the current ranges
-    for i, (l, h) in enumerate(REPORTED_SPEED_EXCLUSION_RANGES):
-        messages.append(
-            {
-                "ssvid": 30,
-                "msgid": 11 + i,
-                "timestamp": datetime.now(),
-                "type": "UNKNOWN",
-                "lat": 90,
-                "lon": 90,
-                "course": 0,
-                "speed": (l + h) / 2,
-            }
-        )
-    messages = [utcify(x) for x in messages]
-    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=30)
-    processed_messages = list(msg_processor(messages))
-    assert len(processed_messages) == len(messages)
-    for msg_type, msg in processed_messages:
-        assert msg_type == BAD_MESSAGE
 
 
 # Checks for MsgProcessor._checked_stream()

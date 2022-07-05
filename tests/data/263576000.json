@@ -216,7 +216,7 @@
 {"ssvid": 263576000, "lat": -23.279417038, "lon": 96.797744751, "timestamp": "2015-10-15T11:09:40.000000Z", "speed": 8.8999996185, "course": 356.5, "implied_speed": "8.553145818058116"}
 {"ssvid": 263576000, "lat": -23.2336673737, "lon": 96.7946014404, "timestamp": "2015-10-15T11:31:06.000000Z", "speed": 8.6000003815, "course": 356.0, "implied_speed": "7.704576819703993"}
 {"ssvid": 263576000, "lat": null, "lon": null, "timestamp": "2015-10-15T11:34:04.000000Z", "speed": null, "course": null, "implied_speed": null}
-{"ssvid": 263576000, "lat": 91.0, "lon": 181.0, "timestamp": "2015-10-15T11:35:06.000000Z", "speed": 102.3000030518, "course": 360.0, "implied_speed": null}
+{"ssvid": 263576000, "lat": null, "lon": null, "timestamp": "2015-10-15T11:35:06.000000Z", "speed": 102.3000030518, "course": 360.0, "implied_speed": null}
 {"ssvid": 263576000, "lat": -23.2236309052, "lon": 96.794052124, "timestamp": "2015-10-15T11:35:19.000000Z", "speed": 8.5, "course": 3.9000000954, "implied_speed": "1884103.9414091152"}
 {"ssvid": 263576000, "lat": -23.1848831177, "lon": 96.7932128906, "timestamp": "2015-10-15T11:51:47.000000Z", "speed": 8.3999996185, "course": 2.0, "implied_speed": "8.478407959522112"}
 {"ssvid": 263576000, "lat": -23.1296825409, "lon": 96.795501709, "timestamp": "2015-10-15T12:15:13.000000Z", "speed": 8.8000001907, "course": 1.5, "implied_speed": "8.492038781908125"}

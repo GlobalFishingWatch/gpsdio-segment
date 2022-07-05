@@ -6,10 +6,9 @@ Tests for weird edge cases.
 from collections import Counter
 from datetime import datetime, timedelta
 
-from support import utcify
-
 from gpsdio_segment.core import Segmentizer
 from gpsdio_segment.msg_processor import MsgProcessor
+from support import utcify
 
 
 def test_first_is_non_posit():
@@ -316,7 +315,7 @@ def test_first_message_out_of_bounds_gt_24h():
         {
             "ssvid": 1,
             "msgid": 3,
-            "lat": 91,
+            "lat": None,
             "lon": 0,
             "type": "AIS.1",
             "timestamp": datetime(2015, 1, 10, 1, 1, 1),
@@ -380,7 +379,7 @@ def test_non_pos_first_followed_by_out_of_bounds():
         {
             "ssvid": 1,
             "msgid": 2,
-            "lat": 91,
+            "lat": None,
             "lon": 0,
             "type": "AIS.1",
             "timestamp": datetime(2015, 1, 1, 1, 1, 1),
@@ -454,7 +453,7 @@ def test_bad_message_in_stream():
         {
             "ssvid": 1,
             "msgid": 3,
-            "lat": 91,
+            "lat": None,
             "lon": 0,
             "type": "AIS.1",
             "timestamp": datetime(2015, 1, 1, 7, 1, 1),

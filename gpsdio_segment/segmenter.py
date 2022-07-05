@@ -23,25 +23,15 @@ the logic in the function `matcher.compute_best`.
 
 from __future__ import division, print_function
 
-import datetime
-from itertools import count
 import logging
+from itertools import count
 
 from gpsdio_segment.discrepancy import DiscrepancyCalculator
 from gpsdio_segment.matcher import IS_NOISE, NO_MATCH, Matcher
-from gpsdio_segment.msg_processor import (
-    BAD_MESSAGE,
-    INFO_ONLY_MESSAGE,
-    POSITION_MESSAGE,
-    MsgProcessor,
-)
-from gpsdio_segment.segment import (
-    BadSegment,
-    ClosedSegment,
-    DiscardedSegment,
-    InfoSegment,
-    Segment,
-)
+from gpsdio_segment.msg_processor import (BAD_MESSAGE, INFO_ONLY_MESSAGE,
+                                          POSITION_MESSAGE, MsgProcessor)
+from gpsdio_segment.segment import (BadSegment, ClosedSegment,
+                                    DiscardedSegment, InfoSegment, Segment)
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)

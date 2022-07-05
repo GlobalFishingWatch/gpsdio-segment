@@ -3,9 +3,13 @@ import math
 inf = float("inf")
 
 
+def is_null(v):
+    return (v is None) or math.isnan(v)
+
+
 def safe_course(msg):
     course = msg["course"]
-    return 0 if (course is None or math.isnan(course)) else course
+    return 0 if is_null(course) else course
 
 
 class DiscrepancyCalculator:
@@ -74,7 +78,7 @@ class DiscrepancyCalculator:
         y = msg["lat"]
         speed = msg["speed"]
         course = msg["course"]
-        if math.isnan(course):
+        if is_null(course):
             assert speed <= cls.very_slow, (course, speed)
             course = 0
             speed = 0

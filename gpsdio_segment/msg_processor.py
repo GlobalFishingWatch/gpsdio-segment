@@ -139,16 +139,13 @@ class MsgProcessor:
         """
         x, y, course, speed, _ = self.extract_location(msg)
 
-        def is_null(v):
-            return (v is None) or math.isnan(v)
-
         if is_null(x) and is_null(y) and is_null(course) and is_null(speed):
             return INFO_ONLY_MESSAGE
         if (
             not is_null(x)
             and not is_null(y)
             and not is_null(speed)
-            and ((speed <= self.very_slow and is_null(course)) or is_null(course))
+            and ((speed <= self.very_slow and is_null(course)) or not is_null(course))
         ):
             return POSITION_MESSAGE
         return BAD_MESSAGE

@@ -198,7 +198,12 @@ class Segmenter:
             # Remove oldest segment
             segs = list(self._segments.items())
             segs.sort(
-                key=lambda x: (x[1].last_msg["timestamp"], x[1].last_msg["msgid"])
+                key=lambda x: (
+                    x[1].last_msg["timestamp"],
+                    x[1].last_msg["msgid"],
+                    x[1].last_msg["course"],
+                    x[1].last_msg["speed"],
+                )
             )
             stalest_seg_id, _ = segs[0]
             log("Removing stale segment {}".format(stalest_seg_id))

@@ -54,6 +54,8 @@ class Segmenter:
         ssvid=None,
         max_hours=Matcher.max_hours,
         max_open_segments=100,
+        matcher=None,
+        msg_processor=None,
         **kwargs,
     ):
 
@@ -86,8 +88,8 @@ class Segmenter:
         """
         self.max_hours = max_hours
         self.max_open_segments = max_open_segments
-        self._matcher = Matcher(max_hours=max_hours, **kwargs)
-        self._msg_processor = MsgProcessor(self._matcher.very_slow, ssvid)
+        self._matcher = matcher if matcher else Matcher(max_hours=max_hours, **kwargs)
+        self._msg_processor = msg_processor if msg_processor else MsgProcessor(self._matcher.very_slow, ssvid)
 
         # Exposed via properties
         self._instream = instream
@@ -96,6 +98,8 @@ class Segmenter:
         # Internal objects
         self._segments = {}
         self._used_ids = set()
+
+        self._prev_timestamp = self._msg_processor._prev_timestamp
 
     def __repr__(self):
         return "<{cname}() max_knots={mspeed} max_hours={mhours} at {id_}>".format(
@@ -125,6 +129,7 @@ class Segmenter:
             if seg.last_msg:
                 ts = seg.last_msg["timestamp"]
                 # TODO: clean up
+
                 if s._msg_processor._prev_timestamp is None or ts > s._prev_timestamp:
                     s._prev_timestamp = ts
         return s
@@ -378,7 +383,6 @@ class Segmenter:
         Segment
         """
         for msg_type, msg in self._msg_processor(self.instream):
-
             if msg_type is BAD_MESSAGE:
                 yield from self._process_bad_msg(msg)
             elif msg_type is INFO_ONLY_MESSAGE:

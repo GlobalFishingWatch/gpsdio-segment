@@ -11,14 +11,14 @@ from gpsdio_segment.segment import BadSegment, Segment  # noqa: F401
 __version__ = "3.0.0"
 
 __author__ = "Paul Woods"
-__email__ = "paul@skytruth.org"
-__source__ = "https://github.com/SkyTruth/gpsdio-segment"
+__email__ = "paul@globalfishingwatch.org"
+__source__ = "https://github.com/GlobalFishingWatch/gpsdio-segment"
 __license__ = """
-Copyright 2015-2020 SkyTruth
+Copyright 2015-2023 Global Fishing Watch
 Authors:
 
 Kevin Wurster <kevin@skytruth.org>
-Paul Woods <paul@skytruth.org>
+Paul Woods <paul@globalfishingwatch.org>
 Tim Hochberg <tim@globalfishingwatch.org>
 Andres Arana <andres@globalfishingwatch.org>
 

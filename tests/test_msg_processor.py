@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import pytz
 
 import pytest
 from gpsdio_segment.matcher import Matcher
@@ -312,3 +313,27 @@ def test_skip_incorrect_ssvid():
     # Simply ignores the message with the incorrect SSVID.
     processed_messages = list(msg_processor(messages))
     assert len(processed_messages) == 1
+
+
+def test_prune():
+    dt = datetime.utcnow().astimezone(pytz.utc)
+    messages = [
+        {
+            "ssvid": 10,
+            "msgid": 1,
+            "timestamp": dt,
+            "type": "UNKNOWN",
+            "shipname": "shipname",
+            "destination": "destination",
+        },
+    ]
+    messages = [utcify(x) for x in messages]
+    msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
+    processed_messages = list(msg_processor(messages))
+
+    assert len(msg_processor.cur_msgids) == 1
+
+    msg_processor.prune(before_timestamp=dt + timedelta(seconds=1))
+
+    assert len(msg_processor.cur_msgids) == 0
+

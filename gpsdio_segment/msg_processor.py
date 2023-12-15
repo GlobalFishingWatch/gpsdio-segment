@@ -263,7 +263,7 @@ class MsgProcessor:
         Remove all internal records associated with a timestamp that is less than the given timesstamp
         """
 
-        self.cur_locations = {k:v for k, v in self.cur_locations.items() if k >= before_timestamp}
+        self.cur_locations = {k:v for k, v in self.cur_locations.items() if v >= before_timestamp}
         self.cur_msgids = {k:v for k, v in self.cur_msgids.items() if v >= before_timestamp}
         self.identities = {k:v for k, v in self.identities.items() if k >= before_timestamp}
         self.destinations = {k:v for k, v in self.destinations.items() if k >= before_timestamp}

@@ -326,14 +326,25 @@ def test_prune():
             "shipname": "shipname",
             "destination": "destination",
         },
+        {
+            "ssvid": 10,
+            "msgid": 2,
+            "timestamp": dt + timedelta(seconds=1),
+            "type": "UNKNOWN",
+            "lat": 90,
+            "lon": 90,
+            "course": 0,
+            "speed": 1,
+        },
+
     ]
     messages = [utcify(x) for x in messages]
     msg_processor = MsgProcessor(Matcher.very_slow, ssvid=10)
     processed_messages = list(msg_processor(messages))
 
-    assert len(msg_processor.cur_msgids) == 1
+    assert len(msg_processor.cur_msgids) == 2
 
     msg_processor.prune(before_timestamp=dt + timedelta(seconds=1))
 
-    assert len(msg_processor.cur_msgids) == 0
+    assert len(msg_processor.cur_msgids) == 1
 

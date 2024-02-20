@@ -33,11 +33,14 @@ from gpsdio_segment.msg_processor import (BAD_MESSAGE, INFO_ONLY_MESSAGE,
 from gpsdio_segment.segment import (BadSegment, ClosedSegment,
                                     DiscardedSegment, InfoSegment, Segment)
 
-logging.basicConfig()
-logger = logging.getLogger(__file__)
-logger.setLevel(logging.WARNING)
+# Configuring logging at the module level is not very neighborly.   IT forces your logging config
+# on anyone that imports your module.  Better to do it in inside a class
 
-log = logger.info
+# logging.basicConfig()
+# logger = logging.getLogger(__file__)
+# logger.setLevel(logging.WARNING)
+#
+# log = logger.info
 
 inf = float("inf")
 
@@ -100,6 +103,8 @@ class Segmenter:
         self._used_ids = set()
 
         self._prev_timestamp = self._msg_processor._prev_timestamp
+        self.log = logging.getLogger(__file__)
+
 
     def __repr__(self):
         return "<{cname}() max_knots={mspeed} max_hours={mhours} at {id_}>".format(
@@ -211,7 +216,7 @@ class Segmenter:
                 )
             )
             stalest_seg_id, _ = segs[0]
-            log("Removing stale segment {}".format(stalest_seg_id))
+            self.log.info("Removing stale segment {}".format(stalest_seg_id))
             yield from self._clean_segment(
                 self._segments.pop(stalest_seg_id), ClosedSegment
             )
@@ -226,7 +231,7 @@ class Segmenter:
             Oldest segments closed out for memory reasons by `_removed_excess_segments()`.
         """
         if why is not None:
-            log(f"adding new segment because {why}")
+            self.log.info(f"adding new segment because {why}")
         yield from self._remove_excess_segments()
         seg = self._create_segment(msg)
         self._segments[seg.id] = seg
@@ -251,7 +256,7 @@ class Segmenter:
             self._msg_processor.add_info_to_msg(msg)
             msg.pop("metric", None)
             if msg.pop("drop", False):
-                log(
+                self.log.info(
                     (
                         "Dropping message from ssvid: {ssvid!r} timestamp: {timestamp!r}"
                     ).format(**msg)
@@ -260,7 +265,7 @@ class Segmenter:
                 continue
             else:
                 new_segment.add_msg(msg)
-        logging.debug("yielding cleaned segment with {len(new_segment.messages)}")
+        self.log.debug("yielding cleaned segment with {len(new_segment.messages)}")
         yield new_segment
 
     def _process_bad_msg(self, msg):
@@ -272,12 +277,17 @@ class Segmenter:
         BadSegment
         """
         yield self._create_segment(msg, cls=BadSegment)
-        logger.debug(
-            (
-                f"Rejected bad message from ssvid: {msg['ssvid']!r} lat: {msg['lat']!r}  lon: {msg['lon']!r} "
-                f"timestamp: {msg['timestamp']!r} course: {msg['course']!r} speed: {msg['speed']!r}"
-            )
-        )
+
+        # Removing this debug message becase the message gets formatted whether or not your logger is set at
+        # debug level, and if any of the fields used in the message are missing then it raises an exception.
+        # And this method gets called specifically when one or more of those fields is missing
+
+        # logger.debug(
+        #     (
+        #         f"Rejected bad message from ssvid: {msg['ssvid']!r} lat: {msg['lat']!r}  lon: {msg['lon']!r} "
+        #         f"timestamp: {msg['timestamp']!r} course: {msg['course']!r} speed: {msg['speed']!r}"
+        #     )
+        # )
 
     def _process_info_only_msg(self, msg):
         """
@@ -288,7 +298,7 @@ class Segmenter:
         InfoSegment
         """
         yield self._create_segment(msg, cls=InfoSegment)
-        logger.debug("Skipping info message from ssvid: %s", msg["ssvid"])
+        self.log.debug("Skipping info message from ssvid: %s", msg["ssvid"])
 
     def _process_ambiguous_match(self, msg, best_match):
         """
@@ -306,7 +316,7 @@ class Segmenter:
             yield from self._clean_segment(
                 self._segments.pop(match["seg_id"]), cls=ClosedSegment
             )
-        log(
+        self.log.info(
             "adding new segment because of ambiguity with {} segments".format(
                 len(best_match)
             )
